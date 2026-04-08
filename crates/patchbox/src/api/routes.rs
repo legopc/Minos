@@ -907,11 +907,15 @@ async fn login(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"input too long"}))).into_response();
     }
 
-    // PAM service: use "patchbox" if /etc/pam.d/patchbox exists, else fall back to "login"
+    // PAM service: use "patchbox" if /etc/pam.d/patchbox exists,
+    // fall back to "sshd" (designed for remote password auth, no TTY required),
+    // then "su" as last resort.
     let service = if std::path::Path::new("/etc/pam.d/patchbox").exists() {
         "patchbox"
+    } else if std::path::Path::new("/etc/pam.d/sshd").exists() {
+        "sshd"
     } else {
-        "login"
+        "su"
     };
 
     match pam_auth::authenticate(service, &body.username, &body.password).await {
