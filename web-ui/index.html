@@ -27,6 +27,8 @@
       <button id="btn-fader-lock" class="btn-header" title="Lock faders (hold 200ms to toggle)">⌖ FADERS</button>
       <!-- W-18: Kiosk screen lock -->
       <button id="btn-kiosk-lock" class="btn-header" title="Screen lock">⎠ LOCK</button>
+      <!-- W-56: Dark/light theme toggle -->
+      <button id="btn-theme" class="btn-header" title="Toggle dark/light theme">◑</button>
       <span id="ws-status" class="badge badge--offline">WS OFFLINE</span>
     </header>
 
@@ -47,6 +49,8 @@
           <button id="btn-edit-zones" class="btn-header" title="Edit zone definitions">ZONES</button>
         </div>
         <button id="btn-active-filter" class="btn-header" title="Show only active routes">ACTIVE ONLY</button>
+        <!-- W-02: Sort channels by name -->
+        <button id="btn-sort-channels" class="btn-header" title="Sort channels alphabetically" onclick="sortChannelsByName()">A–Z</button>
       </div>
 
       <!-- Output labels (top row) -->
@@ -92,7 +96,8 @@
       <button id="btn-save-scene">SAVE</button>
       <span class="spacer"></span>
       <span id="undo-indicator" class="undo-indicator" title="Ctrl+Z to undo"></span>
-      <span id="toast" class="toast"></span>
+      <!-- W-59: Toast container (stacking toasts) -->
+      <div id="toast-container" class="toast-container"></div>
     </footer>
 
     <!-- ── Scene diff modal (U-06) ───────────────────────────────── -->

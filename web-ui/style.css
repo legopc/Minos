@@ -11,23 +11,24 @@
   --bg-2:        #12121a;
   --bg-3:        #1a1a26;
   --border:      #2a2a3a;
-  --border-hi:   #3a3a55;
+  --border-hi:   #4a4060;
   --text:        #c8c8e0;
   --text-dim:    #6a6a90;
-  --text-bright: #e8e8f8;
-  --accent:      #4a9eff;
-  --accent-dim:  #1a3a6a;
-  --green:       #3aff6a;
-  --red:         #ff3a3a;
-  --orange:      #ff9a3a;
-  --yellow:      #ffe040;
-  --cell-off:    #161620;
-  --cell-on:     #1a3a6a;
-  --cell-on-hi:  #2a5aaa;
+  --text-bright: #f0f0ff;
+  /* W-55: amber accent replaces blue */
+  --accent:      #f59e0b;
+  --accent-dim:  #3a2500;
+  --green:       #22c55e;
+  --red:         #ef4444;
+  --orange:      #fb923c;
+  --yellow:      #fbbf24;
+  --cell-off:    #0f0f18;
+  --cell-on:     #2a1a00;
+  --cell-on-hi:  #4a3000;
   --font-mono:   'IBM Plex Mono', monospace;
   --font-cond:   'Barlow Condensed', sans-serif;
   --cell-size:   40px;
-  --strip-w:     120px;
+  --strip-w:     126px;
 }
 
 html, body {
@@ -37,6 +38,35 @@ html, body {
   font-family: var(--font-mono);
   font-size: 11px;
   overflow: hidden;
+}
+
+/* W-55: Subtle noise grain overlay for depth */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* W-56: Light theme */
+[data-theme=light] {
+  --bg:          #f4f0e8;
+  --bg-2:        #eae6dc;
+  --bg-3:        #dedad0;
+  --border:      #c0bba8;
+  --border-hi:   #a09880;
+  --text:        #2a2418;
+  --text-dim:    #7a7060;
+  --text-bright: #100e08;
+  --accent:      #b97000;
+  --accent-dim:  #ffe8a0;
+  --cell-off:    #e4e0d4;
+  --cell-on:     #ffe08a;
+  --cell-on-hi:  #ffc840;
 }
 
 #app {
@@ -422,7 +452,14 @@ html, body {
 }
 #scene-bar button:hover { border-color: var(--accent); color: var(--accent); }
 
-/* ── Toast ───────────────────────────────────────────────────────────── */
+/* ── W-59: Toast stack ───────────────────────────────────────────────── */
+.toast-container {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .toast {
   font-size: 10px;
   padding: 3px 10px;
@@ -430,10 +467,11 @@ html, body {
   opacity: 0;
   transition: opacity 0.2s;
   pointer-events: none;
+  white-space: nowrap;
 }
 .toast.show { opacity: 1; }
-.toast.ok   { background: #0a2a10; color: var(--green); border: 1px solid #1a4a20; }
-.toast.err  { background: #2a0a0a; color: var(--red);   border: 1px solid #4a1a1a; }
+.toast.ok   { background: #0a1a08; color: var(--green); border: 1px solid #1a4420; }
+.toast.err  { background: #1a0808; color: var(--red);   border: 1px solid #441818; }
 
 /* ── Scrollbars ──────────────────────────────────────────────────────── */
 ::-webkit-scrollbar            { width: 6px; height: 6px; }
@@ -660,20 +698,24 @@ html, body {
 .eq-table select { background: #2a2a3e; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 2px 4px; }
 
 .btn-primary {
-  background: #2563eb;
-  color: #fff;
+  background: var(--accent);
+  color: #000;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   padding: .45rem 1.2rem;
   cursor: pointer;
-  font-size: .9rem;
+  font-family: var(--font-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-.btn-primary:hover { background: #1d4ed8; }
+.btn-primary:hover { filter: brightness(1.15); }
 
 /* ── U-09: Drag-and-drop row styles ─────────────────────────────────── */
 .matrix-row[draggable] { cursor: grab; }
 .matrix-row.dragging   { opacity: .4; }
-.matrix-row.drag-over  { outline: 2px solid #2563eb; border-radius: 3px; }
+.matrix-row.drag-over  { outline: 2px solid var(--accent); border-radius: 3px; }
 
 /* ── D-04: Dante RX activity indicator dot ─────────────────────────── */
 .dante-dot {
@@ -986,3 +1028,18 @@ html, body {
   border-radius: 2px;
   font-size: 12px;
 }
+
+/* ── W-09: Per-channel colour tag ──────────────────────────────────── */
+.channel-color-tag {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 1px solid var(--border-hi);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.1s;
+  touch-action: manipulation;
+}
+.channel-color-tag:hover { transform: scale(1.4); }

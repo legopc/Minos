@@ -39,19 +39,33 @@ const elMetersIn     = $('meters-inputs');
 const elMetersOut    = $('meters-outputs');
 const elSceneSelect  = $('scene-select');
 const elSceneNameInput = $('scene-name-input');
-const elToast        = $('toast');
 
 // Gain fader tooltip
 let gainTooltip = null;
 
-// ── Toast ─────────────────────────────────────────────────────────────────
+// ── Toast (W-59: stacking toasts) ─────────────────────────────────────────
 
-let toastTimer = null;
 function toast(msg, type = 'ok') {
-  elToast.textContent = msg;
-  elToast.className   = `toast ${type} show`;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { elToast.classList.remove('show'); }, 2500);
+  const container = document.getElementById('toast-container');
+  // Fallback to legacy #toast if container not available
+  if (!container) {
+    const el = document.getElementById('toast');
+    if (el) {
+      el.textContent = msg;
+      el.className = `toast ${type} show`;
+      setTimeout(() => el.classList.remove('show'), 2500);
+    }
+    return;
+  }
+  const el = document.createElement('span');
+  el.className = `toast ${type} show`;
+  el.textContent = msg;
+  container.appendChild(el);
+  // Auto-remove after 2.5s
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 250);
+  }, 2500);
 }
 
 // ── Undo / Redo Stack (U-05) ──────────────────────────────────────────────
@@ -290,6 +304,7 @@ function buildUI() {
       state.outputs[o].master_gain = g;
       sendOutputMasterGain(o, g);
     }, { signal: sig });
+    wireFaderDoubleClick(fader, o, 'output'); // W-03
 
     // D-06: Compressor button per output
     const btnComp = document.createElement('button');
@@ -410,6 +425,7 @@ function buildInputRow(i, rank) {
     fader.title = `Trim: ${gainLabel(g)} dB`;
     sendInputGainTrim(i, g);
   }, { signal: sig });
+  wireFaderDoubleClick(fader, i, 'input'); // W-03
 
   // D-05: EQ button per input
   const btnEq = document.createElement('button');
@@ -419,6 +435,10 @@ function buildInputRow(i, rank) {
   btnEq.id = `in-eq-${i}`;
   btnEq.addEventListener('click', () => openEqModal(i), { signal: sig });
 
+  // W-09: colour tag dot
+  const colorTag = buildColorTag(`in-${i}`);
+
+  strip.appendChild(colorTag);
   strip.appendChild(nameEl);
   strip.appendChild(dotEl);
   strip.appendChild(btnM);
@@ -1545,4 +1565,105 @@ function renderZoneEditor() {
   if (zones.length === 0) {
     body.innerHTML = '<p style="color:var(--text-dim);padding:12px;font-size:11px">No zones defined. Click + ZONE to add one.</p>';
   }
+}
+
+// ── W-56: Dark/light theme toggle ─────────────────────────────────────────
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('patchbox-theme', theme);
+  const btn = document.getElementById('btn-theme');
+  if (btn) btn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('patchbox-theme') || 'dark';
+  applyTheme(saved);
+  document.getElementById('btn-theme')?.addEventListener('click', () => {
+    const current = document.documentElement.dataset.theme || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+});
+
+// ── W-09: Per-channel colour tags ─────────────────────────────────────────
+
+const CHANNEL_COLORS = [
+  '', // none (default --border)
+  '#f59e0b', // amber
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#ef4444', // red
+  '#a855f7', // purple
+  '#06b6d4', // cyan
+  '#f97316', // orange
+];
+
+let channelColors = {};
+
+function loadChannelColors() {
+  try {
+    const raw = localStorage.getItem('patchbox-channel-colors');
+    channelColors = raw ? JSON.parse(raw) : {};
+  } catch (_) { channelColors = {}; }
+}
+
+function saveChannelColor(key, color) {
+  channelColors[key] = color;
+  localStorage.setItem('patchbox-channel-colors', JSON.stringify(channelColors));
+}
+
+function cycleChannelColor(key, dotEl) {
+  const current = channelColors[key] || '';
+  const idx = CHANNEL_COLORS.indexOf(current);
+  const next = CHANNEL_COLORS[(idx + 1) % CHANNEL_COLORS.length];
+  saveChannelColor(key, next);
+  dotEl.style.background = next || '';
+  dotEl.style.borderColor = next || '';
+  haptic(15);
+}
+
+function buildColorTag(key) {
+  const dot = document.createElement('span');
+  dot.className = 'channel-color-tag';
+  dot.title = 'Click to set channel colour';
+  const color = channelColors[key] || '';
+  if (color) { dot.style.background = color; dot.style.borderColor = color; }
+  dot.addEventListener('click', e => { e.stopPropagation(); cycleChannelColor(key, dot); });
+  return dot;
+}
+
+loadChannelColors();
+
+// ── W-03: Double-tap fader to reset to unity (0 dB / gain 1.0) ───────────
+
+function wireFaderDoubleClick(fader, idx, type) {
+  fader.addEventListener('dblclick', e => {
+    e.preventDefault();
+    if (faderLocked) return;
+    fader.value = '1';
+    haptic(40);
+    if (type === 'input') {
+      sendInputGainTrim(idx, 1.0);
+      toast('Trim reset to 0 dB', 'ok');
+    } else {
+      sendOutputMasterGain(idx, 1.0);
+      toast('Master reset to 0 dB', 'ok');
+    }
+  });
+}
+
+// ── W-02: Channel sort by name ────────────────────────────────────────────
+
+function sortChannelsByName() {
+  const { nInputs, inputs } = state;
+  const order = Array.from({length: nInputs}, (_, i) => i);
+  order.sort((a, b) => {
+    const la = (inputs[a]?.label || `IN ${a + 1}`).toLowerCase();
+    const lb = (inputs[b]?.label || `IN ${b + 1}`).toLowerCase();
+    return la.localeCompare(lb);
+  });
+  state.inputOrder = order;
+  buildUI();
+  apiFetch('/channels/input/reorder', 'POST', { order }).catch(err => toast('Reorder failed', 'err'));
+  toast('Sorted by name', 'ok');
 }
