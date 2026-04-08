@@ -33,14 +33,35 @@
     <!-- ── Matrix area ───────────────────────────────────────────── -->
     <main id="matrix-area">
 
+      <!-- W-10/W-15/W-24: Matrix toolbar -->
+      <div id="matrix-toolbar">
+        <div id="view-tabs">
+          <button class="view-tab active" data-view="matrix" title="Matrix patchbay view">MATRIX</button>
+          <button class="view-tab" data-view="strips" title="Input channel strips view">STRIPS</button>
+        </div>
+        <div id="zone-selector">
+          <span class="label">ZONE</span>
+          <select id="zone-select" title="Filter by zone/bar">
+            <option value="">ALL</option>
+          </select>
+          <button id="btn-edit-zones" class="btn-header" title="Edit zone definitions">ZONES</button>
+        </div>
+        <button id="btn-active-filter" class="btn-header" title="Show only active routes">ACTIVE ONLY</button>
+      </div>
+
       <!-- Output labels (top row) -->
       <div id="output-labels" class="label-row">
-        <div class="corner-cell">IN\OUT</div>
+        <div class="corner-cell"><span class="axis-label-y">IN →</span><span class="axis-label-x">→ OUT</span></div>
         <!-- populated by JS -->
       </div>
 
       <!-- Matrix rows (one row = one input) -->
       <div id="matrix-rows">
+        <!-- populated by JS -->
+      </div>
+
+      <!-- W-10: Strips view (hidden by default) -->
+      <div id="strips-view" style="display:none">
         <!-- populated by JS -->
       </div>
 
@@ -199,6 +220,23 @@
       <div class="kiosk-icon">⎠</div>
       <div class="kiosk-label">SCREEN LOCKED</div>
       <button id="btn-kiosk-unlock" class="kiosk-unlock">TAP TO UNLOCK</button>
+    </div>
+  </div>
+
+  <!-- W-24: Zone edit modal -->
+  <div id="zone-modal" class="overlay-modal" style="display:none">
+    <div class="modal-inner" style="min-width:360px;max-width:480px">
+      <div class="modal-header">
+        <span>EDIT ZONES</span>
+        <button id="zone-modal-close" class="btn-icon" title="Close">✕</button>
+      </div>
+      <div class="modal-body" id="zone-modal-body">
+        <!-- populated by JS -->
+      </div>
+      <div class="modal-footer" style="gap:8px;justify-content:space-between">
+        <button id="btn-zone-add" class="btn-header">+ ZONE</button>
+        <button id="btn-zone-save" class="btn-primary">SAVE</button>
+      </div>
     </div>
   </div>
 

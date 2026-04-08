@@ -271,6 +271,9 @@ function buildUI() {
     el.addEventListener('click', () => toggleOutputMute(o), { signal: sig });
     el.addEventListener('dblclick', e => { e.stopPropagation(); renameChannel('output', o); }, { signal: sig });
     el.addEventListener('contextmenu', e => { e.preventDefault(); showMasterGainTooltip(o, el); }, { signal: sig });
+    // W-11: column highlight on hover
+    el.addEventListener('mouseenter', () => addColHighlight(o), { signal: sig });
+    el.addEventListener('mouseleave', () => removeColHighlight(o), { signal: sig });
 
     const fader = document.createElement('input');
     fader.type = 'range';
@@ -315,6 +318,9 @@ function buildUI() {
   if (faderLocked) {
     document.querySelectorAll('.strip-fader, .out-master-fader').forEach(el => { el.disabled = true; });
   }
+  // W-15/W-24: re-apply filters after rebuild
+  applyActiveFilter();
+  applyZoneFilter();
 }
 
 function buildInputRow(i, rank) {
@@ -443,6 +449,8 @@ function buildCell(i, o, sig) {
 
   cell.addEventListener('click', () => toggleCell(i, o), { signal: sig });
   cell.addEventListener('contextmenu', e => { e.preventDefault(); showGainTooltip(i, o, cell); }, { signal: sig });
+  // W-11: data-col for column highlight
+  cell.dataset.col = o;
 
   return cell;
 }
@@ -1260,3 +1268,281 @@ document.getElementById('comp-modal-apply').addEventListener('click', async () =
     else                          valEl.textContent = v.toFixed(1) + ' dB';
   });
 });
+
+// ── W-10: View mode tabs (MATRIX / STRIPS) ────────────────────────────────
+
+let viewMode = 'matrix'; // 'matrix' | 'strips'
+
+function setViewMode(mode) {
+  viewMode = mode;
+  // Update tab active states
+  document.querySelectorAll('.view-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === mode);
+  });
+  // Toggle visibility
+  const isMatrix = mode === 'matrix';
+  document.getElementById('output-labels').style.display = isMatrix ? '' : 'none';
+  document.getElementById('matrix-rows').style.display   = isMatrix ? '' : 'none';
+  document.getElementById('strips-view').style.display   = isMatrix ? 'none' : 'flex';
+  if (mode === 'strips') buildStripsView();
+}
+
+function buildStripsView() {
+  const el = document.getElementById('strips-view');
+  el.innerHTML = '';
+  const { nInputs, inputs } = state;
+  for (let rank = 0; rank < nInputs; rank++) {
+    const i = state.inputOrder[rank];
+    const inp = inputs[i] || {};
+    const card = document.createElement('div');
+    card.className = 'channel-strip-card';
+
+    const name = document.createElement('span');
+    name.className = 'strip-name';
+    name.textContent = inp.label || `IN ${i + 1}`;
+
+    const gain = inp.gain_trim ?? 1.0;
+    const fader = document.createElement('input');
+    fader.type  = 'range';
+    fader.className = 'strip-fader-vert';
+    fader.min = '0'; fader.max = '2'; fader.step = '0.01';
+    fader.value = String(gain);
+    if (faderLocked) fader.disabled = true;
+    fader.addEventListener('input', () => sendInputGainTrim(i, parseFloat(fader.value)));
+
+    const btns = document.createElement('div');
+    btns.className = 'strip-buttons';
+
+    const btnM = document.createElement('button');
+    btnM.className = 'btn-mute' + (inp.mute ? ' active' : '');
+    btnM.textContent = 'M';
+    btnM.id = `sv-mute-${i}`;
+    btnM.addEventListener('click', () => toggleInputMute(i));
+
+    const btnS = document.createElement('button');
+    btnS.className = 'btn-solo' + (inp.solo ? ' active' : '');
+    btnS.textContent = 'S';
+    btnS.id = `sv-solo-${i}`;
+    btnS.addEventListener('click', () => toggleInputSolo(i));
+
+    btns.appendChild(btnM);
+    btns.appendChild(btnS);
+    card.appendChild(name);
+    card.appendChild(fader);
+    card.appendChild(btns);
+    el.appendChild(card);
+  }
+}
+
+document.querySelectorAll('.view-tab').forEach(btn => {
+  btn.addEventListener('click', () => setViewMode(btn.dataset.view));
+});
+
+// ── W-11: Column highlight on output label hover ──────────────────────────
+
+// Cells get data-col set in buildCell(); output label hover adds/removes .col-hi
+
+function addColHighlight(o) {
+  document.querySelectorAll(`.matrix-cell[data-col="${o}"]`).forEach(c => c.classList.add('col-hi'));
+}
+function removeColHighlight(o) {
+  document.querySelectorAll(`.matrix-cell[data-col="${o}"]`).forEach(c => c.classList.remove('col-hi'));
+}
+
+// ── W-15: Active-only filter ──────────────────────────────────────────────
+
+let activeFilter = false;
+
+function applyActiveFilter() {
+  const rows  = document.querySelectorAll('.matrix-row');
+  const labels = document.querySelectorAll('.output-label');
+
+  if (!activeFilter) {
+    rows.forEach(r => r.style.display = '');
+    labels.forEach(l => l.style.display = '');
+    return;
+  }
+
+  // Determine which inputs/outputs have any active route
+  const activeInputs  = new Set();
+  const activeOutputs = new Set();
+  for (let i = 0; i < state.nInputs; i++) {
+    for (let o = 0; o < state.nOutputs; o++) {
+      if (((state.matrix[i] || [])[o] ?? 0) > 0) {
+        activeInputs.add(i);
+        activeOutputs.add(o);
+      }
+    }
+  }
+
+  rows.forEach(r => {
+    const idx = parseInt(r.id.replace('row-', ''), 10);
+    r.style.display = activeInputs.has(idx) ? '' : 'none';
+  });
+
+  labels.forEach(l => {
+    if (!l.id) return; // corner cell
+    const idx = parseInt(l.id.replace('out-label-', ''), 10);
+    if (!isNaN(idx)) l.style.display = activeOutputs.has(idx) ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnFilter = document.getElementById('btn-active-filter');
+  if (btnFilter) {
+    btnFilter.addEventListener('click', () => {
+      activeFilter = !activeFilter;
+      btnFilter.classList.toggle('active', activeFilter);
+      applyActiveFilter();
+      haptic();
+    });
+  }
+});
+
+// ── W-24: Zone selector (localStorage-based) ──────────────────────────────
+// Zone definition: { name: 'Bar 1', outputs: [0,1] }
+// Stored in localStorage as JSON array.
+
+let zones = [];
+
+function loadZones() {
+  try {
+    const raw = localStorage.getItem('patchbox-zones');
+    zones = raw ? JSON.parse(raw) : [];
+  } catch (_) { zones = []; }
+  renderZoneSelect();
+}
+
+function saveZones() {
+  localStorage.setItem('patchbox-zones', JSON.stringify(zones));
+  renderZoneSelect();
+}
+
+function renderZoneSelect() {
+  const sel = document.getElementById('zone-select');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">ALL</option>';
+  zones.forEach((z, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = z.name;
+    sel.appendChild(opt);
+  });
+  sel.value = prev && zones[parseInt(prev, 10)] ? prev : '';
+}
+
+function applyZoneFilter() {
+  const sel = document.getElementById('zone-select');
+  if (!sel) return;
+  const zoneIdx = sel.value === '' ? -1 : parseInt(sel.value, 10);
+
+  if (zoneIdx < 0 || !zones[zoneIdx]) {
+    // Show all outputs
+    document.querySelectorAll('.output-label').forEach(l => l.style.display = '');
+    document.querySelectorAll('.matrix-cell').forEach(c => c.style.display = '');
+    return;
+  }
+
+  const zoneOutputs = new Set(zones[zoneIdx].outputs);
+
+  // Show only output labels for this zone
+  document.querySelectorAll('.output-label').forEach(l => {
+    if (!l.id) return;
+    const o = parseInt(l.id.replace('out-label-', ''), 10);
+    l.style.display = isNaN(o) || zoneOutputs.has(o) ? '' : 'none';
+  });
+
+  // Show only cells for zone outputs
+  document.querySelectorAll('.matrix-cell').forEach(c => {
+    const colAttr = c.dataset.col;
+    if (colAttr === undefined) return;
+    c.style.display = zoneOutputs.has(parseInt(colAttr, 10)) ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadZones();
+
+  document.getElementById('zone-select')?.addEventListener('change', () => {
+    applyZoneFilter();
+  });
+
+  // Zone edit modal
+  const btnEdit  = document.getElementById('btn-edit-zones');
+  const modal    = document.getElementById('zone-modal');
+  const btnClose = document.getElementById('zone-modal-close');
+  const btnAdd   = document.getElementById('btn-zone-add');
+  const btnSave  = document.getElementById('btn-zone-save');
+
+  if (btnEdit) btnEdit.addEventListener('click', () => {
+    renderZoneEditor();
+    modal.style.display = 'flex';
+  });
+  if (btnClose) btnClose.addEventListener('click', () => modal.style.display = 'none');
+
+  if (btnAdd) btnAdd.addEventListener('click', () => {
+    zones.push({ name: `Zone ${zones.length + 1}`, outputs: [] });
+    renderZoneEditor();
+  });
+
+  if (btnSave) btnSave.addEventListener('click', () => {
+    // Read back values from editor
+    const rows = document.querySelectorAll('#zone-modal-body .zone-row');
+    zones = [];
+    rows.forEach(row => {
+      const nameEl = row.querySelector('input[type=text]');
+      const selEl  = row.querySelector('select');
+      if (!nameEl || !selEl) return;
+      const outputs = Array.from(selEl.selectedOptions).map(o => parseInt(o.value, 10));
+      zones.push({ name: nameEl.value.trim() || 'Zone', outputs });
+    });
+    saveZones();
+    applyZoneFilter();
+    modal.style.display = 'none';
+    toast('Zones saved', 'ok');
+  });
+});
+
+function renderZoneEditor() {
+  const body = document.getElementById('zone-modal-body');
+  if (!body) return;
+  body.innerHTML = '';
+  zones.forEach((z, zIdx) => {
+    const row = document.createElement('div');
+    row.className = 'zone-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = z.name;
+    nameInput.placeholder = 'Zone name';
+
+    const sel = document.createElement('select');
+    sel.className = 'zone-outputs-select';
+    sel.multiple = true;
+    for (let o = 0; o < state.nOutputs; o++) {
+      const opt = document.createElement('option');
+      opt.value = String(o);
+      opt.textContent = (state.outputs[o]?.label || `OUT ${o + 1}`);
+      if (z.outputs.includes(o)) opt.selected = true;
+      sel.appendChild(opt);
+    }
+
+    const del = document.createElement('button');
+    del.className = 'btn-zone-del';
+    del.textContent = '✕';
+    del.title = 'Delete zone';
+    del.addEventListener('click', () => {
+      zones.splice(zIdx, 1);
+      renderZoneEditor();
+    });
+
+    row.appendChild(nameInput);
+    row.appendChild(sel);
+    row.appendChild(del);
+    body.appendChild(row);
+  });
+  if (zones.length === 0) {
+    body.innerHTML = '<p style="color:var(--text-dim);padding:12px;font-size:11px">No zones defined. Click + ZONE to add one.</p>';
+  }
+}

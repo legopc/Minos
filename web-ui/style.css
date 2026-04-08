@@ -803,3 +803,186 @@ html, body {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── W-10/W-13/W-15/W-24: Matrix toolbar ────────────────────────────── */
+#matrix-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+#view-tabs {
+  display: flex;
+  gap: 2px;
+}
+.view-tab {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-cond);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+  touch-action: manipulation;
+}
+.view-tab.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.view-tab:hover:not(.active) { border-color: var(--border-hi); color: var(--text); }
+
+#zone-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+}
+#zone-select {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 2px;
+  min-width: 80px;
+}
+#zone-select:focus { outline: none; border-color: var(--accent); }
+
+#btn-active-filter.active { background: #0a1a0a; border-color: var(--green); color: var(--green); }
+
+/* ── W-13: Axis labels in corner cell ─────────────────────────────── */
+.corner-cell {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+.axis-label-y, .axis-label-x {
+  font-size: 8px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+}
+.axis-label-y { margin-bottom: 1px; }
+
+/* ── W-11: Row highlight on hover ─────────────────────────────────── */
+.matrix-row:hover .matrix-cell:not(.active) {
+  background: #1a1a28;
+  border-color: var(--border-hi);
+}
+
+/* ── W-11: Column highlight class (added by JS on output label hover) */
+.matrix-cell.col-hi:not(.active) {
+  background: #131320;
+  border-color: var(--border-hi);
+}
+.matrix-cell.col-hi.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 4px rgba(74,158,255,0.3);
+}
+
+/* ── W-10: Strips view ─────────────────────────────────────────────── */
+#strips-view {
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  overflow-y: auto;
+}
+.channel-strip-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+  width: 80px;
+}
+.channel-strip-card .strip-name {
+  width: 100%;
+  font-size: 10px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-strip-card .strip-fader-vert {
+  -webkit-appearance: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 8px;
+  height: 100px;
+  background: var(--border);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+.channel-strip-card .strip-fader-vert::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.channel-strip-card .strip-buttons {
+  display: flex;
+  gap: 4px;
+}
+.channel-strip-card canvas {
+  width: 14px;
+  height: 80px;
+  display: block;
+  border: 1px solid var(--border);
+}
+
+/* Zone edit modal */
+.zone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.zone-row input[type=text] {
+  flex: 1;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+.zone-row input[type=text]:focus { outline: none; border-color: var(--accent); }
+.zone-outputs-select {
+  flex: 2;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px;
+  border-radius: 2px;
+  height: 60px;
+}
+.btn-zone-del {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--red);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+}
