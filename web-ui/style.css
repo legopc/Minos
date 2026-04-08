@@ -1980,6 +1980,8 @@ body.compact .strip-meter {
   background: var(--text, #eee);
   border-radius: 1px;
   top: 2px;
+  transform: rotate(var(--rotation, 0deg));
+  transform-origin: center 10px;
 }
 
 .aux-send-label {
