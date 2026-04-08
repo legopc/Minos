@@ -1351,6 +1351,11 @@ document.getElementById('eq-modal-close').addEventListener('click', () => {
 document.getElementById('eq-modal-apply').addEventListener('click', async () => {
   const modal = document.getElementById('eq-modal');
   const ch    = parseInt(modal.dataset.channel, 10);
+  if (isNaN(ch)) {
+    toast('EQ error: no channel selected', 'err');
+    modal.style.display = 'none';
+    return;
+  }
 
   const defaults = [
     { band_type: 'low_shelf',  freq_hz:   100, q: 0.707 },
@@ -1433,15 +1438,20 @@ document.getElementById('comp-modal-close').addEventListener('click', () => {
 
 document.getElementById('comp-modal-apply').addEventListener('click', async () => {
   const modal = document.getElementById('comp-modal');
-  
+
   // M-11: Gate mode (INPUT channels)
   if (modal.dataset.mode === 'gate') {
     applyGateSettings();
     return;
   }
-  
+
   // D-06: Compressor mode (OUTPUT channels)
-  const ch    = parseInt(modal.dataset.channel, 10);
+  const ch = parseInt(modal.dataset.channel, 10);
+  if (isNaN(ch)) {
+    toast('Compressor error: no channel selected', 'err');
+    modal.style.display = 'none';
+    return;
+  }
 
   const compParams = {
     enabled:        document.getElementById('comp-enabled').checked,

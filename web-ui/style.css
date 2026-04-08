@@ -1910,21 +1910,6 @@ body.compact .strip-meter {
   overflow: auto;
 }
 
-#matrix-rows {
-  display: table;
-}
-
-.matrix-row {
-  display: table-row;
-}
-
-/* Phantom rows for scroll height maintenance (when virtual scrolling is active) */
-.matrix-phantom-row {
-  display: table-row;
-  height: 32px;
-  visibility: hidden;
-}
-
 
 /* ── Sprint 28: M-03 Aux sends, M-04 VCA groups, M-11 Noise gate, M-13 Insert bypass ──── */
 
@@ -2444,19 +2429,4 @@ body.compact .strip-meter {
 #matrix-area {
   position: relative;
   overflow: auto;
-}
-
-#matrix-rows {
-  display: table;
-}
-
-.matrix-row {
-  display: table-row;
-}
-
-/* Phantom rows for scroll height maintenance (when virtual scrolling is active) */
-.matrix-phantom-row {
-  display: table-row;
-  height: 32px;
-  visibility: hidden;
 }
