@@ -127,6 +127,7 @@ fn check_ptp_health() -> (bool, Option<i64>) {
 // ── Full state snapshot ───────────────────────────────────────────────────
 
 async fn get_state(State(state): State<SharedState>) -> impl IntoResponse {
+    use std::sync::atomic::Ordering;
     let params = state.params.read().await;
     let input_order  = state.input_order.read().await;
     let output_order = state.output_order.read().await;
@@ -134,13 +135,19 @@ async fn get_state(State(state): State<SharedState>) -> impl IntoResponse {
     let etag = state.etag();
     let mut headers = HeaderMap::new();
     headers.insert(axum::http::header::ETAG, etag.parse().unwrap());
+    // D-04: Build per-channel Dante RX activity from bitmask
+    let rx_mask = state.dante_rx_active.load(Ordering::Relaxed);
+    let dante_rx_active: Vec<bool> = (0..params.inputs.len())
+        .map(|i| (rx_mask >> i) & 1 == 1)
+        .collect();
     // U-09: Include channel display order in state response.
     let body = serde_json::json!({
-        "matrix":       params.matrix,
-        "inputs":       params.inputs,
-        "outputs":      params.outputs,
-        "input_order":  *input_order,
-        "output_order": *output_order,
+        "matrix":           params.matrix,
+        "inputs":           params.inputs,
+        "outputs":          params.outputs,
+        "input_order":      *input_order,
+        "output_order":     *output_order,
+        "dante_rx_active":  dante_rx_active,
     });
     (headers, Json(body))
 }

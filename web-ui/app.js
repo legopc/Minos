@@ -19,6 +19,7 @@ const state = {
   outputs:  [],    // [{ label, mute, master_gain, compressor }]
   inputOrder:  [], // U-09: display permutation for inputs
   outputOrder: [], // U-09: display permutation for outputs
+  danteRxActive: [], // D-04: per-input Dante flow activity (bool[])
   meters: {
     inputs:  [],   // f32 dBFS
     outputs: [],
@@ -250,6 +251,12 @@ function buildInputRow(i, rank) {
   nameEl.title = 'Click to rename';
   nameEl.addEventListener('click', () => renameChannel('input', i));
 
+  // D-04: Dante RX activity indicator dot
+  const dotEl = document.createElement('span');
+  dotEl.className = 'dante-dot' + (state.danteRxActive[i] ? ' active' : '');
+  dotEl.id = `in-dot-${i}`;
+  dotEl.title = state.danteRxActive[i] ? 'Dante flow active' : 'No Dante flow';
+
   const btnM = document.createElement('button');
   btnM.className = 'btn-mute' + (inp.mute ? ' active' : '');
   btnM.textContent = 'M';
@@ -287,6 +294,7 @@ function buildInputRow(i, rank) {
   btnEq.addEventListener('click', () => openEqModal(i));
 
   strip.appendChild(nameEl);
+  strip.appendChild(dotEl);
   strip.appendChild(btnM);
   strip.appendChild(btnS);
   strip.appendChild(fader);
@@ -721,6 +729,8 @@ function applySnapshot(snap) {
   // U-09: Preserve server-provided channel order (or default identity order).
   state.inputOrder  = snap.input_order  ?? Array.from({length: state.nInputs},  (_, i) => i);
   state.outputOrder = snap.output_order ?? Array.from({length: state.nOutputs}, (_, o) => o);
+  // D-04: Dante RX activity per input channel (array of bool)
+  state.danteRxActive = snap.dante_rx_active ?? new Array(state.nInputs).fill(false);
   state.meters.inputs  = new Array(state.nInputs).fill(-60);
   state.meters.outputs = new Array(state.nOutputs).fill(-60);
 

@@ -27,6 +27,10 @@ pub struct AppState {
     pub input_order: Arc<RwLock<Vec<usize>>>,
     /// U-09: Display order for output channels (permutation of 0..N-1).
     pub output_order: Arc<RwLock<Vec<usize>>>,
+    /// D-04: Bitmask of RX channels that received non-silence in the last DSP block.
+    /// Bit N set = input channel N is actively receiving a Dante flow.
+    /// Written lock-free by the audio callback; read by /api/v1/state.
+    pub dante_rx_active: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -42,6 +46,7 @@ impl AppState {
             state_version:  Arc::new(AtomicU64::new(1)),
             input_order:    Arc::new(RwLock::new((0..n_in).collect())),
             output_order:   Arc::new(RwLock::new((0..n_out).collect())),
+            dante_rx_active: Arc::new(AtomicU64::new(0)),
             config:         cfg,
         }
     }

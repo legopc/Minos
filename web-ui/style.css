@@ -674,3 +674,17 @@ html, body {
 .matrix-row[draggable] { cursor: grab; }
 .matrix-row.dragging   { opacity: .4; }
 .matrix-row.drag-over  { outline: 2px solid #2563eb; border-radius: 3px; }
+
+/* ── D-04: Dante RX activity indicator dot ─────────────────────────── */
+.dante-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #444;
+  margin-right: 4px;
+  flex-shrink: 0;
+  transition: background .3s;
+  vertical-align: middle;
+}
+.dante-dot.active { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }

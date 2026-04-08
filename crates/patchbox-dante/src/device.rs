@@ -57,19 +57,23 @@ impl DanteDevice {
     ///            with `try_read()` to avoid blocking the audio thread.
     /// `meters` — same `Arc` as `AppState.meters`; the RX callback writes peak
     ///            dBFS values after each block via `try_write()`.
+    /// `dante_rx_active` — same `Arc` as `AppState.dante_rx_active`; bitmask
+    ///            of channels that received non-silence (D-04).
     pub async fn start_with_params(
         &self,
         params: Arc<RwLock<AudioParams>>,
         meters: Arc<RwLock<MeterFrame>>,
+        dante_rx_active: Arc<std::sync::atomic::AtomicU64>,
     ) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(Some(params), Some(meters)).await
+            self.start_real(Some(params), Some(meters), Some(dante_rx_active)).await
         }
         #[cfg(not(feature = "inferno"))]
         {
             let _ = params;
             let _ = meters;
+            let _ = dante_rx_active;
             self.start().await
         }
     }
@@ -79,8 +83,12 @@ impl DanteDevice {
         &self,
         params: Option<Arc<RwLock<AudioParams>>>,
         meters: Option<Arc<RwLock<MeterFrame>>>,
+        dante_rx_active: Option<Arc<std::sync::atomic::AtomicU64>>,
     ) -> Result<()> {
-        use inferno_aoip::device_server::{DeviceServer, Settings};
+        use inferno_aoip::device_server::{AtomicSample, DeviceServer, ExternalBufferParameters, Settings, TransferNotifier};
+        use inferno_aoip::device_server::Clock;
+        use std::sync::atomic::Ordering as AOrdering;
+        use std::sync::atomic::AtomicUsize;
 
         let short = if self.device_name.len() > 14 {
             &self.device_name[..14]
@@ -104,36 +112,83 @@ impl DanteDevice {
             "Starting inferno_aoip DeviceServer (waiting for PTP clock…)"
         );
 
+        // D-10: Apply DSCP/QoS markings via nftables (best-effort, needs CAP_NET_ADMIN)
+        crate::qos::apply_dante_dscp();
+
         let mut server = DeviceServer::start(settings).await;
 
         tracing::info!("inferno_aoip DeviceServer started");
 
+        // D-01: TX ring buffer setup
+        // Each TX channel gets its own lock-free atomic ring buffer (non-interleaved).
+        // RING_SIZE must be a power of 2 and larger than the maximum DSP block size.
+        const RING_SIZE: usize = 65536;
+
+        let n_out = self.n_outputs;
+
+        // Shared validity flag — set to false on shutdown to stop TX flows
+        let valid = Arc::new(tokio::sync::RwLock::new(true));
+
+        // Per-channel backing memory: Arc keeps alive across callback + transmitter
+        let tx_bufs: Vec<Arc<Vec<AtomicSample>>> = (0..n_out)
+            .map(|_| Arc::new((0..RING_SIZE).map(|_| AtomicSample::new(0)).collect()))
+            .collect();
+
+        // Shared write cursor: updated in the RX callback, read by the TX transmitter
+        let current_timestamp = Arc::new(AtomicUsize::new(0));
+
+        // Build ExternalBufferParameters (one per TX channel, stride=1 non-interleaved)
+        let tx_params: Vec<ExternalBufferParameters<i32>> = tx_bufs
+            .iter()
+            .map(|buf| unsafe {
+                ExternalBufferParameters::new(
+                    buf.as_ptr(),
+                    RING_SIZE,
+                    1,
+                    Arc::clone(&valid),
+                    None,
+                )
+            })
+            .collect();
+
+        // Oneshot to signal the TX transmitter when the first block arrives
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel::<Clock>();
+
+        // Set up TX — this spawns background tasks and returns immediately.
+        server
+            .transmit_from_external_buffer(
+                tx_params,
+                start_rx,
+                Arc::clone(&current_timestamp),
+                None,
+            )
+            .await;
+
+        tracing::info!("TX transmitter armed, waiting for first RX block");
+
         if let Some(params) = params {
-            let n_in  = self.n_inputs;
-            let n_out = self.n_outputs;
+            let n_in = self.n_inputs;
+
+            // Clone Arcs for the callback closure
+            let tx_bufs_cb       = tx_bufs.clone();
+            let current_ts_cb    = Arc::clone(&current_timestamp);
+            let rx_active_cb     = dante_rx_active;
+            let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
 
             server.receive_with_callback(Box::new(move |samples_count, channels| {
                 use crate::sample_conv::{i32_to_f32, f32_to_i32};
 
-                // R-11: On first callback invocation, attempt to elevate this thread
-                // to SCHED_FIFO RT priority so the DSP hot path is preemption-resistant.
-                // Only tries once (thread-local flag).
+                // R-11: Elevate DSP thread to SCHED_FIFO once per thread.
                 #[cfg(target_os = "linux")]
                 try_set_rt_priority_once();
-
-                // R-12: No-alloc / no-lock audit notes:
-                // - params.try_read() is lock-free on the read path if no writer holds it
-                // - Vec allocations below are unavoidable until inferno_aoip exposes
-                //   fixed-size buffer API (tracked as D-01 / future sprint)
-                // - Future: pre-allocate rx_f32/tx_f32 in a ring buffer outside callback
 
                 let guard = match params.try_read() {
                     Ok(g)  => g,
                     Err(_) => return,
                 };
 
-                let actual_in  = channels.len().min(n_in);
-                let block      = samples_count;
+                let actual_in = channels.len().min(n_in);
+                let block     = samples_count;
 
                 let rx_f32: Vec<Vec<f32>> = (0..actual_in)
                     .map(|i| channels[i][..block].iter().map(|&s| i32_to_f32(s)).collect())
@@ -143,13 +198,13 @@ impl DanteDevice {
                     .map(|_| vec![0.0f32; block])
                     .collect();
 
-                let inputs_ref:       Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
-                let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
+                let inputs_ref:      Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
+                let mut outputs_ref: Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
                 let bridge = crate::bridge::AudioBridge::new(block);
                 bridge.process(&guard, &inputs_ref, &mut outputs_ref);
 
-                // Compute peak dBFS and write to meters (best-effort, non-blocking)
+                // Compute peak dBFS for meters (best-effort, non-blocking)
                 if let Some(ref m) = meters {
                     if let Ok(mut mf) = m.try_write() {
                         for (i, ch) in rx_f32.iter().enumerate() {
@@ -167,11 +222,51 @@ impl DanteDevice {
                     }
                 }
 
-                // TODO: wire TX ring buffers (transmit_from_external_buffer — Phase 2)
-                let _ = tx_f32.iter().map(|v| v.iter().map(|&s| f32_to_i32(s)));
+                // D-04: Update RX activity bitmask (non-blocking lock-free write).
+                // A channel is "active" if it received any non-zero sample this block.
+                if let Some(ref rx_active) = rx_active_cb {
+                    let mut mask: u64 = 0;
+                    for (i, ch) in rx_f32.iter().enumerate().take(64) {
+                        if ch.iter().any(|&s| s != 0.0) {
+                            mask |= 1u64 << i;
+                        }
+                    }
+                    rx_active.store(mask, AOrdering::Relaxed);
+                }
+
+                // D-01: Write processed samples into TX atomic ring buffers.
+                // The ring buffer position wraps with % RING_SIZE.
+                let write_pos = current_ts_cb.load(AOrdering::Acquire);
+                for (o, ch) in tx_f32.iter().enumerate() {
+                    if o >= tx_bufs_cb.len() { break; }
+                    let buf = &tx_bufs_cb[o];
+                    for (i, &s) in ch[..block].iter().enumerate() {
+                        let idx = (write_pos.wrapping_add(i)) % RING_SIZE;
+                        buf[idx].store(f32_to_i32(s), AOrdering::Relaxed);
+                    }
+                }
+                // Advance the shared write cursor so the TX transmitter knows
+                // up to which sample position it can read.
+                let new_pos = write_pos.wrapping_add(block);
+                current_ts_cb.store(new_pos, AOrdering::Release);
+
+                // Signal TX transmitter with PTP start position on very first block.
+                if let Some(tx) = start_tx_opt.take() {
+                    if let Err(e) = tx.send(write_pos as Clock) {
+                        tracing::warn!("Failed to send TX start time: {e}");
+                    } else {
+                        tracing::info!(pos = write_pos, "TX transmitter started at position");
+                    }
+                }
             })).await;
         } else {
-            server.receive_with_callback(Box::new(|_samples_count, _channels| {})).await;
+            // No DSP params — run minimal TX (silence) + empty RX callback
+            let current_ts_cb = Arc::clone(&current_timestamp);
+            let _ = start_tx.send(0 as Clock);
+            server.receive_with_callback(Box::new(move |samples_count, _channels| {
+                let pos = current_ts_cb.load(AOrdering::Relaxed);
+                current_ts_cb.store(pos.wrapping_add(samples_count), AOrdering::Release);
+            })).await;
         }
 
         Ok(())

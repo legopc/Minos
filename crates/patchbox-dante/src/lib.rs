@@ -23,5 +23,6 @@
 
 pub mod bridge;
 pub mod device;
+pub mod qos;
 pub mod sample_conv;
 

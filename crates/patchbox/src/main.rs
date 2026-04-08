@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let params_arc   = Arc::clone(&app_state.params);
         let meters_arc   = Arc::clone(&app_state.meters);
+        let rx_active_arc = Arc::clone(&app_state.dante_rx_active);
         let shutdown_arc = Arc::clone(&app_state.shutdown);
         let device_name  = cfg.device_name.clone();
         let n_in         = cfg.n_inputs;
@@ -112,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
             loop {
                 let dante = patchbox_dante::device::DanteDevice::new(&device_name, n_in, n_out);
                 tokio::select! {
-                    result = dante.start_with_params(Arc::clone(&params_arc), Arc::clone(&meters_arc)) => {
+                    result = dante.start_with_params(Arc::clone(&params_arc), Arc::clone(&meters_arc), Arc::clone(&rx_active_arc)) => {
                         match result {
                             Ok(()) => {
                                 // Graceful exit (stub returns Ok immediately).
