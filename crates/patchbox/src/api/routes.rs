@@ -7,7 +7,6 @@ use axum::{
 };
 use patchbox_core::scene;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::state::SharedState;
 

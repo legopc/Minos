@@ -1,0 +1,25 @@
+/target
+Cargo.lock
+**/*.rs.bk
+
+# web-ui build artefacts (none currently, but guard for future)
+web-ui/dist/
+web-ui/node_modules/
+
+# Config and data files
+*.toml.local
+/config.toml
+/scenes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Inferno state
+*.inferno_state

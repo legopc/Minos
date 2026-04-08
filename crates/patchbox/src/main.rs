@@ -2,7 +2,6 @@ use clap::Parser;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
-use tracing::info;
 
 mod api;
 mod config;
@@ -42,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         cfg.port = port;
     }
 
-    info!(
+    tracing::info!(
         "patchbox v{} starting — {}×{} matrix — port {}",
         env!("CARGO_PKG_VERSION"),
         cfg.n_inputs,
@@ -50,21 +49,33 @@ async fn main() -> anyhow::Result<()> {
         cfg.port
     );
 
-    // Start Dante device (stub until A1 resolved)
+    // Start Dante device — passes params Arc so the RX callback can read the live matrix
     let dante = patchbox_dante::device::DanteDevice::new(
         &cfg.device_name,
         cfg.n_inputs,
         cfg.n_outputs,
     );
-    dante.start().await?;
 
     let app_state = Arc::new(state::AppState::new(cfg.clone()));
+
+    // Spawn Dante in the background — it awaits a PTP clock then runs indefinitely
+    let params_arc = Arc::new(tokio::sync::RwLock::new(
+        patchbox_core::control::AudioParams::new(cfg.n_inputs, cfg.n_outputs),
+    ));
+    {
+        let dante_params = Arc::clone(&params_arc);
+        tokio::spawn(async move {
+            if let Err(e) = dante.start_with_params(dante_params).await {
+                tracing::error!("Dante device error: {}", e);
+            }
+        });
+    }
     let router = api::build_router(app_state.clone(), cfg.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!("Listening on http://{}", addr);
-    info!("Web UI: http://{}:{}", addr.ip(), cfg.port);
+    tracing::info!("Listening on http://{}", addr);
+    tracing::info!("Web UI: http://{}:{}", addr.ip(), cfg.port);
 
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())

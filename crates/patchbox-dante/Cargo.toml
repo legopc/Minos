@@ -5,6 +5,13 @@ edition.workspace = true
 license.workspace = true
 description = "inferno_aoip integration for dante-patchbox — Dante I/O layer"
 
+[features]
+# Enable real Dante audio I/O via inferno_aoip.
+# Requires: a running PTP/statime clock daemon, CAP_NET_RAW, Dante network.
+# Without this feature the crate compiles and runs with silence stubs.
+default = []
+inferno = ["dep:inferno_aoip"]
+
 [dependencies]
 patchbox-core = { workspace = true }
 tokio         = { workspace = true }
@@ -12,10 +19,7 @@ anyhow        = { workspace = true }
 thiserror     = { workspace = true }
 tracing       = { workspace = true }
 serde         = { workspace = true }
+atomic        = "0.6"
 
-# NOTE: inferno_aoip is not yet added as a dependency until the library API
-# (open question A1) is resolved. This crate currently contains stubs that
-# will be replaced when the integration point is confirmed.
-#
-# Candidate:
-#   inferno_aoip = { git = "https://gitlab.com/lumifaza/inferno", branch = "dev" }
+# Real Dante I/O — feature-gated: requires PTP daemon at runtime, not safe for CI
+inferno_aoip = { git = "https://github.com/teodly/inferno", optional = true }
