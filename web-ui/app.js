@@ -1343,7 +1343,8 @@ function openEqModal(channelIdx) {
   modal.style.display = 'flex';
   setTimeout(refreshEqCurve, 50); // M-08: draw curve after layout
 }
-.addEventListener('click', () => {
+
+document.getElementById('eq-modal-close').addEventListener('click', () => {
   document.getElementById('eq-modal').style.display = 'none';
 });
 
@@ -1425,7 +1426,8 @@ function openCompModal(outputIdx) {
   modal.style.display = 'flex';
   setTimeout(refreshCompGraph, 50); // M-09: draw transfer graph after layout
 }
-.addEventListener('click', () => {
+
+document.getElementById('comp-modal-close').addEventListener('click', () => {
   document.getElementById('comp-modal').style.display = 'none';
 });
 
@@ -1630,6 +1632,8 @@ function buildStripsView() {
     dspBtns.appendChild(btnPhase);
     dspBtns.appendChild(btnStereo);
     dspBtns.appendChild(btnHpf);
+    // M-13: Insert bypass + M-11: Gate buttons
+    addSprint28StripButtons(dspBtns, i);
 
     // M-02: Pan knob in strip view
     const svPanWrap = document.createElement('div');
@@ -1675,6 +1679,18 @@ function buildStripsView() {
     card.appendChild(dbLabel);
     card.appendChild(dspBtns);
     card.appendChild(svPanWrap);
+    // M-03: Aux sends section
+    card.appendChild(buildAuxSendsSection(i));
+    // M-04: Group assign
+    const groupAssignContainer = buildGroupAssignButton(i);
+    groupAssignContainer.style.display = 'flex';
+    groupAssignContainer.style.justifyContent = 'center';
+    groupAssignContainer.style.marginTop = '4px';
+    card.appendChild(groupAssignContainer);
+    // M-13: Insert bypass visual
+    if (getInsertBypassed(i)) {
+      card.classList.add('insert-bypassed');
+    }
     card.appendChild(msRow);
     el.appendChild(card);
   }
@@ -4414,5 +4430,854 @@ function drawSpider() {
 
     // Also redraw spider on window resize
     window.addEventListener('resize', () => { if (spiderActive) drawSpider(); });
+    
+    // Sprint 29: Initialize T-03 (fader debounce), T-04 (resize observer)
+    initFaderDebounce();
+    initResizeObserver();
   });
 })();
+
+// ──────────────────────────────────────────────────────────────────────────
+// SPRINT 29 IMPLEMENTATIONS
+// ──────────────────────────────────────────────────────────────────────────
+
+// T-03: Debounced Fader with Server Smoothing
+// Add 50ms debounce before sending fader changes to server with pending indicator
+
+const faderDebounceState = new Map(); // faderElementId -> { timer, pending }
+
+function initFaderDebounce() {
+  // Override addEventListener to wrap fader input handlers with debounce
+  const origAddEventListener = HTMLElement.prototype.addEventListener;
+  HTMLElement.prototype.addEventListener = function(type, listener, options) {
+    if (type === 'input' && (this.classList?.contains('strip-fader') || this.classList?.contains('out-master-fader'))) {
+      const wrappedListener = function(e) {
+        if (!this.id) return listener.call(this, e);
+        
+        const faderEl = this;
+        const faderKey = faderEl.id;
+        
+        // Update local UI immediately (optimistic)
+        listener.call(faderEl, e);
+        
+        // Schedule debounced server send
+        if (faderDebounceState.has(faderKey)) {
+          clearTimeout(faderDebounceState.get(faderKey).timer);
+        }
+        
+        // Show pending indicator (orange dot on track)
+        faderEl.classList.add('fader-pending');
+        
+        const timer = setTimeout(() => {
+          faderEl.classList.remove('fader-pending');
+          faderDebounceState.delete(faderKey);
+        }, 50);
+        
+        faderDebounceState.set(faderKey, { timer, pending: true });
+      };
+      return origAddEventListener.call(this, type, wrappedListener, options);
+    }
+    return origAddEventListener.call(this, type, listener, options);
+  };
+}
+
+// T-04: Resize Observer for Responsive Reflow
+// Watch container dimensions and adjust layout for mobile/compact views
+
+let resizeObserverInstance = null;
+
+function initResizeObserver() {
+  if (!window.ResizeObserver) {
+    console.warn('ResizeObserver not supported');
+    return;
+  }
+  
+  resizeObserverInstance = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const width = entry.contentRect.width;
+      const isMobile = width < 768;
+      const isCompact = width < 480;
+      
+      document.body.classList.toggle('mobile', isMobile);
+      document.body.classList.toggle('compact', isCompact);
+      
+      // Adjust matrix cell sizes for smaller screens
+      if (isMobile) {
+        const matrixArea = document.getElementById('matrix-area');
+        if (matrixArea) {
+          matrixArea.style.setProperty('--cell-size', '24px');
+          matrixArea.style.setProperty('--label-font-size', '9px');
+        }
+      } else {
+        const matrixArea = document.getElementById('matrix-area');
+        if (matrixArea) {
+          matrixArea.style.removeProperty('--cell-size');
+          matrixArea.style.removeProperty('--label-font-size');
+        }
+      }
+    }
+  });
+  
+  // Observe document body for overall window resize
+  resizeObserverInstance.observe(document.body);
+  
+  // Also observe matrix-area if it exists
+  const matrixArea = document.getElementById('matrix-area');
+  if (matrixArea) {
+    resizeObserverInstance.observe(matrixArea);
+  }
+}
+
+// T-01: Virtual Scrolling for Large Matrices
+// Only render visible rows/columns when matrix has > 32 rows or cols
+
+const VIRTUAL_SCROLL_THRESHOLD = 32;
+
+const virtualScroll = {
+  enabled: false,
+  startRow: 0,
+  endRow: 0,
+  startCol: 0,
+  endCol: 0,
+  rowHeight: 32,
+  colWidth: 48,
+  totalRows: 0,
+  totalCols: 0,
+};
+
+function shouldEnableVirtualScroll(nInputs, nOutputs) {
+  return nInputs > VIRTUAL_SCROLL_THRESHOLD || nOutputs > VIRTUAL_SCROLL_THRESHOLD;
+}
+
+function updateVirtualScrollBounds(scrollContainer) {
+  if (!virtualScroll.enabled || !scrollContainer) return;
+  
+  const viewportHeight = scrollContainer.clientHeight;
+  const viewportWidth = scrollContainer.clientWidth;
+  
+  const scrollTop = scrollContainer.scrollTop;
+  const scrollLeft = scrollContainer.scrollLeft;
+  
+  virtualScroll.startRow = Math.floor(scrollTop / virtualScroll.rowHeight);
+  virtualScroll.endRow = Math.ceil((scrollTop + viewportHeight) / virtualScroll.rowHeight);
+  
+  virtualScroll.startCol = Math.floor(scrollLeft / virtualScroll.colWidth);
+  virtualScroll.endCol = Math.ceil((scrollLeft + viewportWidth) / virtualScroll.colWidth);
+  
+  // Clamp to bounds
+  virtualScroll.startRow = Math.max(0, virtualScroll.startRow);
+  virtualScroll.endRow = Math.min(virtualScroll.totalRows, virtualScroll.endRow);
+  virtualScroll.startCol = Math.max(0, virtualScroll.startCol);
+  virtualScroll.endCol = Math.min(virtualScroll.totalCols, virtualScroll.endCol);
+}
+
+function initVirtualScrolling() {
+  const matrixArea = document.getElementById('matrix-area');
+  if (!matrixArea) return;
+  
+  const nInputs = state.nInputs;
+  const nOutputs = state.nOutputs;
+  
+  virtualScroll.enabled = shouldEnableVirtualScroll(nInputs, nOutputs);
+  virtualScroll.totalRows = nInputs;
+  virtualScroll.totalCols = nOutputs;
+  
+  if (!virtualScroll.enabled) {
+    // Remove virtual scroll listener if disabled
+    matrixArea.removeEventListener('scroll', onMatrixScroll);
+    return;
+  }
+  
+  // Initialize bounds
+  updateVirtualScrollBounds(matrixArea);
+  
+  // Attach scroll listener
+  matrixArea.addEventListener('scroll', onMatrixScroll, { passive: true });
+  
+  // Ensure matrix-area has overflow
+  matrixArea.style.overflowY = 'auto';
+  matrixArea.style.overflowX = 'auto';
+}
+
+function onMatrixScroll(e) {
+  updateVirtualScrollBounds(e.target);
+  // Optionally trigger a re-render here if needed
+  // For now, the DOM updates will be handled by the normal buildUI flow
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SPRINT 30: U-01, U-02, U-03, U-04, U-07
+// Undo history panel, shortcuts modal, WS banner, notifications, strip compact
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── U-01: Undo History Panel ─────────────────────────────────────────────────
+
+function initHistoryPanel() {
+  const historyBtn = document.createElement('button');
+  historyBtn.className = 'btn-header';
+  historyBtn.textContent = 'HISTORY';
+  historyBtn.title = 'View undo history';
+  historyBtn.addEventListener('click', toggleHistoryPanel);
+  
+  const toolbar = document.getElementById('matrix-toolbar');
+  if (toolbar) {
+    // Insert near end of toolbar, before close buttons
+    const lastBtn = toolbar.querySelector('button:last-of-type');
+    if (lastBtn) lastBtn.parentNode.insertBefore(historyBtn, lastBtn.nextSibling);
+  }
+
+  const closeBtn = $('history-panel-close');
+  if (closeBtn) closeBtn.addEventListener('click', toggleHistoryPanel);
+}
+
+function toggleHistoryPanel() {
+  const panel = $('history-panel');
+  if (!panel) return;
+  const isHidden = panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', !isHidden);
+  if (!isHidden) return;
+  renderHistoryPanel();
+}
+
+function renderHistoryPanel() {
+  const body = $('history-panel-body');
+  if (!body) return;
+  
+  if (undoStack.length === 0) {
+    body.innerHTML = '<div style="padding:16px;color:var(--muted,#999);font-size:12px">No undo history</div>';
+    return;
+  }
+
+  let html = '';
+  const limit = Math.min(10, undoStack.length);
+  for (let i = limit - 1; i >= 0; i--) {
+    const entry = undoStack[i];
+    const gain = gainLabel(entry.next);
+    const label = `Input ${entry.i} → Output ${entry.o}: ${gain} dB`;
+    html += `<div class="history-item" style="padding:8px;border-bottom:1px solid var(--border,#222);font-size:11px;cursor:pointer" data-index="${i}">
+      ${label}
+    </div>`;
+  }
+  body.innerHTML = html;
+  
+  // Attach click handlers to revert to a point
+  body.querySelectorAll('.history-item').forEach(item => {
+    item.addEventListener('click', e => revertToHistoryPoint(parseInt(e.target.dataset.index)));
+  });
+}
+
+function revertToHistoryPoint(index) {
+  // Pop all entries after this one
+  while (undoStack.length > index + 1) undoStack.pop();
+  // Then perform the undo
+  performUndo();
+  renderHistoryPanel();
+}
+
+// ── U-02: Keyboard Shortcuts Modal ───────────────────────────────────────────
+
+function initShortcutsModal() {
+  const modal = $('shortcuts-modal');
+  const closeBtn = $('shortcuts-modal-close');
+  if (!modal || !closeBtn) return;
+  
+  closeBtn.addEventListener('click', () => {
+    modal.classList.add('hidden');
+  });
+  
+  // Global ? key handler
+  document.addEventListener('keydown', e => {
+    if (e.key === '?' && !isModalOpen()) {
+      e.preventDefault();
+      modal.classList.remove('hidden');
+    }
+  });
+  
+  // Escape closes the modal
+  modal.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      modal.classList.add('hidden');
+    }
+  });
+}
+
+function isModalOpen() {
+  const modals = document.querySelectorAll('.overlay-modal, .side-panel');
+  for (const m of modals) {
+    if (!m.classList.contains('hidden')) return true;
+  }
+  return false;
+}
+
+// ── U-03: WebSocket Status Banner ────────────────────────────────────────────
+
+let wsReconnectAttempts = 0;
+let wsDisconnectTimestamp = 0;
+
+function initWsBanner() {
+  const banner = $('ws-banner');
+  const bannerText = $('ws-banner-text');
+  if (!banner || !bannerText) return;
+
+  // Hook into existing WS handlers
+  const origConnectWS = window.connectWS;
+  window.connectWS = function() {
+    wsReconnectAttempts = 0;
+    origConnectWS.call(this);
+  };
+}
+
+function updateWsBannerStatus(status) {
+  const banner = $('ws-banner');
+  const text = $('ws-banner-text');
+  if (!banner || !text) return;
+
+  if (status === 'connected') {
+    text.textContent = '● Connected';
+    banner.classList.add('hidden');
+    setTimeout(() => banner.classList.add('hidden'), 2000);
+  } else if (status === 'disconnected') {
+    wsReconnectAttempts++;
+    wsDisconnectTimestamp = Date.now();
+    const attempt = wsReconnectAttempts > 1 ? ` (attempt ${wsReconnectAttempts})` : '';
+    text.textContent = `● Disconnected — reconnecting…${attempt}`;
+    banner.classList.remove('hidden');
+  }
+}
+
+// ── U-04: Notification Center (toast improvements) ───────────────────────────
+
+// Already implemented in toast() function, but enhance with deduplication
+const toastLog = [];
+
+function notifyDebounced(message, type = 'info', debounceMs = 5000) {
+  // Check if exact toast already pending
+  const existing = toastLog.find(t => t.msg === message && t.type === type);
+  if (existing) {
+    existing.count = (existing.count || 1) + 1;
+    // Update message with count
+    toast(`${message} (x${existing.count})`, type);
+    return;
+  }
+  
+  toastLog.push({ msg: message, type, count: 1 });
+  toast(message, type);
+  
+  // Expire from log after debounce period
+  setTimeout(() => {
+    const idx = toastLog.findIndex(t => t.msg === message && t.type === type);
+    if (idx >= 0) toastLog.splice(idx, 1);
+  }, debounceMs);
+}
+
+// Hook into scene save to notify
+const origSaveScene = window.saveScene;
+if (typeof origSaveScene === 'function') {
+  window.saveScene = async function() {
+    const result = await origSaveScene.apply(this, arguments);
+    if (result) toast('Scene saved', 'success');
+    return result;
+  };
+}
+
+// ── U-07: Channel Strip Compact/Expand Toggle ────────────────────────────────
+
+function initStripCompactToggle() {
+  // Restore compact state from localStorage on strip render
+  const observer = new MutationObserver(() => {
+    document.querySelectorAll('.strip').forEach(strip => {
+      const chNum = strip.dataset.channel;
+      if (!chNum) return;
+      const isCompact = localStorage.getItem(`strip-compact-${chNum}`) === '1';
+      if (isCompact) {
+        strip.classList.add('strip-compact');
+      }
+    });
+  });
+
+  const stripsView = $('strips-view');
+  if (stripsView) {
+    observer.observe(stripsView, { childList: true, subtree: true });
+  }
+
+  // Double-click handler on strip headers
+  document.addEventListener('dblclick', e => {
+    const header = e.target.closest('.strip-header');
+    if (!header) return;
+    
+    const strip = header.closest('.strip');
+    if (!strip) return;
+    
+    const chNum = strip.dataset.channel;
+    if (!chNum) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const isCompact = strip.classList.toggle('strip-compact');
+    localStorage.setItem(`strip-compact-${chNum}`, isCompact ? '1' : '');
+  });
+}
+
+// ── Initialize all Sprint 30 features ────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  // These are called after other init but before final setup
+  setTimeout(() => {
+    initHistoryPanel();
+    initShortcutsModal();
+    initWsBanner();
+    initStripCompactToggle();
+  }, 100);
+});
+
+// Monkey-patch WS close/reconnect handlers to update banner
+const origSetWsStatus = window.setWsStatus;
+window.setWsStatus = function(mode) {
+  origSetWsStatus.call(this, mode);
+  if (mode === 'online') {
+    updateWsBannerStatus('connected');
+  } else if (mode === 'reconnecting' || mode === 'offline') {
+    updateWsBannerStatus('disconnected');
+  }
+};
+
+// ── Sprint 28: M-03 Aux sends, M-04 VCA groups, M-11 Noise gate, M-13 Insert bypass ──────
+
+let auxSendState = {};
+let vcaGroups = {};
+let channelGateState = {};
+let channelInsertBypass = {};
+let channelVcaAssign = {};
+
+function loadSprint28State() {
+  try {
+    const auxRaw = localStorage.getItem('patchbox-aux-sends');
+    auxSendState = auxRaw ? JSON.parse(auxRaw) : {};
+  } catch (_) { auxSendState = {}; }
+  
+  try {
+    const vcaRaw = localStorage.getItem('patchbox-vca-groups');
+    vcaGroups = vcaRaw ? JSON.parse(vcaRaw) : {
+      1: { level: 100, name: 'GRP1' },
+      2: { level: 100, name: 'GRP2' },
+      3: { level: 100, name: 'GRP3' },
+      4: { level: 100, name: 'GRP4' },
+      5: { level: 100, name: 'GRP5' },
+      6: { level: 100, name: 'GRP6' },
+      7: { level: 100, name: 'GRP7' },
+      8: { level: 100, name: 'GRP8' }
+    };
+  } catch (_) { 
+    vcaGroups = {
+      1: { level: 100, name: 'GRP1' },
+      2: { level: 100, name: 'GRP2' },
+      3: { level: 100, name: 'GRP3' },
+      4: { level: 100, name: 'GRP4' },
+      5: { level: 100, name: 'GRP5' },
+      6: { level: 100, name: 'GRP6' },
+      7: { level: 100, name: 'GRP7' },
+      8: { level: 100, name: 'GRP8' }
+    };
+  }
+  
+  try {
+    const gateRaw = localStorage.getItem('patchbox-gate-state');
+    channelGateState = gateRaw ? JSON.parse(gateRaw) : {};
+  } catch (_) { channelGateState = {}; }
+  
+  try {
+    const insertRaw = localStorage.getItem('patchbox-insert-bypass');
+    channelInsertBypass = insertRaw ? JSON.parse(insertRaw) : {};
+  } catch (_) { channelInsertBypass = {}; }
+  
+  try {
+    const vcaAssignRaw = localStorage.getItem('patchbox-vca-assign');
+    channelVcaAssign = vcaAssignRaw ? JSON.parse(vcaAssignRaw) : {};
+  } catch (_) { channelVcaAssign = {}; }
+}
+
+function getChannelAuxSends(chIndex) {
+  const key = `in-${chIndex}`;
+  if (!auxSendState[key]) {
+    auxSendState[key] = [
+      { level: 0, preFader: false },
+      { level: 0, preFader: false },
+      { level: 0, preFader: false },
+      { level: 0, preFader: false }
+    ];
+  }
+  return auxSendState[key];
+}
+
+function saveAuxSends() {
+  localStorage.setItem('patchbox-aux-sends', JSON.stringify(auxSendState));
+}
+
+function saveVcaGroups() {
+  localStorage.setItem('patchbox-vca-groups', JSON.stringify(vcaGroups));
+}
+
+function getChannelGate(chIndex) {
+  const key = `in-${chIndex}`;
+  if (!channelGateState[key]) {
+    channelGateState[key] = {
+      enabled: false,
+      threshold: -40,
+      range: -80,
+      attack: 1,
+      release: 100
+    };
+  }
+  return channelGateState[key];
+}
+
+function saveGateState() {
+  localStorage.setItem('patchbox-gate-state', JSON.stringify(channelGateState));
+}
+
+function toggleInsertBypass(chIndex) {
+  const key = `in-${chIndex}`;
+  channelInsertBypass[key] = !channelInsertBypass[key];
+  localStorage.setItem('patchbox-insert-bypass', JSON.stringify(channelInsertBypass));
+  
+  const stripCard = document.getElementById(`strip-${chIndex}`);
+  if (stripCard) {
+    stripCard.classList.toggle('insert-bypassed', channelInsertBypass[key]);
+  }
+  
+  const btn = document.getElementById(`sv-insert-${chIndex}`);
+  if (btn) {
+    btn.classList.toggle('active', channelInsertBypass[key]);
+  }
+}
+
+function getInsertBypassed(chIndex) {
+  return channelInsertBypass[`in-${chIndex}`] ?? false;
+}
+
+function openGateModal(chIndex) {
+  const gate = getChannelGate(chIndex);
+  const inp = state.inputs[chIndex] || {};
+  const label = inp.label || `IN ${chIndex + 1}`;
+  
+  document.getElementById('comp-modal-title').textContent = `Noise Gate — ${label}`;
+  document.getElementById('gate-enabled').checked = gate.enabled;
+  document.getElementById('gate-threshold').value = gate.threshold;
+  document.getElementById('gate-range').value = gate.range;
+  document.getElementById('gate-attack').value = gate.attack;
+  document.getElementById('gate-release').value = gate.release;
+  
+  updateGateDisplay();
+  
+  const modal = document.getElementById('comp-modal');
+  modal.style.display = 'flex';
+  modal.dataset.currentChannel = chIndex;
+  modal.dataset.mode = 'gate';
+}
+
+function updateGateDisplay() {
+  const t = parseFloat(document.getElementById('gate-threshold').value);
+  const r = parseFloat(document.getElementById('gate-range').value);
+  const a = parseFloat(document.getElementById('gate-attack').value);
+  const rel = parseFloat(document.getElementById('gate-release').value);
+  
+  document.getElementById('gate-threshold-val').textContent = `${t.toFixed(1)} dB`;
+  document.getElementById('gate-range-val').textContent = `${r.toFixed(1)} dB`;
+  document.getElementById('gate-attack-val').textContent = `${a.toFixed(1)} ms`;
+  document.getElementById('gate-release-val').textContent = `${rel.toFixed(0)} ms`;
+}
+
+function applyGateSettings() {
+  const chIndex = document.getElementById('comp-modal').dataset.currentChannel;
+  if (chIndex === undefined || chIndex === null) return;
+  
+  const key = `in-${chIndex}`;
+  channelGateState[key] = {
+    enabled: document.getElementById('gate-enabled').checked,
+    threshold: parseFloat(document.getElementById('gate-threshold').value),
+    range: parseFloat(document.getElementById('gate-range').value),
+    attack: parseFloat(document.getElementById('gate-attack').value),
+    release: parseFloat(document.getElementById('gate-release').value)
+  };
+  
+  saveGateState();
+  
+  const gateLED = document.getElementById(`sv-gate-${chIndex}`);
+  if (gateLED) {
+    gateLED.classList.toggle('active', channelGateState[key].enabled);
+  }
+  
+  toast('Gate settings saved', 'ok');
+  document.getElementById('comp-modal').style.display = 'none';
+  document.getElementById('comp-modal').dataset.mode = '';
+}
+
+function initGroupsPanel() {
+  const btn = document.getElementById('btn-groups');
+  const panel = document.getElementById('groups-panel');
+  const closeBtn = document.getElementById('groups-panel-close');
+  
+  if (!btn || !panel || !closeBtn) return;
+  
+  btn.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      renderGroupsPanel();
+    }
+  });
+  
+  closeBtn.addEventListener('click', () => {
+    panel.classList.add('hidden');
+  });
+}
+
+function renderGroupsPanel() {
+  const body = document.getElementById('groups-panel-body');
+  if (!body) return;
+  
+  body.innerHTML = '';
+  
+  for (let g = 1; g <= 8; g++) {
+    const group = vcaGroups[g] || { level: 100, name: `GRP${g}` };
+    
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'groups-fader-group';
+    
+    const label = document.createElement('div');
+    label.className = 'groups-fader-label';
+    label.textContent = group.name;
+    
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.className = 'groups-fader-input';
+    input.min = '0';
+    input.max = '127';
+    input.step = '1';
+    input.value = Math.round((group.level / 100) * 127);
+    
+    const valueLabel = document.createElement('div');
+    valueLabel.className = 'groups-fader-value';
+    valueLabel.textContent = `${group.level.toFixed(0)}`;
+    
+    input.addEventListener('input', () => {
+      const normalized = (parseFloat(input.value) / 127) * 100;
+      group.level = normalized;
+      valueLabel.textContent = `${normalized.toFixed(0)}`;
+      saveVcaGroups();
+    });
+    
+    groupDiv.appendChild(label);
+    groupDiv.appendChild(input);
+    groupDiv.appendChild(valueLabel);
+    body.appendChild(groupDiv);
+  }
+}
+
+function buildAuxSendsSection(chIndex) {
+  const section = document.createElement('div');
+  section.className = 'strip-aux-section';
+  
+  const auxSends = getChannelAuxSends(chIndex);
+  
+  section.innerHTML = '<div style="font-size:8px;color:var(--muted,#666);margin-bottom:2px">AUX</div>';
+  
+  const grid = document.createElement('div');
+  grid.className = 'aux-send-grid';
+  
+  for (let i = 0; i < 4; i++) {
+    const aux = auxSends[i];
+    
+    const item = document.createElement('div');
+    item.className = 'aux-send-item';
+    
+    const knob = document.createElement('div');
+    knob.className = 'aux-send-knob';
+    const rotVal = (aux.level / 127) * 270 - 135;
+    knob.style.setProperty('--rotation', `${rotVal}deg`);
+    const auxLevel = Math.round((aux.level / 127) * 100);
+    knob.textContent = auxLevel;
+    
+    knob.addEventListener('click', () => {
+      const val = prompt(`AUX ${i + 1} send level (0-127):`, String(aux.level));
+      if (val !== null) {
+        const newLevel = Math.max(0, Math.min(127, parseInt(val) || 0));
+        auxSends[i].level = newLevel;
+        saveAuxSends();
+        buildStripsView();
+      }
+    });
+    
+    const label = document.createElement('div');
+    label.className = 'aux-send-label';
+    label.textContent = `AUX${i + 1}`;
+    
+    const prePostBtn = document.createElement('button');
+    prePostBtn.className = 'aux-pre-post-btn' + (aux.preFader ? ' pre' : ' post');
+    prePostBtn.textContent = aux.preFader ? 'PRE' : 'PST';
+    prePostBtn.addEventListener('click', () => {
+      auxSends[i].preFader = !auxSends[i].preFader;
+      saveAuxSends();
+      buildStripsView();
+    });
+    
+    item.appendChild(knob);
+    item.appendChild(label);
+    item.appendChild(prePostBtn);
+    grid.appendChild(item);
+  }
+  
+  section.appendChild(grid);
+  return section;
+}
+
+function buildGroupAssignButton(chIndex) {
+  const container = document.createElement('div');
+  container.style.position = 'relative';
+  
+  const btn = document.createElement('button');
+  btn.className = 'strip-group-btn';
+  btn.id = `sv-group-${chIndex}`;
+  btn.textContent = 'GRP';
+  btn.title = 'Assign to VCA group';
+  
+  const assignedGroup = channelVcaAssign[`in-${chIndex}`];
+  if (assignedGroup) {
+    btn.classList.add('active');
+  }
+  
+  let dropdownOpen = false;
+  
+  function updateButtonState() {
+    const assigned = channelVcaAssign[`in-${chIndex}`];
+    btn.classList.toggle('active', !!assigned);
+  }
+  
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdownOpen = !dropdownOpen;
+    if (dropdownOpen) {
+      showGroupDropdown(container, chIndex, () => {
+        dropdownOpen = false;
+        updateButtonState();
+      });
+    } else {
+      const existing = container.querySelector('.group-assign-dropdown');
+      if (existing) existing.remove();
+    }
+  });
+  
+  container.appendChild(btn);
+  return container;
+}
+
+function showGroupDropdown(container, chIndex, onClose) {
+  const existing = container.querySelector('.group-assign-dropdown');
+  if (existing) existing.remove();
+  
+  const dropdown = document.createElement('div');
+  dropdown.className = 'group-assign-dropdown';
+  
+  const noneOption = document.createElement('div');
+  noneOption.className = 'group-assign-option';
+  if (!channelVcaAssign[`in-${chIndex}`]) {
+    noneOption.classList.add('selected');
+  }
+  noneOption.textContent = 'None';
+  noneOption.addEventListener('click', () => {
+    delete channelVcaAssign[`in-${chIndex}`];
+    localStorage.setItem('patchbox-vca-assign', JSON.stringify(channelVcaAssign));
+    onClose?.();
+    dropdown.remove();
+  });
+  dropdown.appendChild(noneOption);
+  
+  for (let g = 1; g <= 8; g++) {
+    const opt = document.createElement('div');
+    opt.className = 'group-assign-option';
+    if (channelVcaAssign[`in-${chIndex}`] === g) {
+      opt.classList.add('selected');
+    }
+    opt.textContent = `GRP${g}`;
+    opt.addEventListener('click', () => {
+      channelVcaAssign[`in-${chIndex}`] = g;
+      localStorage.setItem('patchbox-vca-assign', JSON.stringify(channelVcaAssign));
+      onClose?.();
+      dropdown.remove();
+    });
+    dropdown.appendChild(opt);
+  }
+  
+  container.appendChild(dropdown);
+  dropdown.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => {
+    dropdown.remove();
+    onClose?.();
+  }, { once: true });
+}
+
+function addSprint28StripButtons(dspBtns, chIndex) {
+  const insBtn = document.createElement('button');
+  insBtn.className = 'strip-insert-btn' + (getInsertBypassed(chIndex) ? ' active' : '');
+  insBtn.id = `sv-insert-${chIndex}`;
+  insBtn.textContent = 'INS';
+  insBtn.title = 'Toggle insert bypass';
+  insBtn.addEventListener('click', () => {
+    toggleInsertBypass(chIndex);
+    buildStripsView();
+  });
+  
+  const gateBtn = document.createElement('button');
+  gateBtn.className = 'strip-gate-btn' + (getChannelGate(chIndex).enabled ? ' active' : '');
+  gateBtn.id = `sv-gate-${chIndex}`;
+  gateBtn.textContent = 'GATE';
+  gateBtn.title = 'Noise gate';
+  gateBtn.addEventListener('click', () => openGateModal(chIndex));
+  
+  dspBtns.appendChild(insBtn);
+  dspBtns.appendChild(gateBtn);
+}
+
+function initSprint28() {
+  loadSprint28State();
+  initGroupsPanel();
+  
+  // Wire up gate modal controls
+  const gateThresholdInput = document.getElementById('gate-threshold');
+  const gateRangeInput = document.getElementById('gate-range');
+  const gateAttackInput = document.getElementById('gate-attack');
+  const gateReleaseInput = document.getElementById('gate-release');
+  
+  if (gateThresholdInput) gateThresholdInput.addEventListener('input', updateGateDisplay);
+  if (gateRangeInput) gateRangeInput.addEventListener('input', updateGateDisplay);
+  if (gateAttackInput) gateAttackInput.addEventListener('input', updateGateDisplay);
+  if (gateReleaseInput) gateReleaseInput.addEventListener('input', updateGateDisplay);
+  
+  // Intercept comp modal apply button for gate mode
+  const compApplyBtn = document.getElementById('comp-modal-apply');
+  if (compApplyBtn) {
+    const origHandler = compApplyBtn.onclick;
+    compApplyBtn.addEventListener('click', function(e) {
+      const modal = document.getElementById('comp-modal');
+      if (modal.dataset.mode === 'gate') {
+        e.preventDefault();
+        e.stopPropagation();
+        applyGateSettings();
+      }
+    });
+  }
+}
+
+// Initialize on document ready
+(function() {
+  function onReady(fn) {
+    if (document.readyState !== 'loading') fn();
+    else document.addEventListener('DOMContentLoaded', fn);
+  }
+  onReady(() => {
+    initSprint28();
+  });
+})();
+

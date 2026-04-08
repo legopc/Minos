@@ -67,6 +67,8 @@
         <button id="btn-templates" class="btn-header" title="Routing templates">TEMPLATES</button>
         <!-- P-09: Spider/cable view -->
         <button id="btn-spider" class="btn-header" title="Spider/cable view">SPIDER</button>
+        <!-- M-04: VCA Groups panel -->
+        <button id="btn-groups" class="btn-header" title="VCA/DCA groups">GROUPS</button>
       </div>
 
       <!-- Output labels (top row) -->
@@ -228,12 +230,51 @@
             <input type="range" id="comp-makeup" min="0" max="24" step="0.5" value="0">
             <span id="comp-makeup-val" class="param-val">0.0 dB</span>
           </div>
+          <!-- M-11: Noise gate section -->
+          <hr style="border:none;border-top:1px solid var(--border,#222);margin:8px 0">
+          <div style="margin-top:8px"><strong style="font-size:11px">NOISE GATE</strong></div>
+          <label class="modal-row"><input type="checkbox" id="gate-enabled"> Enable Gate</label>
+          <div class="modal-row">
+            <label>Threshold</label>
+            <input type="range" id="gate-threshold" min="-80" max="0" step="0.5" value="-40">
+            <span id="gate-threshold-val" class="param-val">-40.0 dB</span>
+          </div>
+          <div class="modal-row">
+            <label>Range</label>
+            <input type="range" id="gate-range" min="-80" max="0" step="0.5" value="-80">
+            <span id="gate-range-val" class="param-val">-80.0 dB</span>
+          </div>
+          <div class="modal-row">
+            <label>Attack</label>
+            <input type="range" id="gate-attack" min="0.1" max="200" step="0.1" value="1">
+            <span id="gate-attack-val" class="param-val">1.0 ms</span>
+          </div>
+          <div class="modal-row">
+            <label>Release</label>
+            <input type="range" id="gate-release" min="10" max="2000" step="10" value="100">
+            <span id="gate-release-val" class="param-val">100 ms</span>
+          </div>
+          <div class="gate-indicator-row">
+            <span style="font-size:10px;color:var(--muted,#666)">Gate:</span>
+            <div id="gate-indicator" class="gate-led" title="Gate open indicator"></div>
+          </div>
         </div>
         <div class="modal-footer">
           <button id="comp-modal-apply" class="btn-primary">Apply</button>
         </div>
         <!-- M-09: Compressor transfer function graph -->
         <canvas id="comp-graph-canvas" class="comp-graph-canvas" width="200" height="100"></canvas>
+      </div>
+    </div>
+
+    <!-- M-04: VCA/DCA groups panel -->
+    <div id="groups-panel" class="side-panel hidden">
+      <div class="side-panel-header">
+        <span>VCA GROUPS</span>
+        <button id="groups-panel-close" class="btn-icon" title="Close">✕</button>
+      </div>
+      <div class="side-panel-body" id="groups-panel-body">
+        <!-- populated by JS -->
       </div>
     </div>
 
@@ -322,6 +363,49 @@
         <!-- populated by JS -->
       </div>
     </div>
+  </div>
+
+  <!-- U-01: Undo history panel -->
+  <div id="history-panel" class="side-panel hidden">
+    <div class="side-panel-header">
+      <span>UNDO HISTORY</span>
+      <button id="history-panel-close" class="btn-icon" title="Close">✕</button>
+    </div>
+    <div class="side-panel-body" id="history-panel-body">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- U-02: Keyboard shortcuts modal -->
+  <div id="shortcuts-modal" class="overlay-modal hidden">
+    <div class="modal-inner shortcuts-modal-inner">
+      <div class="modal-header">
+        <span>KEYBOARD SHORTCUTS</span>
+        <button id="shortcuts-modal-close" class="btn-icon" title="Close">✕</button>
+      </div>
+      <div class="modal-body shortcuts-body">
+        <div class="shortcuts-column">
+          <h4>Navigation</h4>
+          <div class="shortcut-row"><kbd>?</kbd> Show this help</div>
+          <div class="shortcut-row"><kbd>Esc</kbd> Close modal</div>
+        </div>
+        <div class="shortcuts-column">
+          <h4>Actions</h4>
+          <div class="shortcut-row"><kbd>Ctrl+Z</kbd> Undo</div>
+          <div class="shortcut-row"><kbd>Ctrl+Shift+Z</kbd> Redo</div>
+          <div class="shortcut-row"><kbd>S</kbd> Save scene</div>
+          <div class="shortcut-row"><kbd>F</kbd> Search/filter</div>
+          <div class="shortcut-row"><kbd>B</kbd> Batch mode</div>
+          <div class="shortcut-row"><kbd>T</kbd> Tree view</div>
+          <div class="shortcut-row"><kbd>Spider</kbd> Spider view</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- U-03: WebSocket status banner -->
+  <div id="ws-banner" class="ws-banner hidden">
+    <span id="ws-banner-text">● Disconnected</span>
   </div>
 
   <script src="app.js"></script>

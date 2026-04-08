@@ -1838,3 +1838,535 @@ body::after {
 
 /* ── P-09: Spider SVG overlay ──────────────────────────────────────────────── */
 #spider-svg { pointer-events: none; }
+
+/* ── SPRINT 29: Virtual Scrolling, Debounced Faders, Responsive Reflow ──── */
+
+/* T-03: Debounced Fader Pending Indicator */
+.strip-fader.fader-pending,
+.out-master-fader.fader-pending {
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.4);
+}
+
+.strip-fader.fader-pending::after,
+.out-master-fader.fader-pending::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -8px;
+  width: 6px;
+  height: 6px;
+  background: #f5a623;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  animation: fader-pulse 600ms infinite;
+}
+
+@keyframes fader-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* T-04: Responsive Reflow for Mobile/Compact Modes */
+body.mobile .matrix-cell {
+  min-width: 24px;
+  min-height: 24px;
+  font-size: 9px;
+}
+
+body.mobile .strip-label {
+  font-size: 9px;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.mobile .output-label {
+  font-size: 8px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.compact .matrix-cell {
+  min-width: 20px;
+  min-height: 20px;
+  font-size: 7px;
+}
+
+body.compact .strip-label,
+body.compact .output-label {
+  display: none;
+}
+
+body.compact .strip-meter {
+  display: none;
+}
+
+/* T-01: Virtual Scrolling Styles */
+#matrix-area {
+  position: relative;
+  overflow: auto;
+}
+
+#matrix-rows {
+  display: table;
+}
+
+.matrix-row {
+  display: table-row;
+}
+
+/* Phantom rows for scroll height maintenance (when virtual scrolling is active) */
+.matrix-phantom-row {
+  display: table-row;
+  height: 32px;
+  visibility: hidden;
+}
+
+
+/* ── Sprint 28: M-03 Aux sends, M-04 VCA groups, M-11 Noise gate, M-13 Insert bypass ──── */
+
+/* M-03: Aux sends section in strip */
+.strip-aux-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border, #222);
+}
+
+.aux-send-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.aux-send-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 8px;
+}
+
+.aux-send-knob {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 225deg,
+    var(--fg-dim, #444) 0deg,
+    var(--yellow, #f5a623) 225deg,
+    var(--yellow, #f5a623) 315deg,
+    var(--fg-dim, #444) 360deg
+  );
+  border: 1px solid var(--fg-dim, #555);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: var(--text, #eee);
+  font-weight: 500;
+}
+
+.aux-send-knob::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 8px;
+  background: var(--text, #eee);
+  border-radius: 1px;
+  top: 2px;
+}
+
+.aux-send-label {
+  font-size: 8px;
+  color: var(--muted, #666);
+  font-weight: 500;
+}
+
+.aux-pre-post-btn {
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  font-size: 7px;
+  background: var(--bg-light, #1a1a1a);
+  border: 1px solid var(--fg-dim, #444);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text, #eee);
+}
+
+.aux-pre-post-btn.pre { background: var(--bg, #0a0a0a); }
+.aux-pre-post-btn.post { background: var(--bg, #0a0a0a); }
+.aux-pre-post-btn.active { background: var(--yellow, #f5a623); color: var(--bg, #0a0a0a); border-color: var(--yellow, #f5a623); }
+
+/* M-04: VCA Groups */
+#groups-panel {
+  width: 280px;
+  right: 0;
+}
+
+.groups-fader-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border, #222);
+}
+
+.groups-fader-label {
+  font-size: 10px;
+  color: var(--muted, #666);
+  font-weight: 500;
+  text-align: center;
+}
+
+.groups-fader-input {
+  width: 100%;
+  height: 24px;
+}
+
+.groups-fader-value {
+  font-size: 9px;
+  color: var(--text, #eee);
+  text-align: center;
+}
+
+/* M-11: Noise gate controls */
+.gate-indicator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.gate-led {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-dim, #333);
+  border: 1px solid var(--border, #222);
+  box-shadow: inset 0 0 2px rgba(0,0,0,0.8);
+}
+
+.gate-led.open {
+  background: var(--green, #10b981);
+  box-shadow: 0 0 8px var(--green, #10b981), inset 0 0 2px rgba(0,0,0,0.8);
+}
+
+/* M-13: Insert bypass */
+.strip-insert-btn {
+  min-width: 32px;
+  padding: 0 6px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--bg-light, #1a1a1a);
+  border: 1px solid var(--fg-dim, #444);
+  border-radius: 3px;
+  color: var(--text, #eee);
+  cursor: pointer;
+}
+
+.strip-insert-btn.active {
+  background: var(--yellow, #f5a623);
+  color: var(--bg, #0a0a0a);
+  border-color: var(--yellow, #f5a623);
+}
+
+.channel-strip-card.insert-bypassed {
+  background: linear-gradient(135deg, rgba(245,166,35,0.03) 0%, rgba(245,166,35,0.01) 100%);
+  border-left: 2px solid var(--yellow, #f5a623);
+}
+
+.strip-gate-btn {
+  min-width: 32px;
+  padding: 0 6px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--bg-light, #1a1a1a);
+  border: 1px solid var(--fg-dim, #444);
+  border-radius: 3px;
+  color: var(--text, #eee);
+  cursor: pointer;
+}
+
+.strip-gate-btn.active {
+  background: var(--yellow, #f5a623);
+  color: var(--bg, #0a0a0a);
+  border-color: var(--yellow, #f5a623);
+}
+
+/* M-04: Group assign button in strip */
+.strip-group-btn {
+  min-width: 32px;
+  padding: 0 6px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--bg-light, #1a1a1a);
+  border: 1px solid var(--fg-dim, #444);
+  border-radius: 3px;
+  color: var(--text, #eee);
+  cursor: pointer;
+}
+
+.strip-group-btn.active {
+  background: var(--cyan, #06b6d4);
+  color: var(--bg, #0a0a0a);
+  border-color: var(--cyan, #06b6d4);
+}
+
+.group-assign-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 1000;
+  background: var(--bg, #0a0a0a);
+  border: 1px solid var(--border, #222);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  min-width: 80px;
+}
+
+.group-assign-option {
+  padding: 6px 12px;
+  font-size: 9px;
+  color: var(--text, #eee);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border, #222);
+  transition: background 0.1s;
+}
+
+.group-assign-option:hover {
+  background: var(--hover, rgba(255,255,255,0.04));
+}
+
+.group-assign-option.selected {
+  background: var(--cyan, #06b6d4);
+  color: var(--bg, #0a0a0a);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* SPRINT 30: U-01, U-02, U-03, U-04, U-07 */
+/* Undo history, shortcuts modal, WS banner, notifications, strip compact */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── U-01: History Panel ───────────────────────────────────────────────────── */
+
+.history-item {
+  transition: background 0.15s;
+}
+
+.history-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ── U-02: Shortcuts Modal ─────────────────────────────────────────────────── */
+
+.shortcuts-modal-inner {
+  min-width: 600px;
+  max-width: 700px;
+}
+
+.shortcuts-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 16px;
+}
+
+.shortcuts-column h4 {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #eee);
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--amber, #f59e0b);
+  padding-bottom: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted, #999);
+}
+
+.shortcut-row kbd {
+  display: inline-block;
+  background: var(--hover, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, #333);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text, #eee);
+  min-width: 50px;
+  text-align: center;
+}
+
+/* ── U-03: WebSocket Status Banner ─────────────────────────────────────────── */
+
+.ws-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(to right, var(--amber, #f59e0b), rgba(245, 158, 11, 0.8));
+  color: #000;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  animation: slideDown 0.3s ease-out;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ws-banner.hidden {
+  display: none;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ── U-04: Toast Notifications (enhanced) ───────────────────────────────────── */
+
+#toast-container {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 300px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: all;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg, #0a0a0a);
+  border: 1px solid var(--border, #222);
+  color: var(--text, #eee);
+  animation: toastSlideIn 0.3s ease-out;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.toast.show {
+  animation: toastSlideIn 0.3s ease-out forwards;
+}
+
+.toast:not(.show) {
+  animation: toastSlideOut 0.25s ease-in forwards;
+}
+
+.toast.info {
+  border-color: var(--cyan, #06b6d4);
+  background: rgba(6, 182, 212, 0.1);
+  color: var(--cyan, #06b6d4);
+}
+
+.toast.success, .toast.ok {
+  border-color: var(--green, #10b981);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--green, #10b981);
+}
+
+.toast.warning {
+  border-color: var(--amber, #f59e0b);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--amber, #f59e0b);
+}
+
+.toast.error, .toast.err {
+  border-color: var(--red, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--red, #ef4444);
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toastSlideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+}
+
+/* ── U-07: Strip Compact Mode ──────────────────────────────────────────────── */
+
+.strip {
+  transition: width 0.25s ease;
+}
+
+.strip.strip-compact {
+  width: 32px !important;
+  overflow: hidden;
+}
+
+.strip.strip-compact .strip-header {
+  writing-mode: horizontal-tb;
+  width: 100%;
+  height: auto;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.strip.strip-compact .strip-header span {
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 24px;
+  text-align: center;
+}
+
+.strip.strip-compact .strip-body,
+.strip.strip-compact .channel-controls,
+.strip.strip-compact .meter-label {
+  display: none;
+}
+
+.strip.strip-compact .channel-meter {
+  width: 100%;
+  height: 200px;
+  margin: 0;
+}
