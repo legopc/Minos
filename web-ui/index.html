@@ -78,6 +78,112 @@
       </div>
     </div>
 
+    <!-- D-05: EQ modal -->
+    <div id="eq-modal" class="overlay-modal" style="display:none">
+      <div class="modal-inner">
+        <div class="modal-header">
+          <span id="eq-modal-title">Parametric EQ</span>
+          <button id="eq-modal-close" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-row"><input type="checkbox" id="eq-enabled"> Enable EQ</label>
+          <table class="eq-table">
+            <thead><tr><th>En</th><th>Type</th><th>Freq</th><th></th><th>Gain</th><th></th><th>Q</th><th></th></tr></thead>
+            <tbody id="eq-bands">
+              <!-- Band 0 -->
+              <tr>
+                <td><input type="checkbox" id="eq-b0-enabled"></td>
+                <td><select id="eq-b0-type"><option value="low_shelf">Low Shelf</option><option value="peak">Peak</option><option value="high_shelf">High Shelf</option></select></td>
+                <td><input type="range" id="eq-b0-freq" min="20" max="20000" step="1" value="100"></td>
+                <td><span id="eq-b0-freq-val" class="param-val">100 Hz</span></td>
+                <td><input type="range" id="eq-b0-gain" min="-18" max="18" step="0.5" value="0"></td>
+                <td><span id="eq-b0-gain-val" class="param-val">0.0 dB</span></td>
+                <td><input type="range" id="eq-b0-q" min="0.1" max="10" step="0.01" value="0.707"></td>
+                <td><span id="eq-b0-q-val" class="param-val">0.71</span></td>
+              </tr>
+              <!-- Band 1 -->
+              <tr>
+                <td><input type="checkbox" id="eq-b1-enabled"></td>
+                <td><select id="eq-b1-type"><option value="low_shelf">Low Shelf</option><option value="peak" selected>Peak</option><option value="high_shelf">High Shelf</option></select></td>
+                <td><input type="range" id="eq-b1-freq" min="20" max="20000" step="1" value="500"></td>
+                <td><span id="eq-b1-freq-val" class="param-val">500 Hz</span></td>
+                <td><input type="range" id="eq-b1-gain" min="-18" max="18" step="0.5" value="0"></td>
+                <td><span id="eq-b1-gain-val" class="param-val">0.0 dB</span></td>
+                <td><input type="range" id="eq-b1-q" min="0.1" max="10" step="0.01" value="1"></td>
+                <td><span id="eq-b1-q-val" class="param-val">1.00</span></td>
+              </tr>
+              <!-- Band 2 -->
+              <tr>
+                <td><input type="checkbox" id="eq-b2-enabled"></td>
+                <td><select id="eq-b2-type"><option value="low_shelf">Low Shelf</option><option value="peak" selected>Peak</option><option value="high_shelf">High Shelf</option></select></td>
+                <td><input type="range" id="eq-b2-freq" min="20" max="20000" step="1" value="3000"></td>
+                <td><span id="eq-b2-freq-val" class="param-val">3000 Hz</span></td>
+                <td><input type="range" id="eq-b2-gain" min="-18" max="18" step="0.5" value="0"></td>
+                <td><span id="eq-b2-gain-val" class="param-val">0.0 dB</span></td>
+                <td><input type="range" id="eq-b2-q" min="0.1" max="10" step="0.01" value="1"></td>
+                <td><span id="eq-b2-q-val" class="param-val">1.00</span></td>
+              </tr>
+              <!-- Band 3 -->
+              <tr>
+                <td><input type="checkbox" id="eq-b3-enabled"></td>
+                <td><select id="eq-b3-type"><option value="low_shelf">Low Shelf</option><option value="peak">Peak</option><option value="high_shelf" selected>High Shelf</option></select></td>
+                <td><input type="range" id="eq-b3-freq" min="20" max="20000" step="1" value="10000"></td>
+                <td><span id="eq-b3-freq-val" class="param-val">10000 Hz</span></td>
+                <td><input type="range" id="eq-b3-gain" min="-18" max="18" step="0.5" value="0"></td>
+                <td><span id="eq-b3-gain-val" class="param-val">0.0 dB</span></td>
+                <td><input type="range" id="eq-b3-q" min="0.1" max="10" step="0.01" value="0.707"></td>
+                <td><span id="eq-b3-q-val" class="param-val">0.71</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-footer">
+          <button id="eq-modal-apply" class="btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- D-06: Compressor modal -->
+    <div id="comp-modal" class="overlay-modal" style="display:none">
+      <div class="modal-inner">
+        <div class="modal-header">
+          <span id="comp-modal-title">Compressor / Limiter</span>
+          <button id="comp-modal-close" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-row"><input type="checkbox" id="comp-enabled"> Enable Compressor</label>
+          <div class="modal-row">
+            <label>Threshold</label>
+            <input type="range" id="comp-threshold" min="-60" max="0" step="0.5" value="-12">
+            <span id="comp-threshold-val" class="param-val">-12.0 dB</span>
+          </div>
+          <div class="modal-row">
+            <label>Ratio</label>
+            <input type="range" id="comp-ratio" min="1" max="20" step="0.1" value="4">
+            <span id="comp-ratio-val" class="param-val">4.0:1</span>
+          </div>
+          <div class="modal-row">
+            <label>Attack</label>
+            <input type="range" id="comp-attack" min="0.1" max="200" step="0.1" value="10">
+            <span id="comp-attack-val" class="param-val">10.0 ms</span>
+          </div>
+          <div class="modal-row">
+            <label>Release</label>
+            <input type="range" id="comp-release" min="1" max="2000" step="1" value="100">
+            <span id="comp-release-val" class="param-val">100 ms</span>
+          </div>
+          <div class="modal-row">
+            <label>Make-up Gain</label>
+            <input type="range" id="comp-makeup" min="0" max="24" step="0.5" value="0">
+            <span id="comp-makeup-val" class="param-val">0.0 dB</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="comp-modal-apply" class="btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script src="app.js"></script>

@@ -15,8 +15,10 @@ const state = {
   nInputs:  0,
   nOutputs: 0,
   matrix:   [],    // [nInputs][nOutputs] = gain (0..1), 0 = not routed
-  inputs:   [],    // [{ label, mute, solo, gain_trim }]
-  outputs:  [],    // [{ label, mute, master_gain }]
+  inputs:   [],    // [{ label, mute, solo, gain_trim, eq }]
+  outputs:  [],    // [{ label, mute, master_gain, compressor }]
+  inputOrder:  [], // U-09: display permutation for inputs
+  outputOrder: [], // U-09: display permutation for outputs
   meters: {
     inputs:  [],   // f32 dBFS
     outputs: [],
@@ -135,15 +137,19 @@ function debounce(fn, ms = 80) {
 
 function buildUI() {
   const { nInputs, nOutputs, inputs, outputs } = state;
+  // Ensure order arrays are populated
+  if (!state.inputOrder  || state.inputOrder.length  !== nInputs)  state.inputOrder  = Array.from({length: nInputs},  (_, i) => i);
+  if (!state.outputOrder || state.outputOrder.length !== nOutputs) state.outputOrder = Array.from({length: nOutputs}, (_, o) => o);
 
-  // Output label row
+  // Output label row (rendered in outputOrder)
   elOutputLabels.innerHTML = '';
   const corner = document.createElement('div');
   corner.className = 'corner-cell';
   corner.textContent = 'IN\\OUT';
   elOutputLabels.appendChild(corner);
 
-  for (let o = 0; o < nOutputs; o++) {
+  for (let rank = 0; rank < nOutputs; rank++) {
+    const o = state.outputOrder[rank];
     const el = document.createElement('div');
     el.className = 'output-label';
     el.id = `out-label-${o}`;
@@ -172,26 +178,66 @@ function buildUI() {
       sendOutputMasterGain(o, g);
     });
 
+    // D-06: Compressor button per output
+    const btnComp = document.createElement('button');
+    btnComp.className = 'btn-icon' + (outputs[o]?.compressor?.enabled ? ' active' : '');
+    btnComp.textContent = 'C';
+    btnComp.title = 'Compressor/limiter';
+    btnComp.addEventListener('click', e => { e.stopPropagation(); openCompModal(o); });
+
     el.appendChild(nameSpan);
     el.appendChild(fader);
+    el.appendChild(btnComp);
     elOutputLabels.appendChild(el);
   }
 
-  // Matrix rows
+  // Matrix rows (rendered in inputOrder)
   elMatrixRows.innerHTML = '';
-  for (let i = 0; i < nInputs; i++) {
-    elMatrixRows.appendChild(buildInputRow(i));
+  for (let rank = 0; rank < nInputs; rank++) {
+    const i = state.inputOrder[rank];
+    elMatrixRows.appendChild(buildInputRow(i, rank));
   }
 
   // Meters
   buildMeters();
 }
 
-function buildInputRow(i) {
+function buildInputRow(i, rank) {
   const inp = state.inputs[i] || {};
   const row = document.createElement('div');
   row.className = 'matrix-row';
   row.id = `row-${i}`;
+  // U-09: drag-and-drop reorder
+  row.draggable = true;
+  row.dataset.index = i;
+  row.addEventListener('dragstart', e => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(i));
+    row.classList.add('dragging');
+  });
+  row.addEventListener('dragend', () => row.classList.remove('dragging'));
+  row.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.classList.add('drag-over'); });
+  row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+  row.addEventListener('drop', async e => {
+    e.preventDefault();
+    row.classList.remove('drag-over');
+    const draggedIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (isNaN(draggedIdx) || draggedIdx === i) return;
+    // Swap positions in inputOrder
+    const order = [...state.inputOrder];
+    const fromRank = order.indexOf(draggedIdx);
+    const toRank   = order.indexOf(i);
+    if (fromRank === -1 || toRank === -1) return;
+    order.splice(fromRank, 1);
+    order.splice(toRank, 0, draggedIdx);
+    state.inputOrder = order;
+    buildUI();
+    try {
+      await apiFetch('/channels/input/reorder', 'POST', { order });
+    } catch (err) {
+      toast('Reorder failed: ' + err.message, 'err');
+    }
+  });
 
   // Strip
   const strip = document.createElement('div');
@@ -232,14 +278,24 @@ function buildInputRow(i) {
     sendInputGainTrim(i, g);
   });
 
+  // D-05: EQ button per input
+  const btnEq = document.createElement('button');
+  btnEq.className = 'btn-icon' + (inp.eq?.enabled ? ' active' : '');
+  btnEq.textContent = 'EQ';
+  btnEq.title = 'Parametric EQ';
+  btnEq.id = `in-eq-${i}`;
+  btnEq.addEventListener('click', () => openEqModal(i));
+
   strip.appendChild(nameEl);
   strip.appendChild(btnM);
   strip.appendChild(btnS);
   strip.appendChild(fader);
+  strip.appendChild(btnEq);
   row.appendChild(strip);
 
-  // Matrix cells
-  for (let o = 0; o < state.nOutputs; o++) {
+  // Matrix cells — rendered in outputOrder
+  for (let rank = 0; rank < state.nOutputs; rank++) {
+    const o = state.outputOrder[rank];
     row.appendChild(buildCell(i, o));
   }
 
@@ -662,6 +718,9 @@ function applySnapshot(snap) {
 
   state.inputs  = snap.inputs  ?? [];
   state.outputs = snap.outputs ?? [];
+  // U-09: Preserve server-provided channel order (or default identity order).
+  state.inputOrder  = snap.input_order  ?? Array.from({length: state.nInputs},  (_, i) => i);
+  state.outputOrder = snap.output_order ?? Array.from({length: state.nOutputs}, (_, o) => o);
   state.meters.inputs  = new Array(state.nInputs).fill(-60);
   state.meters.outputs = new Array(state.nOutputs).fill(-60);
 
@@ -901,4 +960,165 @@ document.addEventListener('keydown', async e => {
       await toggleInputSolo(focus.row);
       break;
   }
+});
+
+// ── D-05: Parametric EQ modal ─────────────────────────────────────────────
+
+const EQ_BAND_TYPES = ['low_shelf', 'peak', 'high_shelf'];
+const EQ_BAND_LABELS = ['Low Shelf', 'Peak', 'High Shelf'];
+
+function openEqModal(channelIdx) {
+  const inp   = state.inputs[channelIdx] || {};
+  const eq    = inp.eq || { enabled: false, bands: [] };
+  const modal = document.getElementById('eq-modal');
+  modal.dataset.channel = channelIdx;
+
+  document.getElementById('eq-modal-title').textContent = `EQ — ${inp.label || 'IN ' + (channelIdx + 1)}`;
+  document.getElementById('eq-enabled').checked = eq.enabled || false;
+
+  const defaults = [
+    { band_type: 'low_shelf',  freq_hz:   100, gain_db: 0, q: 0.707 },
+    { band_type: 'peak',       freq_hz:   500, gain_db: 0, q: 1.0   },
+    { band_type: 'peak',       freq_hz:  3000, gain_db: 0, q: 1.0   },
+    { band_type: 'high_shelf', freq_hz: 10000, gain_db: 0, q: 0.707 },
+  ];
+
+  for (let b = 0; b < 4; b++) {
+    const band = (eq.bands || [])[b] || defaults[b];
+    document.getElementById(`eq-b${b}-enabled`).checked = band.enabled || false;
+    document.getElementById(`eq-b${b}-type`).value    = band.band_type || defaults[b].band_type;
+    document.getElementById(`eq-b${b}-freq`).value    = band.freq_hz   || defaults[b].freq_hz;
+    document.getElementById(`eq-b${b}-gain`).value    = band.gain_db   || 0;
+    document.getElementById(`eq-b${b}-q`).value       = band.q         || defaults[b].q;
+    document.getElementById(`eq-b${b}-freq-val`).textContent = Math.round(band.freq_hz || defaults[b].freq_hz) + ' Hz';
+    document.getElementById(`eq-b${b}-gain-val`).textContent = (band.gain_db || 0).toFixed(1) + ' dB';
+    document.getElementById(`eq-b${b}-q-val`).textContent    = (band.q || defaults[b].q).toFixed(2);
+  }
+
+  modal.style.display = 'flex';
+}
+
+document.getElementById('eq-modal-close').addEventListener('click', () => {
+  document.getElementById('eq-modal').style.display = 'none';
+});
+
+document.getElementById('eq-modal-apply').addEventListener('click', async () => {
+  const modal = document.getElementById('eq-modal');
+  const ch    = parseInt(modal.dataset.channel, 10);
+
+  const defaults = [
+    { band_type: 'low_shelf',  freq_hz:   100, q: 0.707 },
+    { band_type: 'peak',       freq_hz:   500, q: 1.0   },
+    { band_type: 'peak',       freq_hz:  3000, q: 1.0   },
+    { band_type: 'high_shelf', freq_hz: 10000, q: 0.707 },
+  ];
+
+  const bands = Array.from({length: 4}, (_, b) => ({
+    enabled:   document.getElementById(`eq-b${b}-enabled`).checked,
+    band_type: document.getElementById(`eq-b${b}-type`).value,
+    freq_hz:   parseFloat(document.getElementById(`eq-b${b}-freq`).value) || defaults[b].freq_hz,
+    gain_db:   parseFloat(document.getElementById(`eq-b${b}-gain`).value) || 0,
+    q:         parseFloat(document.getElementById(`eq-b${b}-q`).value)    || defaults[b].q,
+  }));
+
+  const eqParams = {
+    enabled: document.getElementById('eq-enabled').checked,
+    bands,
+  };
+
+  try {
+    await apiFetch(`/channels/input/${ch}/eq`, 'POST', eqParams);
+    state.inputs[ch] = state.inputs[ch] || {};
+    state.inputs[ch].eq = eqParams;
+    const btnEq = document.getElementById(`in-eq-${ch}`);
+    if (btnEq) btnEq.classList.toggle('active', eqParams.enabled);
+    toast('EQ updated', 'ok');
+    modal.style.display = 'none';
+  } catch (err) {
+    toast('EQ update failed: ' + err.message, 'err');
+  }
+});
+
+// Live label updates for EQ sliders
+for (let b = 0; b < 4; b++) {
+  const freqEl = document.getElementById(`eq-b${b}-freq`);
+  const gainEl = document.getElementById(`eq-b${b}-gain`);
+  const qEl    = document.getElementById(`eq-b${b}-q`);
+  if (freqEl) freqEl.addEventListener('input', () => {
+    document.getElementById(`eq-b${b}-freq-val`).textContent = Math.round(parseFloat(freqEl.value)) + ' Hz';
+  });
+  if (gainEl) gainEl.addEventListener('input', () => {
+    document.getElementById(`eq-b${b}-gain-val`).textContent = parseFloat(gainEl.value).toFixed(1) + ' dB';
+  });
+  if (qEl) qEl.addEventListener('input', () => {
+    document.getElementById(`eq-b${b}-q-val`).textContent = parseFloat(qEl.value).toFixed(2);
+  });
+}
+
+// ── D-06: Compressor modal ────────────────────────────────────────────────
+
+function openCompModal(outputIdx) {
+  const out   = state.outputs[outputIdx] || {};
+  const comp  = out.compressor || {};
+  const modal = document.getElementById('comp-modal');
+  modal.dataset.channel = outputIdx;
+
+  document.getElementById('comp-modal-title').textContent = `Compressor — ${out.label || 'OUT ' + (outputIdx + 1)}`;
+  document.getElementById('comp-enabled').checked         = comp.enabled        || false;
+  document.getElementById('comp-threshold').value         = comp.threshold_db   ?? -12;
+  document.getElementById('comp-ratio').value             = comp.ratio          ?? 4;
+  document.getElementById('comp-attack').value            = comp.attack_ms      ?? 10;
+  document.getElementById('comp-release').value           = comp.release_ms     ?? 100;
+  document.getElementById('comp-makeup').value            = comp.makeup_gain_db ?? 0;
+
+  document.getElementById('comp-threshold-val').textContent = (comp.threshold_db   ?? -12).toFixed(1) + ' dB';
+  document.getElementById('comp-ratio-val').textContent     = (comp.ratio          ?? 4  ).toFixed(1) + ':1';
+  document.getElementById('comp-attack-val').textContent    = (comp.attack_ms      ?? 10 ).toFixed(1) + ' ms';
+  document.getElementById('comp-release-val').textContent   = (comp.release_ms     ?? 100).toFixed(0) + ' ms';
+  document.getElementById('comp-makeup-val').textContent    = (comp.makeup_gain_db ?? 0  ).toFixed(1) + ' dB';
+
+  modal.style.display = 'flex';
+}
+
+document.getElementById('comp-modal-close').addEventListener('click', () => {
+  document.getElementById('comp-modal').style.display = 'none';
+});
+
+document.getElementById('comp-modal-apply').addEventListener('click', async () => {
+  const modal = document.getElementById('comp-modal');
+  const ch    = parseInt(modal.dataset.channel, 10);
+
+  const compParams = {
+    enabled:        document.getElementById('comp-enabled').checked,
+    threshold_db:   parseFloat(document.getElementById('comp-threshold').value),
+    ratio:          parseFloat(document.getElementById('comp-ratio').value),
+    attack_ms:      parseFloat(document.getElementById('comp-attack').value),
+    release_ms:     parseFloat(document.getElementById('comp-release').value),
+    makeup_gain_db: parseFloat(document.getElementById('comp-makeup').value),
+  };
+
+  try {
+    await apiFetch(`/channels/output/${ch}/compressor`, 'POST', compParams);
+    state.outputs[ch] = state.outputs[ch] || {};
+    state.outputs[ch].compressor = compParams;
+    toast('Compressor updated', 'ok');
+    modal.style.display = 'none';
+  } catch (err) {
+    toast('Compressor update failed: ' + err.message, 'err');
+  }
+});
+
+// Live label updates for compressor sliders
+['threshold', 'ratio', 'attack', 'release', 'makeup'].forEach(name => {
+  const el = document.getElementById(`comp-${name}`);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    const valEl = document.getElementById(`comp-${name}-val`);
+    if (!valEl) return;
+    if (name === 'ratio')   valEl.textContent = v.toFixed(1) + ':1';
+    else if (name === 'attack')   valEl.textContent = v.toFixed(1) + ' ms';
+    else if (name === 'release')  valEl.textContent = v.toFixed(0) + ' ms';
+    else                          valEl.textContent = v.toFixed(1) + ' dB';
+  });
 });

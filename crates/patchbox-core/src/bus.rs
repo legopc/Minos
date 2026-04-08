@@ -1,5 +1,6 @@
-//! Output bus: master gain + mute applied after the matrix.
+//! Output bus: master gain + mute + compressor/limiter (D-06) applied after the matrix.
 
+use crate::compressor::CompressorParams;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,6 +9,9 @@ pub struct BusParams {
     /// Master gain for this output bus (0.0–4.0, 1.0 = unity).
     pub master_gain:  f32,
     pub mute:         bool,
+    /// D-06: compressor/limiter per output bus.
+    #[serde(default)]
+    pub compressor:   CompressorParams,
 }
 
 impl Default for BusParams {
@@ -16,13 +20,19 @@ impl Default for BusParams {
             label:       String::new(),
             master_gain: 1.0,
             mute:        false,
+            compressor:  CompressorParams::default(),
         }
     }
 }
 
 impl BusParams {
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), ..Default::default() }
+        Self {
+            label: label.into(),
+            master_gain: 1.0,
+            mute: false,
+            compressor: CompressorParams::default(),
+        }
     }
 
     pub fn effective_gain(&self) -> f32 {

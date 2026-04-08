@@ -23,17 +23,25 @@ pub struct AppState {
     /// R-13: Monotonic version counter — incremented on every state mutation.
     /// Used to generate ETags for optimistic concurrency control.
     pub state_version: Arc<AtomicU64>,
+    /// U-09: Display order for input channels (permutation of 0..N-1).
+    pub input_order: Arc<RwLock<Vec<usize>>>,
+    /// U-09: Display order for output channels (permutation of 0..N-1).
+    pub output_order: Arc<RwLock<Vec<usize>>>,
 }
 
 impl AppState {
     pub fn new(cfg: Config) -> Self {
+        let n_in  = cfg.n_inputs;
+        let n_out = cfg.n_outputs;
         Self {
-            params:         Arc::new(RwLock::new(AudioParams::new(cfg.n_inputs, cfg.n_outputs))),
-            meters:         Arc::new(RwLock::new(MeterFrame::new(cfg.n_inputs, cfg.n_outputs))),
+            params:         Arc::new(RwLock::new(AudioParams::new(n_in, n_out))),
+            meters:         Arc::new(RwLock::new(MeterFrame::new(n_in, n_out))),
             ws_connections: Arc::new(AtomicUsize::new(0)),
             started_at:     Instant::now(),
             shutdown:       Arc::new(Notify::new()),
             state_version:  Arc::new(AtomicU64::new(1)),
+            input_order:    Arc::new(RwLock::new((0..n_in).collect())),
+            output_order:   Arc::new(RwLock::new((0..n_out).collect())),
             config:         cfg,
         }
     }

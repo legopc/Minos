@@ -1,7 +1,6 @@
-//! Per-channel DSP strip: gain trim, mute, solo.
-//!
-//! Extends to EQ and dynamics in Phase 3.
+//! Per-channel DSP strip: gain trim, mute, solo, parametric EQ (D-05).
 
+use crate::eq::EqParams;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +10,9 @@ pub struct StripParams {
     pub gain_trim: f32,
     pub mute:      bool,
     pub solo:      bool,
+    /// D-05: 4-band parametric EQ per input strip.
+    #[serde(default)]
+    pub eq: EqParams,
 }
 
 impl Default for StripParams {
@@ -20,6 +22,7 @@ impl Default for StripParams {
             gain_trim: 1.0,
             mute:      false,
             solo:      false,
+            eq:        EqParams::default(),
         }
     }
 }
@@ -28,7 +31,10 @@ impl StripParams {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
-            ..Default::default()
+            gain_trim: 1.0,
+            mute: false,
+            solo: false,
+            eq: EqParams::default(),
         }
     }
 

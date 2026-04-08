@@ -8,3 +8,5 @@ pub mod strip;
 pub mod bus;
 pub mod control;
 pub mod scene;
+pub mod eq;
+pub mod compressor;

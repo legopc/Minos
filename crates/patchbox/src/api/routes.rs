@@ -5,7 +5,7 @@ use axum::{
     routing::{get, patch, post},
     Json, Router,
 };
-use patchbox_core::scene;
+use patchbox_core::{eq::EqParams, compressor::CompressorParams, scene};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 
@@ -20,9 +20,16 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/channels/input/:id/mute",      post(toggle_input_mute))
         .route("/channels/input/:id/solo",      post(toggle_input_solo))
         .route("/channels/input/:id/gain_trim", post(set_input_gain_trim))
+        // D-05: EQ per input strip
+        .route("/channels/input/:id/eq",        post(set_input_eq))
         .route("/channels/output/:id/name",     post(set_output_name))
         .route("/channels/output/:id/mute",     post(toggle_output_mute))
         .route("/channels/output/:id/master_gain", post(set_output_master_gain))
+        // D-06: Compressor per output bus
+        .route("/channels/output/:id/compressor", post(set_output_compressor))
+        // U-09: Channel reorder
+        .route("/channels/input/reorder",  post(reorder_inputs))
+        .route("/channels/output/reorder", post(reorder_outputs))
         .route("/scenes",           get(list_scenes).post(save_scene))
         .route("/scenes/:name",     get(get_scene).delete(delete_scene))
         .route("/scenes/:name/load", post(load_scene))
@@ -121,11 +128,21 @@ fn check_ptp_health() -> (bool, Option<i64>) {
 
 async fn get_state(State(state): State<SharedState>) -> impl IntoResponse {
     let params = state.params.read().await;
+    let input_order  = state.input_order.read().await;
+    let output_order = state.output_order.read().await;
     // R-13: Include current ETag so clients can use If-Match on subsequent mutations.
     let etag = state.etag();
     let mut headers = HeaderMap::new();
     headers.insert(axum::http::header::ETAG, etag.parse().unwrap());
-    (headers, Json(params.clone()))
+    // U-09: Include channel display order in state response.
+    let body = serde_json::json!({
+        "matrix":       params.matrix,
+        "inputs":       params.inputs,
+        "outputs":      params.outputs,
+        "input_order":  *input_order,
+        "output_order": *output_order,
+    });
+    (headers, Json(body))
 }
 
 // ── Matrix cell ──────────────────────────────────────────────────────────
@@ -413,4 +430,90 @@ async fn get_zone_state(
         .collect();
 
     Json(ZoneState { zone_id, outputs, inputs, matrix }).into_response()
+}
+
+// ── D-05: EQ per input strip ──────────────────────────────────────────────
+
+/// POST /api/v1/channels/input/:id/eq — replace full EQ params for one input.
+async fn set_input_eq(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(eq): Json<EqParams>,
+) -> impl IntoResponse {
+    let mut params = state.params.write().await;
+    match params.inputs.get_mut(id) {
+        Some(strip) => {
+            strip.eq = eq;
+            drop(params);
+            state.bump_version();
+            StatusCode::NO_CONTENT.into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// ── D-06: Compressor per output bus ──────────────────────────────────────
+
+/// POST /api/v1/channels/output/:id/compressor — replace compressor params.
+async fn set_output_compressor(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(comp): Json<CompressorParams>,
+) -> impl IntoResponse {
+    let mut params = state.params.write().await;
+    match params.outputs.get_mut(id) {
+        Some(bus) => {
+            bus.compressor = comp;
+            drop(params);
+            state.bump_version();
+            StatusCode::NO_CONTENT.into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// ── U-09: Channel reorder ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ReorderBody {
+    order: Vec<usize>,
+}
+
+/// POST /api/v1/channels/input/reorder — set display order for inputs.
+/// `order` is a permutation of [0..N-1]. Validates that it is exactly that.
+async fn reorder_inputs(
+    State(state): State<SharedState>,
+    Json(body): Json<ReorderBody>,
+) -> impl IntoResponse {
+    let n = state.params.read().await.inputs.len();
+    if !is_valid_permutation(&body.order, n) {
+        return (StatusCode::BAD_REQUEST, "order must be a permutation of [0..N-1]").into_response();
+    }
+    let mut order = state.input_order.write().await;
+    *order = body.order;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// POST /api/v1/channels/output/reorder — set display order for outputs.
+async fn reorder_outputs(
+    State(state): State<SharedState>,
+    Json(body): Json<ReorderBody>,
+) -> impl IntoResponse {
+    let n = state.params.read().await.outputs.len();
+    if !is_valid_permutation(&body.order, n) {
+        return (StatusCode::BAD_REQUEST, "order must be a permutation of [0..N-1]").into_response();
+    }
+    let mut order = state.output_order.write().await;
+    *order = body.order;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+fn is_valid_permutation(order: &[usize], n: usize) -> bool {
+    if order.len() != n { return false; }
+    let mut seen = vec![false; n];
+    for &i in order {
+        if i >= n || seen[i] { return false; }
+        seen[i] = true;
+    }
+    true
 }
