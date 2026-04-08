@@ -2,13 +2,13 @@
 
 > **Document type:** Engineering review and improvement backlog  
 > **Scope:** Full-stack Rust AoIP matrix mixer — Dante I/O, DSP core, axum REST/WS API, vanilla web UI, TUI, Docker/systemd  
-> **Total items:** 58 (4 bug fixes + 54 improvements) — 45 resolved (Sprints 1–9), 13 open  
+> **Total items:** 58 (4 bug fixes + 54 improvements) — 50 resolved (Sprints 1–12), 8 open  
 > **Generated:** July 2025; updated after Sprint 6 (April 2026)  
 > **Basis:** Research branches A–F (codebase structure, code quality, security, ops/reliability, web research, build hygiene) against commit `e30cba6`
 
 ---
 
-## Resolved Items (42) — Sprints 1–9
+## Resolved Items (50) — Sprints 1–12
 
 | ID | Title | Sprint |
 |----|-------|--------|
@@ -56,6 +56,16 @@
 | R-11 | SCHED_FIFO RT thread priority for DSP callback | Sprint 9 |
 | R-12 | No-alloc/no-lock DSP hot-path audit + comments | Sprint 9 |
 | R-13 | ETag optimistic locking on routing state | Sprint 9 |
+| O-05 | OCI image labels (version, source, description) | Sprint 10 |
+| U-05 | Undo/redo stack for matrix changes | Sprint 10 |
+| U-06 | Scene diff view — compare current state vs saved scene | Sprint 10 |
+| T-04 | Fuzz testing of REST API (cargo-fuzz on routes) | Sprint 10 |
+| D-05 | DSP: parametric EQ per input strip (biquad) | Sprint 11 |
+| D-06 | DSP: compressor/limiter per output bus | Sprint 11 |
+| U-09 | Input/output channel reorder (drag-and-drop) | Sprint 11 |
+| D-01 | Dante TX path — transmit_from_external_buffer ring buffers | Sprint 12 |
+| D-04 | Dante RX subscription/activity indicator in web UI | Sprint 12 |
+| D-10 | DSCP/QoS markings via nftables (EF for PTP, AF41 for RTP) | Sprint 12 |
 | S-04 | TLS termination via rustls (--tls-cert/--tls-key, optional feature) | Sprint 9 |
 
 ---

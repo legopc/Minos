@@ -50,9 +50,10 @@ Each bar control point:
 - [x] Systemd service
 
 ### Phase 1 — Real Audio
-- [ ] End-to-end audio path: Dante RX → matrix → Dante TX
-- [ ] TX ring buffer wiring (completes the inferno_aoip bridge)
-- [ ] Per-zone VU meters live in UI
+- [x] End-to-end audio path: Dante RX → matrix → Dante TX (Sprint 12, D-01)
+- [x] TX ring buffer wiring — transmit_from_external_buffer with atomic buffers (Sprint 12)
+- [x] Dante RX subscription/activity indicator (Sprint 12, D-04)
+- [x] Per-zone VU meters live in UI (meters written from callback)
 
 ### Phase 2 — Multi-zone / Multi-bar UI
 - [ ] Zone concept: group output channels into named zones (Bar 1, Bar 2, ...)
@@ -61,10 +62,10 @@ Each bar control point:
 - [ ] URL-based zone routing: `/zone/bar-1` shows only Bar 1 controls
 
 ### Phase 3 — DSP per strip/bus
-- [ ] Per-strip EQ (3-band parametric minimum)
-- [ ] Per-strip compressor / limiter
+- [x] Per-strip EQ — 4-band parametric biquad (Sprint 11, D-05)
+- [x] Per-strip/bus compressor / limiter (Sprint 11, D-06)
 - [ ] Ducking: BGM ducks when mic active
-- [ ] Per-bus EQ
+- [ ] Per-bus EQ (additional bands)
 
 ### Phase 4 — Authentication & access control
 - [ ] JWT-based auth (login page)
@@ -111,6 +112,24 @@ Each bar control point:
 > 4. **This file (`docs/PROJECT.md`) is the permanent project context.**
 >    Read it at the start of any new session before making decisions.
 >    Update it when the project scope or design decisions change.
+
+## Sprint Status (updated after each sprint)
+
+| Sprint | Items | Status | Commit |
+|--------|-------|--------|--------|
+| Sprint 1 | BUG-01, BUG-02, S-02, R-01, R-03 | ✅ Done | — |
+| Sprint 2 | BUG-03, BUG-04, S-07, R-06, O-07 | ✅ Done | — |
+| Sprint 3 | S-06, S-08, R-07, R-05, U-07, O-03 | ✅ Done | — |
+| Sprint 4 | R-08, R-02, R-09, R-10, U-03 | ✅ Done | — |
+| Sprint 5 | U-04, U-08, U-02, T-01, T-03/T-05 | ✅ Done | — |
+| Sprint 6 | U-01 (zone URL), D-09 (mDNS), S-01 (API key), D-03 (names) | ✅ Done | — |
+| Sprint 7 | S-01 (JWT), S-03 (rate limit), S-05 (RBAC), D-02 (PTP) | ✅ Done | — |
+| Sprint 8 | O-01, O-02, O-04, O-06, O-08, T-02 | ✅ Done | — |
+| Sprint 9 | R-04, R-11, R-12, R-13 | ✅ Done | — |
+| Sprint 10 | O-05, U-05, U-06, T-04 | ✅ Done | 5e5aade |
+| Sprint 11 | D-05, D-06, U-09 | ✅ Done | 8dec442 |
+| Sprint 12 | D-01, D-04, D-10 | ✅ Done | af74401 |
+| **Next** | Remaining 8 open items: D-07, D-08, S-01 (full JWT), U-01 zone view, S-05 RBAC, D-09 mDNS, D-03 names, D-02 PTP | 🔜 Planned | — |
 
 ## Reference Projects (in this ecosystem)
 
