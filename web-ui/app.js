@@ -468,6 +468,39 @@ function buildInputRow(i, rank) {
   btnFan.title = 'Fan-out: route to all outputs in current zone';
   btnFan.addEventListener('click', () => fanOutInput(i), { signal: sig });
 
+  // M-10: HPF quick toggle
+  const btnHpf = document.createElement('button');
+  btnHpf.className = 'btn-icon' + (inp.hpf_enabled ? ' active' : '');
+  btnHpf.textContent = 'HPF';
+  btnHpf.id = `in-hpf-${i}`;
+  btnHpf.title = `High-pass filter (${inp.hpf_hz ?? 80} Hz)`;
+  btnHpf.addEventListener('click', () => toggleHpf(i, btnHpf), { signal: sig });
+
+  // M-02: Pan/balance knob (range -1..+1)
+  const panWrap = document.createElement('div');
+  panWrap.className = 'pan-wrap';
+  panWrap.title = 'Pan / Balance';
+  const panSlider = document.createElement('input');
+  panSlider.type = 'range';
+  panSlider.className = 'pan-slider';
+  panSlider.id = `in-pan-${i}`;
+  panSlider.min = '-1'; panSlider.max = '1'; panSlider.step = '0.05';
+  panSlider.value = String(inp.pan ?? 0);
+  panSlider.title = `Pan: ${panLabel(inp.pan ?? 0)}`;
+  panSlider.addEventListener('input', () => {
+    const p = parseFloat(panSlider.value);
+    panSlider.title = `Pan: ${panLabel(p)}`;
+    sendInputPan(i, p);
+  }, { signal: sig });
+  panSlider.addEventListener('dblclick', e => {
+    e.preventDefault();
+    panSlider.value = '0';
+    sendInputPan(i, 0);
+    panSlider.title = 'Pan: C';
+    toast('Pan centred', 'ok');
+  }, { signal: sig });
+  panWrap.appendChild(panSlider);
+
   // W-09: colour tag dot
   const colorTag = buildColorTag(`in-${i}`);
 
@@ -477,7 +510,9 @@ function buildInputRow(i, rank) {
   strip.appendChild(btnM);
   strip.appendChild(btnS);
   strip.appendChild(fader);
+  strip.appendChild(panWrap);
   strip.appendChild(btnPhase);
+  strip.appendChild(btnHpf);
   strip.appendChild(btnEq);
   strip.appendChild(btnFan);
   row.appendChild(strip);
@@ -1306,9 +1341,9 @@ function openEqModal(channelIdx) {
   }
 
   modal.style.display = 'flex';
+  setTimeout(refreshEqCurve, 50); // M-08: draw curve after layout
 }
-
-document.getElementById('eq-modal-close').addEventListener('click', () => {
+.addEventListener('click', () => {
   document.getElementById('eq-modal').style.display = 'none';
 });
 
@@ -1388,9 +1423,9 @@ function openCompModal(outputIdx) {
   document.getElementById('comp-makeup-val').textContent    = (comp.makeup_gain_db ?? 0  ).toFixed(1) + ' dB';
 
   modal.style.display = 'flex';
+  setTimeout(refreshCompGraph, 50); // M-09: draw transfer graph after layout
 }
-
-document.getElementById('comp-modal-close').addEventListener('click', () => {
+.addEventListener('click', () => {
   document.getElementById('comp-modal').style.display = 'none';
 });
 
@@ -1585,9 +1620,37 @@ function buildStripsView() {
     btnStereo.textContent = '⊸';
     btnStereo.title = 'Stereo link';
     btnStereo.addEventListener('click', () => toggleStereoLink && toggleStereoLink(`in-${i}`, btnStereo));
+    const btnHpf = document.createElement('button');
+    btnHpf.className = 'btn-icon' + (inp.hpf_enabled ? ' active' : '');
+    btnHpf.id = `sv-hpf-${i}`;
+    btnHpf.textContent = 'HPF';
+    btnHpf.title = `High-pass filter (${inp.hpf_hz ?? 80} Hz)`;
+    btnHpf.addEventListener('click', () => toggleHpf(i, btnHpf));
     dspBtns.appendChild(btnEq);
     dspBtns.appendChild(btnPhase);
     dspBtns.appendChild(btnStereo);
+    dspBtns.appendChild(btnHpf);
+
+    // M-02: Pan knob in strip view
+    const svPanWrap = document.createElement('div');
+    svPanWrap.className = 'pan-wrap pan-wrap-strip';
+    svPanWrap.title = 'Pan / Balance';
+    const svPan = document.createElement('input');
+    svPan.type = 'range'; svPan.className = 'pan-slider';
+    svPan.id = `sv-pan-${i}`;
+    svPan.min = '-1'; svPan.max = '1'; svPan.step = '0.05';
+    svPan.value = String(inp.pan ?? 0);
+    svPan.title = `Pan: ${panLabel(inp.pan ?? 0)}`;
+    svPan.addEventListener('input', () => {
+      const p = parseFloat(svPan.value);
+      svPan.title = `Pan: ${panLabel(p)}`;
+      sendInputPan(i, p);
+    });
+    svPan.addEventListener('dblclick', e => {
+      e.preventDefault(); svPan.value = '0';
+      sendInputPan(i, 0); toast('Pan centred', 'ok');
+    });
+    svPanWrap.appendChild(svPan);
 
     // ── Mute / Solo row ───────────────────────────────────────────
     const msRow = document.createElement('div');
@@ -1611,6 +1674,7 @@ function buildStripsView() {
     card.appendChild(meterFader);
     card.appendChild(dbLabel);
     card.appendChild(dspBtns);
+    card.appendChild(svPanWrap);
     card.appendChild(msRow);
     el.appendChild(card);
   }
@@ -2072,6 +2136,318 @@ function runPatchbayChecks() {
   checkDanteConnectionLoss();
   updateDanteStatusDots();
 }
+
+// ── Sprint 24 — Pan, HPF, EQ Curve, Compressor Graph ─────────────────────
+
+// M-02: Pan helpers ───────────────────────────────────────────────────────
+
+function panLabel(p) {
+  if (Math.abs(p) < 0.04) return 'C';
+  const pct = Math.round(Math.abs(p) * 100);
+  return p < 0 ? `L${pct}` : `R${pct}`;
+}
+
+const sendInputPan = debounce(async (i, pan) => {
+  try {
+    await apiFetch(`/channels/input/${i}/pan`, 'POST', { pan });
+    state.inputs[i] = state.inputs[i] || {};
+    state.inputs[i].pan = pan;
+    updateStripGainStaging(i);
+  } catch (err) {
+    toast('Pan error: ' + err.message, 'err');
+  }
+}, 80);
+
+// M-10: HPF toggle ────────────────────────────────────────────────────────
+
+async function toggleHpf(i, btn) {
+  const inp = state.inputs[i] || {};
+  const enabled = !inp.hpf_enabled;
+  const hz = inp.hpf_hz || 80;
+  try {
+    await apiFetch(`/channels/input/${i}/hpf`, 'POST', { enabled, hz });
+    state.inputs[i] = state.inputs[i] || {};
+    state.inputs[i].hpf_enabled = enabled;
+    btn.classList.toggle('active', enabled);
+    // Sync the other HPF button (matrix row ↔ strip view)
+    const other = enabled ? [$(`in-hpf-${i}`), $(`sv-hpf-${i}`)] : [$(`in-hpf-${i}`), $(`sv-hpf-${i}`)];
+    other.forEach(b => { if (b && b !== btn) b.classList.toggle('active', enabled); });
+    haptic(20);
+    toast(`HPF ${enabled ? 'ON' : 'OFF'} — ${hz} Hz`, enabled ? 'ok' : 'warn');
+  } catch (err) {
+    toast('HPF error: ' + err.message, 'err');
+  }
+}
+
+// M-08: EQ frequency response curve ──────────────────────────────────────
+
+function computeBiquadCoeffs(type, freqHz, gainDb, q, sampleRate = 48000) {
+  const f0 = freqHz;
+  const w0 = 2 * Math.PI * f0 / sampleRate;
+  const cosW = Math.cos(w0);
+  const sinW = Math.sin(w0);
+  const A  = Math.pow(10, gainDb / 40);  // sqrt(10^(dB/20))
+  const alpha = sinW / (2 * q);
+  let b0, b1, b2, a0, a1, a2;
+
+  switch (type) {
+    case 'peak': {
+      b0 =  1 + alpha * A;
+      b1 = -2 * cosW;
+      b2 =  1 - alpha * A;
+      a0 =  1 + alpha / A;
+      a1 = -2 * cosW;
+      a2 =  1 - alpha / A;
+      break;
+    }
+    case 'low_shelf': {
+      const alphaS = sinW / 2 * Math.sqrt((A + 1/A) * (1/q - 1) + 2);
+      b0 =  A * ((A + 1) - (A - 1) * cosW + 2 * Math.sqrt(A) * alphaS);
+      b1 =  2 * A * ((A - 1) - (A + 1) * cosW);
+      b2 =  A * ((A + 1) - (A - 1) * cosW - 2 * Math.sqrt(A) * alphaS);
+      a0 =       (A + 1) + (A - 1) * cosW + 2 * Math.sqrt(A) * alphaS;
+      a1 = -2 * ((A - 1) + (A + 1) * cosW);
+      a2 =       (A + 1) + (A - 1) * cosW - 2 * Math.sqrt(A) * alphaS;
+      break;
+    }
+    case 'high_shelf': {
+      const alphaS = sinW / 2 * Math.sqrt((A + 1/A) * (1/q - 1) + 2);
+      b0 =  A * ((A + 1) + (A - 1) * cosW + 2 * Math.sqrt(A) * alphaS);
+      b1 = -2 * A * ((A - 1) + (A + 1) * cosW);
+      b2 =  A * ((A + 1) + (A - 1) * cosW - 2 * Math.sqrt(A) * alphaS);
+      a0 =        (A + 1) - (A - 1) * cosW + 2 * Math.sqrt(A) * alphaS;
+      a1 =  2 * ((A - 1) - (A + 1) * cosW);
+      a2 =        (A + 1) - (A - 1) * cosW - 2 * Math.sqrt(A) * alphaS;
+      break;
+    }
+    case 'high_pass': {
+      b0 =  (1 + cosW) / 2;
+      b1 = -(1 + cosW);
+      b2 =  (1 + cosW) / 2;
+      a0 =  1 + alpha;
+      a1 = -2 * cosW;
+      a2 =  1 - alpha;
+      break;
+    }
+    case 'low_pass': default: {
+      b0 = (1 - cosW) / 2;
+      b1 =  1 - cosW;
+      b2 = (1 - cosW) / 2;
+      a0 =  1 + alpha;
+      a1 = -2 * cosW;
+      a2 =  1 - alpha;
+      break;
+    }
+  }
+  return { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 };
+}
+
+function evalBiquadMagDb(c, freqHz, sampleRate = 48000) {
+  const w = 2 * Math.PI * freqHz / sampleRate;
+  const cosW = Math.cos(w), sinW = Math.sin(w);
+  const cos2W = Math.cos(2*w), sin2W = Math.sin(2*w);
+  // H(e^jw) numerator: b0 + b1*e^-jw + b2*e^-2jw
+  const numRe = c.b0 + c.b1 * cosW + c.b2 * cos2W;
+  const numIm = -(c.b1 * sinW + c.b2 * sin2W);
+  // H(e^jw) denominator: 1 + a1*e^-jw + a2*e^-2jw
+  const denRe = 1 + c.a1 * cosW + c.a2 * cos2W;
+  const denIm = -(c.a1 * sinW + c.a2 * sin2W);
+  const mag2 = (numRe*numRe + numIm*numIm) / (denRe*denRe + denIm*denIm);
+  return 10 * Math.log10(Math.max(mag2, 1e-20));
+}
+
+function drawEqCurve(canvas, bands) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0d18';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  const freqGrid = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+  const dbRange = 18;  // ±18 dB
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  freqGrid.forEach(f => {
+    const x = freqToX(f, W);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  });
+  [-12, -6, 0, 6, 12].forEach(db => {
+    const y = dbToY(db, H, dbRange);
+    ctx.strokeStyle = db === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)';
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  });
+
+  // Freq axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '8px monospace';
+  ['100', '1k', '10k'].forEach((lbl, idx) => {
+    const f = [100, 1000, 10000][idx];
+    ctx.fillText(lbl, freqToX(f, W) + 2, H - 2);
+  });
+
+  // Total response curve (sum of all enabled bands)
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const N = 300;
+  for (let x = 0; x < N; x++) {
+    const f = Math.pow(10, Math.log10(20) + x / N * Math.log10(20000/20));
+    let totalDb = 0;
+    bands.forEach(band => {
+      if (!band.enabled || !band.freq_hz) return;
+      const c = computeBiquadCoeffs(band.band_type, band.freq_hz, band.gain_db || 0, band.q || 0.707);
+      totalDb += evalBiquadMagDb(c, f);
+    });
+    const px = freqToX(f, W);
+    const py = dbToY(totalDb, H, dbRange);
+    x === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Per-band colour dots at centre freq
+  const bandColors = ['#22c55e', '#38bdf8', '#f97316', '#a78bfa'];
+  bands.forEach((band, b) => {
+    if (!band.enabled || !band.freq_hz) return;
+    const x = freqToX(band.freq_hz, W);
+    const c = computeBiquadCoeffs(band.band_type, band.freq_hz, band.gain_db || 0, band.q || 0.707);
+    const db = evalBiquadMagDb(c, band.freq_hz);
+    const y = dbToY(db, H, dbRange);
+    ctx.fillStyle = bandColors[b % bandColors.length];
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); ctx.fill();
+  });
+}
+
+function freqToX(f, W) {
+  return (Math.log10(f / 20) / Math.log10(20000 / 20)) * W;
+}
+function dbToY(db, H, range) {
+  return H/2 - (db / range) * (H/2 - 8);
+}
+
+// Hook into EQ modal: draw curve when modal opens and when sliders move
+function refreshEqCurve() {
+  const modal = document.getElementById('eq-modal');
+  if (!modal || modal.style.display === 'none') return;
+  const canvas = document.getElementById('eq-curve-canvas');
+  if (!canvas) return;
+  const defaults = [
+    { band_type: 'low_shelf',  freq_hz: 100,   gain_db: 0, q: 0.707 },
+    { band_type: 'peak',       freq_hz: 500,   gain_db: 0, q: 1.0   },
+    { band_type: 'peak',       freq_hz: 3000,  gain_db: 0, q: 1.0   },
+    { band_type: 'high_shelf', freq_hz: 10000, gain_db: 0, q: 0.707 },
+  ];
+  const bands = Array.from({length: 4}, (_, b) => ({
+    enabled:   document.getElementById(`eq-b${b}-enabled`)?.checked ?? false,
+    band_type: document.getElementById(`eq-b${b}-type`)?.value    || defaults[b].band_type,
+    freq_hz:   parseFloat(document.getElementById(`eq-b${b}-freq`)?.value) || defaults[b].freq_hz,
+    gain_db:   parseFloat(document.getElementById(`eq-b${b}-gain`)?.value) || 0,
+    q:         parseFloat(document.getElementById(`eq-b${b}-q`)?.value)    || defaults[b].q,
+  }));
+  canvas.width  = canvas.offsetWidth  || 400;
+  canvas.height = canvas.offsetHeight || 100;
+  drawEqCurve(canvas, bands);
+}
+
+// Wire up EQ slider inputs to refresh curve
+document.addEventListener('DOMContentLoaded', () => {
+  for (let b = 0; b < 4; b++) {
+    ['freq', 'gain', 'q', 'type'].forEach(field => {
+      document.getElementById(`eq-b${b}-${field}`)?.addEventListener('input', refreshEqCurve);
+      document.getElementById(`eq-b${b}-${field}`)?.addEventListener('change', refreshEqCurve);
+    });
+    document.getElementById(`eq-b${b}-enabled`)?.addEventListener('change', refreshEqCurve);
+  }
+  document.getElementById('eq-enabled')?.addEventListener('change', refreshEqCurve);
+});
+
+// M-09: Compressor transfer function graph ────────────────────────────────
+
+function drawCompTransferGraph(canvas, threshold, ratio, knee = 3) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0d18';
+  ctx.fillRect(0, 0, W, H);
+
+  const dbIn  = d => (d / W) * 80 - 80;   // 0..W → -80..0 dBFS input
+  const dbOut = d => H - ((d + 80) / 80) * H; // dBFS → canvas Y
+  const xOf   = db => ((db + 80) / 80) * W;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  [-60, -40, -20, 0].forEach(db => {
+    const x = xOf(db), y = dbOut(db);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  });
+
+  // Unity line (1:1 — no compression)
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(0, H); ctx.lineTo(W, 0); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Transfer curve
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let px = 0; px < W; px++) {
+    const inDb = dbIn(px);
+    let outDb;
+    const halfKnee = knee / 2;
+    if (inDb < threshold - halfKnee) {
+      outDb = inDb;
+    } else if (inDb > threshold + halfKnee) {
+      outDb = threshold + (inDb - threshold) / ratio;
+    } else {
+      // Soft knee
+      const t = (inDb - threshold + halfKnee) / knee;
+      outDb = inDb + (1/ratio - 1) * Math.pow(inDb - threshold + halfKnee, 2) / (2 * knee);
+    }
+    const py = dbOut(outDb);
+    px === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Threshold marker
+  const tx = xOf(threshold);
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx, H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Labels
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '8px monospace';
+  ctx.fillText('IN', W - 16, H - 2);
+  ctx.fillText('OUT', 2, 10);
+  ctx.fillStyle = '#ef4444';
+  ctx.fillText(threshold.toFixed(0) + 'dB', Math.max(2, tx - 18), 20);
+}
+
+function refreshCompGraph() {
+  const modal = document.getElementById('comp-modal');
+  if (!modal || modal.style.display === 'none') return;
+  const canvas = document.getElementById('comp-graph-canvas');
+  if (!canvas) return;
+  canvas.width  = canvas.offsetWidth  || 200;
+  canvas.height = canvas.offsetHeight || 100;
+  const threshold = parseFloat(document.getElementById('comp-threshold')?.value ?? -12);
+  const ratio     = parseFloat(document.getElementById('comp-ratio')?.value ?? 4);
+  drawCompTransferGraph(canvas, threshold, ratio);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  ['threshold', 'ratio'].forEach(name => {
+    document.getElementById(`comp-${name}`)?.addEventListener('input', refreshCompGraph);
+  });
+  document.getElementById('comp-enabled')?.addEventListener('change', refreshCompGraph);
+});
 
 // ── W-56: Dark/light theme toggle ─────────────────────────────────────────
 

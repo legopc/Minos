@@ -22,6 +22,10 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/channels/input/:id/gain_trim", post(set_input_gain_trim))
         // D-05: EQ per input strip
         .route("/channels/input/:id/eq",        post(set_input_eq))
+        // M-02: Pan/balance per input
+        .route("/channels/input/:id/pan",        post(set_input_pan))
+        // M-10: HPF per input
+        .route("/channels/input/:id/hpf",        post(set_input_hpf))
         .route("/channels/output/:id/name",     post(set_output_name))
         .route("/channels/output/:id/mute",     post(toggle_output_mute))
         .route("/channels/output/:id/master_gain", post(set_output_master_gain))
@@ -271,6 +275,46 @@ async fn set_input_gain_trim(
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].gain_trim = body.gain.clamp(0.0, 4.0);
+    drop(p);
+    state.bump_version();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// M-02: Pan/balance per input channel
+#[derive(Deserialize)]
+struct PanBody { pan: f32 }
+
+async fn set_input_pan(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(body): Json<PanBody>,
+) -> impl IntoResponse {
+    let mut p = state.params.write().await;
+    if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
+    p.inputs[id].pan = body.pan.clamp(-1.0, 1.0);
+    drop(p);
+    state.bump_version();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// M-10: HPF quick toggle per input channel
+#[derive(Deserialize)]
+struct HpfBody {
+    enabled: bool,
+    #[serde(default = "default_hpf_hz")]
+    hz: f32,
+}
+fn default_hpf_hz() -> f32 { 80.0 }
+
+async fn set_input_hpf(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(body): Json<HpfBody>,
+) -> impl IntoResponse {
+    let mut p = state.params.write().await;
+    if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
+    p.inputs[id].hpf_enabled = body.enabled;
+    p.inputs[id].hpf_hz      = body.hz.clamp(20.0, 2000.0);
     drop(p);
     state.bump_version();
     StatusCode::NO_CONTENT.into_response()
