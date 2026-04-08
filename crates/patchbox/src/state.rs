@@ -1,40 +1,27 @@
-use patchbox_core::control::AudioParams;
+use patchbox_core::control::{AudioParams, MeterFrame};
 use patchbox_core::scene;
-use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::config::Config;
 
-/// Live metering data broadcast to WebSocket clients.
-#[derive(Debug, Clone, Serialize)]
-pub struct MeterFrame {
-    /// One f32 per input channel (dBFS, roughly −60..0).
-    pub inputs:  Vec<f32>,
-    /// One f32 per output channel.
-    pub outputs: Vec<f32>,
-}
-
 pub struct AppState {
     pub config: Config,
-    /// Audio parameters shared between the control API and the audio bridge.
-    pub params: RwLock<AudioParams>,
-    /// Latest meter readings (updated by the audio thread).
-    pub meters: RwLock<MeterFrame>,
+    /// Audio parameters — shared between the REST API and the Dante audio bridge.
+    /// Both hold clones of this Arc so that API writes are immediately visible
+    /// to the RT callback (via `try_read`) and vice versa.
+    pub params: Arc<RwLock<AudioParams>>,
+    /// Live peak-metering data — written by the RT callback, read by the WS task.
+    pub meters: Arc<RwLock<MeterFrame>>,
 }
 
 impl AppState {
     pub fn new(cfg: Config) -> Self {
-        let params = AudioParams::new(cfg.n_inputs, cfg.n_outputs);
-        let meters = MeterFrame {
-            inputs:  vec![-60.0; cfg.n_inputs],
-            outputs: vec![-60.0; cfg.n_outputs],
-        };
         Self {
+            params: Arc::new(RwLock::new(AudioParams::new(cfg.n_inputs, cfg.n_outputs))),
+            meters: Arc::new(RwLock::new(MeterFrame::new(cfg.n_inputs, cfg.n_outputs))),
             config: cfg,
-            params: RwLock::new(params),
-            meters: RwLock::new(meters),
         }
     }
 

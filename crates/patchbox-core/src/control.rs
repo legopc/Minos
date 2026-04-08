@@ -27,3 +27,34 @@ impl AudioParams {
         }
     }
 }
+
+/// Live peak-metering data.
+///
+/// Updated at audio-callback rate (~20–48x/sec) from the RT thread,
+/// read at ~20 Hz by the WebSocket meter push task.
+/// Stored as dBFS (typically −60.0 .. 0.0).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeterFrame {
+    /// Peak dBFS per input channel.
+    pub inputs:  Vec<f32>,
+    /// Peak dBFS per output channel.
+    pub outputs: Vec<f32>,
+}
+
+impl MeterFrame {
+    pub fn new(n_inputs: usize, n_outputs: usize) -> Self {
+        Self {
+            inputs:  vec![-60.0; n_inputs],
+            outputs: vec![-60.0; n_outputs],
+        }
+    }
+
+    /// Convert linear peak (0.0..1.0) to dBFS, floored at −60 dBFS.
+    pub fn lin_to_dbfs(lin: f32) -> f32 {
+        if lin <= 0.0 {
+            -60.0
+        } else {
+            (20.0 * lin.log10()).max(-60.0)
+        }
+    }
+}

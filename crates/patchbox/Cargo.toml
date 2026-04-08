@@ -9,6 +9,10 @@ description = "Dante AoIP matrix mixer and DSP patchbay — main binary"
 name = "patchbox"
 path = "src/main.rs"
 
+[lib]
+name = "patchbox"
+path = "src/lib.rs"
+
 [dependencies]
 patchbox-core  = { workspace = true }
 patchbox-dante = { workspace = true }
@@ -43,3 +47,4 @@ futures-util = "0.3"
 
 [dev-dependencies]
 axum-test = "14"
+tempfile  = "3"

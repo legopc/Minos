@@ -7,7 +7,7 @@
 //! the rest of the binary compiles and runs in CI / dev without hardware.
 
 use anyhow::Result;
-use patchbox_core::control::AudioParams;
+use patchbox_core::control::{AudioParams, MeterFrame};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -36,7 +36,7 @@ impl DanteDevice {
     pub async fn start(&self) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(None).await
+            self.start_real(None, None).await
         }
         #[cfg(not(feature = "inferno"))]
         {
@@ -50,25 +50,36 @@ impl DanteDevice {
         }
     }
 
-    /// Start with a shared `AudioParams` reference so the RX callback can read
-    /// the live matrix state without locking.
+    /// Start with shared state so the RX callback can read the live matrix and
+    /// write back live meter readings.
+    ///
+    /// `params` — same `Arc` as `AppState.params`; the RX callback reads this
+    ///            with `try_read()` to avoid blocking the audio thread.
+    /// `meters` — same `Arc` as `AppState.meters`; the RX callback writes peak
+    ///            dBFS values after each block via `try_write()`.
     pub async fn start_with_params(
         &self,
         params: Arc<RwLock<AudioParams>>,
+        meters: Arc<RwLock<MeterFrame>>,
     ) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(Some(params)).await
+            self.start_real(Some(params), Some(meters)).await
         }
         #[cfg(not(feature = "inferno"))]
         {
             let _ = params;
+            let _ = meters;
             self.start().await
         }
     }
 
     #[cfg(feature = "inferno")]
-    async fn start_real(&self, params: Option<Arc<RwLock<AudioParams>>>) -> Result<()> {
+    async fn start_real(
+        &self,
+        params: Option<Arc<RwLock<AudioParams>>>,
+        meters: Option<Arc<RwLock<MeterFrame>>>,
+    ) -> Result<()> {
         use inferno_aoip::device_server::{DeviceServer, Settings};
 
         let short = if self.device_name.len() > 14 {
@@ -97,16 +108,13 @@ impl DanteDevice {
 
         tracing::info!("inferno_aoip DeviceServer started");
 
-        // If params are available, run the DSP bridge via the RX callback.
         if let Some(params) = params {
             let n_in  = self.n_inputs;
             let n_out = self.n_outputs;
 
-            // The callback is Fn (not FnMut), so we clone the Arc.
             server.receive_with_callback(Box::new(move |samples_count, channels| {
                 use crate::sample_conv::{i32_to_f32, f32_to_i32};
 
-                // Try to read params without blocking — skip this block if locked.
                 let guard = match params.try_read() {
                     Ok(g)  => g,
                     Err(_) => return,
@@ -115,32 +123,43 @@ impl DanteDevice {
                 let actual_in  = channels.len().min(n_in);
                 let block      = samples_count;
 
-                // Normalise RX samples to f32
-                let mut rx_f32: Vec<Vec<f32>> = (0..actual_in)
+                let rx_f32: Vec<Vec<f32>> = (0..actual_in)
                     .map(|i| channels[i][..block].iter().map(|&s| i32_to_f32(s)).collect())
                     .collect();
 
-                // Output scratch buffers
                 let mut tx_f32: Vec<Vec<f32>> = (0..n_out)
                     .map(|_| vec![0.0f32; block])
                     .collect();
 
-                // Build slice refs
-                let inputs_ref:  Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
-                let mut outputs_ref: Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
+                let inputs_ref:       Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
+                let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
                 let bridge = crate::bridge::AudioBridge::new(block);
                 bridge.process(&guard, &inputs_ref, &mut outputs_ref);
 
-                // Note: TX write-back into ring buffers is handled via
-                // transmit_from_external_buffer in a future phase. For now,
-                // the processed samples are computed but not yet transmitted.
-                // TODO: wire TX ring buffers (Phase 1, ticket p1-audio-path)
+                // Compute peak dBFS and write to meters (best-effort, non-blocking)
+                if let Some(ref m) = meters {
+                    if let Ok(mut mf) = m.try_write() {
+                        for (i, ch) in rx_f32.iter().enumerate() {
+                            if i < mf.inputs.len() {
+                                let peak = ch.iter().fold(0.0f32, |a, &s| a.max(s.abs()));
+                                mf.inputs[i] = MeterFrame::lin_to_dbfs(peak);
+                            }
+                        }
+                        for (i, ch) in tx_f32.iter().enumerate() {
+                            if i < mf.outputs.len() {
+                                let peak = ch.iter().fold(0.0f32, |a, &s| a.max(s.abs()));
+                                mf.outputs[i] = MeterFrame::lin_to_dbfs(peak);
+                            }
+                        }
+                    }
+                }
+
+                // TODO: wire TX ring buffers (transmit_from_external_buffer — Phase 2)
+                let _ = tx_f32.iter().map(|v| v.iter().map(|&s| f32_to_i32(s)));
             })).await;
         } else {
-            server.receive_with_callback(Box::new(|_samples_count, _channels| {
-                // No-op RX path — Dante device visible but no processing
-            })).await;
+            server.receive_with_callback(Box::new(|_samples_count, _channels| {})).await;
         }
 
         Ok(())

@@ -61,11 +61,11 @@ impl AudioBridge {
 
         patchbox_core::matrix::mix(&params.matrix, &processed, outputs, bs);
 
-        for j in 0..n_out {
+        for (j, out_ch) in outputs.iter_mut().enumerate().take(n_out) {
             let gain = params.outputs[j].effective_gain();
             if gain != 1.0 {
-                for s in 0..bs {
-                    outputs[j][s] *= gain;
+                for s in out_ch.iter_mut().take(bs) {
+                    *s *= gain;
                 }
             }
         }

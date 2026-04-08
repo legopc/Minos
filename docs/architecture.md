@@ -27,7 +27,7 @@
 │  │ solo   │             └───────────┘         └────────┘            │
 │  └────────┘                                                          │
 │                                                                      │
-│  AudioParams ◄──── triple_buffer ────► control thread               │
+│  AudioParams / MeterFrame ◄── Arc<RwLock> ──► control thread        │
 └──────────────────────────────────────────────────────────────────────┘
                         │
                         ▼
@@ -48,6 +48,43 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## Architecture Decisions (A1–A6 locked)
+
+### A1 — Sample format: `i32` (24-bit PCM) ✅ Resolved
+`inferno_aoip::Sample = i32`. PCM lives in the lower 24 bits of a signed 32-bit int.
+- Normalise to f32: `f32 = i32 as f32 / (1 << 23) as f32`
+- Denormalise: `i32 = (f32.clamp(-1.0, 1.0) * (1 << 23) as f32) as i32`
+- Implemented in `patchbox-dante/src/sample_conv.rs`
+
+### A2 — RT threading model: inline in RX callback ✅ Resolved
+DSP runs inline inside the `inferno_aoip` RX callback (`Fn`, not `FnMut`).
+- `AudioBridge::process()` is stack-only, no heap allocation on the hot path.
+- Shared state accessed via `Arc<RwLock<AudioParams>>::try_read()` — drops frame if locked (glitch-free skip).
+- Meter peaks written via `Arc<RwLock<MeterFrame>>::try_write()` — best-effort, skipped if locked.
+
+### A3 — Shared state: `Arc<RwLock<AudioParams>>` ✅ Resolved
+`triple_buffer` was considered for lock-free RT ↔ control bridging but rejected for now:
+- The tokio `RwLock::try_read()` / `try_write()` are non-blocking; contention in this use-case is negligible (control writes are rare, ~10/sec max; RT reads happen per-block at ~750 Hz for 64-sample blocks at 48 kHz).
+- If profiling ever shows contention, `triple_buffer` can be added as a drop-in upgrade — `AudioParams` is already `Clone`.
+- **Decision: single `Arc<RwLock<AudioParams>>` shared between REST API and Dante RX callback.** Same Arc for `MeterFrame`.
+
+### A4 — Channel count target: 16×16 configurable ✅ Resolved
+- Default config: `n_inputs = 8, n_outputs = 8` (covers 7-bar pub system with headroom).
+- `MatrixParams` supports up to `MAX_CHANNELS = 64` without reallocation.
+- Configurable via `/etc/patchbox/config.toml` — no recompile needed for common sizes.
+
+### A5 — Dante multicast flow strategy ✅ Resolved
+- Use unicast flows by default (Dante Controller manages subscription).
+- `inferno_aoip` handles discovery and flow setup transparently.
+- No manual multicast configuration in patchbox — Dante Controller (DC) is the subscription manager.
+- Channel names (visible in DC) are set via `Settings::make_rx_channels()` / `make_tx_channels()`.
+
+### A6 — Web UI framework: plain HTML/JS/CSS ✅ Resolved
+- Zero npm, zero build step — matches the `inferno-iradio` ecosystem standard.
+- Embedded via `rust-embed` — single binary deployment, no separate web server.
+- IBM Plex Mono + Barlow Condensed from Google Fonts.
+- SPA fallback to `index.html` for future zone routing (`/zone/bar-1`).
+
 ## Crates
 
 ### `patchbox-core`
@@ -58,7 +95,7 @@ Pure DSP engine — no I/O, no async. RT-safe.
 | `matrix` | NxM f32 gain matrix. `mix()` is the RT hot path — stack-allocated, no heap. |
 | `strip`  | Per-input strip params: gain trim, mute, solo. |
 | `bus`    | Per-output bus params: master gain, mute. |
-| `control`| `AudioParams` aggregate struct — shared via `triple_buffer` between control and RT threads. |
+| `control`| `AudioParams` + `MeterFrame` — shared via `Arc<RwLock>` between control and RT threads. |
 | `scene`  | TOML scene load/save/list. |
 
 ### `patchbox-dante`
@@ -66,22 +103,23 @@ Dante I/O layer using `inferno_aoip`.
 
 | Module | Purpose |
 |--------|---------|
-| `device` | `DanteDevice` — wraps `DeviceServer`, configures RX/TX channels. |
-| `bridge` | `AudioBridge::process()` — RX callback hot path: strip → matrix → bus → TX. Sample format: `i32` (24-bit PCM) ↔ `f32` normalisation. |
+| `device`      | `DanteDevice` — wraps `DeviceServer`, configures RX/TX channels, wires DSP bridge. |
+| `bridge`      | `AudioBridge::process()` — RX callback hot path: strip → matrix → bus → peak meters. |
+| `sample_conv` | `i32_to_f32` / `f32_to_i32` conversion helpers with round-trip tests. |
 
 Feature flag `inferno` enables real `inferno_aoip` integration. Without the flag, stubs are used so CI works without a Dante network.
 
 ### `patchbox`
-The main binary.
+The main binary (also a library target for integration testing).
 
 | Module | Purpose |
 |--------|---------|
 | `main`        | Entry point: clap args, config load, tokio runtime, axum serve. |
-| `config`      | TOML config struct. |
-| `state`       | `AppState`: `RwLock<AudioParams>` + meter broadcast. |
+| `config`      | TOML config struct with defaults. |
+| `state`       | `AppState`: shared `Arc<RwLock<AudioParams>>` + `Arc<RwLock<MeterFrame>>`. |
 | `api/mod`     | `build_router()` — assembles all routes + `rust-embed` fallback. |
-| `api/routes`  | REST handlers. |
-| `api/ws`      | WebSocket handler — state snapshot on connect, ~20 Hz binary meter push. |
+| `api/routes`  | REST handlers — health, state, matrix, channels, scenes. |
+| `api/ws`      | WebSocket: state snapshot on connect + ~20 Hz binary Float32Array meter push. |
 | `api/assets`  | Embedded asset handler (SPA fallback to `index.html`). |
 
 ## Threading model
@@ -89,25 +127,19 @@ The main binary.
 ```
 [tokio runtime]
   └── axum HTTP tasks (one per connection)
-  └── WS meter push tasks
+        └── REST handlers: write to AppState.params (Arc<RwLock>)
+  └── WS meter push tasks (one per WS client, 20 Hz timer)
+        └── read AppState.meters (Arc<RwLock>)
 
-[inferno_aoip internals — tokio current_thread or dedicated threads]
-  └── RX callback thread (real-time priority)
-        └── AudioBridge::process()
-              ├── reads AudioParams snapshot (triple_buffer, lock-free)
-              ├── applies strip gains
-              ├── applies matrix mixing
-              └── applies bus gains → writes to TX ring buffers
+[inferno_aoip RX callback — real-time, dedicated thread]
+  └── AudioBridge::process()
+        ├── try_read(AppState.params)    — reads live matrix gains
+        ├── apply_strip() → matrix::mix() → apply_bus()
+        ├── try_write(AppState.meters)   — writes peak dBFS values
+        └── (TODO Phase 2) write TX ring buffers
 ```
 
-## Parameter bridge (control ↔ RT)
-
-`triple_buffer` provides a wait-free single-producer / single-consumer snapshot:
-
-- **Control thread** (axum handler): `writer.write(new_params); writer.publish()`
-- **RT thread** (RX callback): `if reader.update() { use reader.output_buffer() }`
-
-This means API writes are never blocked by the RT thread and vice versa. The RT thread always sees the _most recent complete snapshot_, never a partially-written one.
+Both `AppState.params` and `AppState.meters` are the **same `Arc` instances** shared between the tokio tasks and the Dante RT callback. No copies, no double buffering needed at this scale.
 
 ## Data flows
 
@@ -115,41 +147,40 @@ This means API writes are never blocked by the RT thread and vice versa. The RT 
 ```
 inferno_aoip RX callback
   → i32 samples per channel
-  → normalize to f32 [-1, 1]
-  → apply_strip() per input
-  → matrix::mix() — NxM cross-point gain multiplication
-  → apply_bus() per output
-  → denormalize to i32
-  → write to inferno_aoip TX ring buffers
+  → normalize to f32 [-1, 1]          sample_conv::i32_to_f32()
+  → apply_strip() per input            gain trim + mute + solo
+  → matrix::mix() — NxM cross-point   stack only, no alloc
+  → apply_bus() per output             master gain + mute
+  → write peak dBFS → MeterFrame       try_write(), skip if locked
+  → (Phase 2) denormalize to i32 → TX ring buffers
 ```
 
-### Metering (background, ~20 Hz)
+### Metering (~20 Hz to web clients)
 ```
-RT thread → compute peak dBFS per channel
-          → store in AppState::meters (RwLock<MeterFrame>)
+RT callback → try_write(AppState.meters) peak dBFS values
 
-WebSocket handler (tokio task, timer)
-  → read meters
-  → pack as binary Float32Array
-  → send to all connected WS clients
+WS handler (tokio task, 50ms timer)
+  → read(AppState.meters)
+  → pack as binary Float32Array [inputs..., outputs...]
+  → send to WebSocket client
 ```
 
 ### REST control
 ```
 HTTP PATCH /api/v1/matrix/3/5 { "gain": 0.75 }
-  → route handler reads AppState::params (write lock)
-  → updates MatrixParams::cells[3*M+5]
-  → on next RT cycle, triple_buffer publishes new snapshot
+  → route handler: write_lock(AppState.params)
+  → MatrixParams::set(3, 5, 0.75)
+  → unlock — RT callback picks up on next block
 ```
 
 ## inferno_aoip integration notes
 
-- `Sample = i32` — 24-bit PCM packed in the lower 24 bits of a 32-bit signed int
+- `Sample = i32` — 24-bit PCM packed in the lower 24 bits of a signed 32-bit int
 - Normalisation: `f32 = i32 as f32 / (1 << 23) as f32`
-- Denormalisation: `i32 = (f32 * (1 << 23) as f32) as i32`
-- `DeviceServer::start()` **blocks until a PTP clock is available** — never call this in tests or CI without a running clock daemon
-- Requires `CAP_NET_RAW` for multicast sockets
+- `DeviceServer::start()` **blocks until a PTP clock is available** — never call in tests or CI without `statime` running
+- Requires `CAP_NET_RAW` for multicast sockets (see `systemd/dante-patchbox.service`)
 - Channel names visible in Dante Controller are set via `Settings::make_rx_channels()` / `make_tx_channels()`
+- Feature-gated: `--features inferno` — CI always builds without this flag
 
 ## Scene format
 
@@ -162,13 +193,13 @@ outputs = 8
 cells   = [1.0, 0.0, 0.0, ...]   # row-major, nInputs * nOutputs entries
 
 [[inputs]]
-label     = "Mic 1"
+label     = "Bar 1 Mic"
 gain_trim = 1.0
 mute      = false
 solo      = false
 
 [[outputs]]
-label       = "Main L"
+label       = "Zone A Main"
 master_gain = 1.0
 mute        = false
 ```

@@ -30,7 +30,7 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
             "op":    "snapshot",
             "state": *params,
         });
-        if socket.send(Message::Text(snapshot.to_string().into())).await.is_err() {
+        if socket.send(Message::Text(snapshot.to_string())).await.is_err() {
             return;
         }
     }
@@ -49,7 +49,7 @@ async fn handle_socket(mut socket: WebSocket, state: SharedState) {
                 for &v in &meters.outputs { buf.extend_from_slice(&v.to_le_bytes()); }
                 drop(meters);
 
-                if socket.send(Message::Binary(buf.into())).await.is_err() {
+                if socket.send(Message::Binary(buf)).await.is_err() {
                     return; // client disconnected
                 }
             }

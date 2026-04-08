@@ -1,11 +1,10 @@
 use clap::Parser;
+use patchbox::api;
+use patchbox::config;
+use patchbox::state;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
-
-mod api;
-mod config;
-mod state;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -49,23 +48,21 @@ async fn main() -> anyhow::Result<()> {
         cfg.port
     );
 
-    // Start Dante device — passes params Arc so the RX callback can read the live matrix
-    let dante = patchbox_dante::device::DanteDevice::new(
-        &cfg.device_name,
-        cfg.n_inputs,
-        cfg.n_outputs,
-    );
-
     let app_state = Arc::new(state::AppState::new(cfg.clone()));
 
-    // Spawn Dante in the background — it awaits a PTP clock then runs indefinitely
-    let params_arc = Arc::new(tokio::sync::RwLock::new(
-        patchbox_core::control::AudioParams::new(cfg.n_inputs, cfg.n_outputs),
-    ));
+    // Share params and meters Arcs with the Dante device so the RX callback
+    // reads the live matrix and writes back live peak meters — same objects,
+    // no copies.
     {
-        let dante_params = Arc::clone(&params_arc);
+        let dante = patchbox_dante::device::DanteDevice::new(
+            &cfg.device_name,
+            cfg.n_inputs,
+            cfg.n_outputs,
+        );
+        let params_arc = Arc::clone(&app_state.params);
+        let meters_arc = Arc::clone(&app_state.meters);
         tokio::spawn(async move {
-            if let Err(e) = dante.start_with_params(dante_params).await {
+            if let Err(e) = dante.start_with_params(params_arc, meters_arc).await {
                 tracing::error!("Dante device error: {}", e);
             }
         });
