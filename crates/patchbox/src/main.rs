@@ -27,20 +27,25 @@ struct Args {
     /// Path to PID lock file (prevents duplicate instances).
     #[arg(long, default_value = "/tmp/patchbox.pid", env = "PATCHBOX_PID_FILE")]
     pid_file: String,
+
+    /// Log format: "text" (default) or "json" for structured log ingestion.
+    #[arg(long, default_value = "text", env = "RUST_LOG_FORMAT")]
+    log_format: String,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    // When TUI is active, suppress log output — it would corrupt the ratatui screen.
+    // R-08: Structured JSON logging — set RUST_LOG_FORMAT=json for Loki/Grafana ingestion.
     if !args.tui {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "patchbox=info,tower_http=warn".parse().unwrap()),
-            )
-            .init();
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "patchbox=info,tower_http=warn".parse().unwrap());
+        if args.log_format == "json" {
+            tracing_subscriber::fmt().json().with_env_filter(filter).init();
+        } else {
+            tracing_subscriber::fmt().with_env_filter(filter).init();
+        }
     }
 
     // R-03: PID lock file — prevents two instances corrupting shared scene files.
@@ -69,21 +74,41 @@ async fn main() -> anyhow::Result<()> {
         cfg.port
     );
 
+    // R-09: Prometheus metrics exporter — starts a background HTTP scrape endpoint.
+    let metrics_port = cfg.port + 1; // e.g. 9192 when main is 9191
+    if let Err(e) = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .with_http_listener(SocketAddr::from(([0, 0, 0, 0], metrics_port)))
+        .install()
+    {
+        tracing::warn!("Prometheus metrics exporter failed to start: {}", e);
+    } else {
+        tracing::info!("Prometheus metrics on http://0.0.0.0:{}/metrics", metrics_port);
+    }
+
     let app_state = Arc::new(state::AppState::new(cfg.clone()));
 
     // Share params and meters Arcs with the Dante device so the RX callback
     // reads the live matrix and writes back live peak meters.
+    // R-10: also pass shutdown Notify so the Dante task can exit gracefully.
     {
         let dante = patchbox_dante::device::DanteDevice::new(
             &cfg.device_name,
             cfg.n_inputs,
             cfg.n_outputs,
         );
-        let params_arc = Arc::clone(&app_state.params);
-        let meters_arc = Arc::clone(&app_state.meters);
+        let params_arc   = Arc::clone(&app_state.params);
+        let meters_arc   = Arc::clone(&app_state.meters);
+        let shutdown_arc = Arc::clone(&app_state.shutdown);
         tokio::spawn(async move {
-            if let Err(e) = dante.start_with_params(params_arc, meters_arc).await {
-                tracing::error!("Dante device error: {}", e);
+            tokio::select! {
+                result = dante.start_with_params(params_arc, meters_arc) => {
+                    if let Err(e) = result {
+                        tracing::error!("Dante device error: {}", e);
+                    }
+                }
+                _ = shutdown_arc.notified() => {
+                    tracing::info!("Dante task received shutdown signal");
+                }
             }
         });
     }
@@ -128,6 +153,9 @@ async fn main() -> anyhow::Result<()> {
             .with_graceful_shutdown(shutdown_signal())
             .await?;
     }
+
+    // R-10: Signal Dante task to shut down gracefully before exiting.
+    app_state.shutdown.notify_waiters();
 
     // Clean up PID file on graceful exit.
     let _ = std::fs::remove_file(&args.pid_file);

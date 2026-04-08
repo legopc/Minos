@@ -3,7 +3,8 @@ use patchbox_core::scene;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
-use tokio::sync::RwLock;
+use std::time::Instant;
+use tokio::sync::{Notify, RwLock};
 
 use crate::config::Config;
 
@@ -15,6 +16,10 @@ pub struct AppState {
     pub meters: Arc<RwLock<MeterFrame>>,
     /// Active WebSocket connection count — used for connection limit enforcement.
     pub ws_connections: Arc<AtomicUsize>,
+    /// Process start time — used for uptime reporting in /health.
+    pub started_at: Instant,
+    /// Notified on graceful shutdown — Dante task listens to cancel cleanly (R-10).
+    pub shutdown: Arc<Notify>,
 }
 
 impl AppState {
@@ -23,6 +28,8 @@ impl AppState {
             params:         Arc::new(RwLock::new(AudioParams::new(cfg.n_inputs, cfg.n_outputs))),
             meters:         Arc::new(RwLock::new(MeterFrame::new(cfg.n_inputs, cfg.n_outputs))),
             ws_connections: Arc::new(AtomicUsize::new(0)),
+            started_at:     Instant::now(),
+            shutdown:       Arc::new(Notify::new()),
             config:         cfg,
         }
     }

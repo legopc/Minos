@@ -7,6 +7,7 @@ use axum::{
 };
 use patchbox_core::scene;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
 
 use crate::state::SharedState;
 
@@ -31,19 +32,38 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
 
 #[derive(Serialize)]
 struct HealthResponse {
-    status:  &'static str,
-    version: &'static str,
-    inputs:  usize,
-    outputs: usize,
+    status:          &'static str,
+    version:         &'static str,
+    inputs:          usize,
+    outputs:         usize,
+    uptime_secs:     u64,
+    ws_connections:  usize,
+    scenes_dir_ok:   bool,
 }
 
-async fn health(State(state): State<SharedState>) -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status:  "ok",
-        version: env!("CARGO_PKG_VERSION"),
-        inputs:  state.config.n_inputs,
-        outputs: state.config.n_outputs,
-    })
+async fn health(State(state): State<SharedState>) -> impl IntoResponse {
+    let scenes_dir = state.scenes_dir();
+    // Check scene dir is writable by probing with metadata; if it doesn't exist yet that's ok.
+    let scenes_dir_ok = std::fs::create_dir_all(&scenes_dir).is_ok()
+        && scenes_dir.metadata().map(|m| !m.permissions().readonly()).unwrap_or(false);
+
+    let uptime_secs = state.started_at.elapsed().as_secs();
+    let ws_connections = state.ws_connections.load(Ordering::Relaxed);
+
+    // R-09: Prometheus metrics counters
+    metrics::gauge!("patchbox_ws_connections").set(ws_connections as f64);
+    metrics::gauge!("patchbox_uptime_seconds").set(uptime_secs as f64);
+
+    let body = HealthResponse {
+        status:         "ok",
+        version:        env!("CARGO_PKG_VERSION"),
+        inputs:         state.config.n_inputs,
+        outputs:        state.config.n_outputs,
+        uptime_secs,
+        ws_connections,
+        scenes_dir_ok,
+    };
+    Json(body)
 }
 
 // ── Full state snapshot ───────────────────────────────────────────────────

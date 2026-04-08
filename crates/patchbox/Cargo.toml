@@ -39,6 +39,9 @@ thiserror   = { workspace = true }
 # Logging
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
+# Prometheus metrics
+metrics                    = "0.24"
+metrics-exporter-prometheus = "0.16"
 # Misc
 chrono    = { version = "0.4", features = ["serde"] }
 uuid      = { version = "1", features = ["v4", "serde"] }

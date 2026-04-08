@@ -198,6 +198,8 @@ function buildCell(i, o) {
   const cell = document.createElement('div');
   cell.className = 'matrix-cell' + (active ? ' active' : '');
   cell.id = `cell-${i}-${o}`;
+  // U-03: hover tooltip shows current gain in dB; updated by applyGain().
+  cell.title = active ? `${gainLabel(gain)} dB (right-click to adjust)` : 'Click to route (right-click to set gain)';
   if (active) cell.setAttribute('data-gain', gainLabel(gain));
 
   cell.addEventListener('click', () => toggleCell(i, o));
@@ -207,7 +209,7 @@ function buildCell(i, o) {
 }
 
 function gainLabel(g) {
-  if (g <= 0) return '0.0';
+  if (g <= 0) return '-∞';
   const db = 20 * Math.log10(g);
   return db.toFixed(1);
 }
@@ -241,8 +243,11 @@ function applyGain(i, o, gain) {
   cell.classList.toggle('active', active);
   if (active) {
     cell.setAttribute('data-gain', gainLabel(gain));
+    // U-03: keep hover title in sync with current gain
+    cell.title = `${gainLabel(gain)} dB (right-click to adjust)`;
   } else {
     cell.removeAttribute('data-gain');
+    cell.title = 'Click to route (right-click to set gain)';
   }
 }
 
