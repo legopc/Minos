@@ -19,6 +19,7 @@ patchbox-dante = { workspace = true }
 
 # HTTP server
 axum        = { version = "0.7", features = ["macros", "ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower-http  = { version = "0.5", features = ["cors", "fs"] }
 tokio       = { workspace = true }
 # Asset embedding
@@ -52,12 +53,17 @@ mdns-sd   = "0.11"
 # S-03: Rate limiting — per-IP request throttling
 tower_governor = { version = "0.4", features = ["axum"] }
 governor       = "0.6"
+# S-04: TLS — rustls for HTTPS termination (optional, enabled by --tls-cert / --tls-key)
+rustls          = { version = "0.23", optional = true }
+rustls-pemfile  = { version = "2", optional = true }
+tokio-rustls    = { version = "0.26", optional = true }
 # Systemd watchdog / service notification (Linux only)
 sd-notify = { version = "0.4", optional = true }
 tower = "0.5.3"
 
 [features]
 systemd = ["sd-notify"]
+tls     = ["rustls", "rustls-pemfile", "tokio-rustls", "axum-server/tls-rustls"]
 
 [dev-dependencies]
 axum-test          = "14"

@@ -31,6 +31,14 @@ struct Args {
     /// Log format: "text" (default) or "json" for structured log ingestion.
     #[arg(long, default_value = "text", env = "RUST_LOG_FORMAT")]
     log_format: String,
+
+    /// S-04: Path to TLS certificate PEM file. When set, HTTPS is enabled.
+    #[arg(long, env = "PATCHBOX_TLS_CERT")]
+    tls_cert: Option<String>,
+
+    /// S-04: Path to TLS private key PEM file. Required when --tls-cert is set.
+    #[arg(long, env = "PATCHBOX_TLS_KEY")]
+    tls_key: Option<String>,
 }
 
 #[tokio::main]
@@ -89,25 +97,46 @@ async fn main() -> anyhow::Result<()> {
 
     // Share params and meters Arcs with the Dante device so the RX callback
     // reads the live matrix and writes back live peak meters.
-    // R-10: also pass shutdown Notify so the Dante task can exit gracefully.
+    // R-04: Auto-reconnect — the task restarts with exponential backoff on error.
+    // R-10: shutdown Notify cancels the retry loop gracefully.
     {
-        let dante = patchbox_dante::device::DanteDevice::new(
-            &cfg.device_name,
-            cfg.n_inputs,
-            cfg.n_outputs,
-        );
         let params_arc   = Arc::clone(&app_state.params);
         let meters_arc   = Arc::clone(&app_state.meters);
         let shutdown_arc = Arc::clone(&app_state.shutdown);
+        let device_name  = cfg.device_name.clone();
+        let n_in         = cfg.n_inputs;
+        let n_out        = cfg.n_outputs;
+
         tokio::spawn(async move {
-            tokio::select! {
-                result = dante.start_with_params(params_arc, meters_arc) => {
-                    if let Err(e) = result {
-                        tracing::error!("Dante device error: {}", e);
+            let mut backoff_secs: u64 = 2;
+            loop {
+                let dante = patchbox_dante::device::DanteDevice::new(&device_name, n_in, n_out);
+                tokio::select! {
+                    result = dante.start_with_params(Arc::clone(&params_arc), Arc::clone(&meters_arc)) => {
+                        match result {
+                            Ok(()) => {
+                                // Graceful exit (stub returns Ok immediately).
+                                tracing::info!("Dante device task finished normally");
+                                return;
+                            }
+                            Err(e) => {
+                                tracing::error!("Dante device error (retrying in {}s): {}", backoff_secs, e);
+                                // Clamp backoff at 60s.
+                                backoff_secs = (backoff_secs * 2).min(60);
+                            }
+                        }
+                    }
+                    _ = shutdown_arc.notified() => {
+                        tracing::info!("Dante task received shutdown signal");
+                        return;
                     }
                 }
-                _ = shutdown_arc.notified() => {
-                    tracing::info!("Dante task received shutdown signal");
+
+                // Wait before reconnecting (but cancel immediately on shutdown).
+                let delay = tokio::time::sleep(std::time::Duration::from_secs(backoff_secs));
+                tokio::select! {
+                    _ = delay => {}
+                    _ = shutdown_arc.notified() => { return; }
                 }
             }
         });
@@ -131,32 +160,61 @@ async fn main() -> anyhow::Result<()> {
     // S-03: Rate limiting requires ConnectInfo<SocketAddr> — use make_service.
     let service = api::make_service(app_state.clone(), cfg.clone());
     let addr   = SocketAddr::from(([0, 0, 0, 0], cfg.port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    tracing::info!("Listening on http://{}", addr);
-    tracing::info!("Web UI: http://{}:{}", addr.ip(), cfg.port);
+    // S-04: TLS — if --tls-cert and --tls-key are provided, serve HTTPS.
+    let tls_enabled = args.tls_cert.is_some() && args.tls_key.is_some();
 
-    // D-09: mDNS/DNS-SD — advertise the HTTP control UI and a dante-patchbox service
-    // so tablets can discover the server without manual IP configuration.
-    register_mdns(&cfg);
+    if tls_enabled {
+        #[cfg(feature = "tls")]
+        {
+            let cert_path = args.tls_cert.as_deref().unwrap();
+            let key_path  = args.tls_key.as_deref().unwrap();
 
-    if args.tui {
-        let tui_state = Arc::clone(&app_state);
-        let port = cfg.port;
-        let tui_handle = tokio::task::spawn_blocking(move || tui::run(tui_state, port));
+            let cert_pem = std::fs::read(cert_path)
+                .map_err(|e| anyhow::anyhow!("Cannot read TLS cert {}: {}", cert_path, e))?;
+            let key_pem  = std::fs::read(key_path)
+                .map_err(|e| anyhow::anyhow!("Cannot read TLS key {}: {}", key_path, e))?;
 
-        tokio::select! {
-            result = axum::serve(listener, service).with_graceful_shutdown(shutdown_signal()) => {
-                result?;
-            }
-            result = tui_handle => {
-                if let Ok(Err(e)) = result { tracing::error!("TUI error: {}", e); }
-            }
+            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await
+                .map_err(|e| anyhow::anyhow!("TLS config error: {}", e))?;
+
+            tracing::info!("Listening on https://{}", addr);
+            tracing::info!("Web UI: https://{}:{}", addr.ip(), cfg.port);
+            register_mdns(&cfg);
+
+            axum_server::bind_rustls(addr, tls_config)
+                .serve(service)
+                .await?;
+        }
+        #[cfg(not(feature = "tls"))]
+        {
+            tracing::error!("--tls-cert/--tls-key supplied but binary was compiled without 'tls' feature. Rebuild with --features tls.");
+            std::process::exit(1);
         }
     } else {
-        axum::serve(listener, service)
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        tracing::info!("Listening on http://{}", addr);
+        tracing::info!("Web UI: http://{}:{}", addr.ip(), cfg.port);
+        register_mdns(&cfg);
+
+        if args.tui {
+            let tui_state = Arc::clone(&app_state);
+            let port = cfg.port;
+            let tui_handle = tokio::task::spawn_blocking(move || tui::run(tui_state, port));
+
+            tokio::select! {
+                result = axum::serve(listener, service).with_graceful_shutdown(shutdown_signal()) => {
+                    result?;
+                }
+                result = tui_handle => {
+                    if let Ok(Err(e)) = result { tracing::error!("TUI error: {}", e); }
+                }
+            }
+        } else {
+            axum::serve(listener, service)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
     }
 
     // R-10: Signal Dante task to shut down gracefully before exiting.

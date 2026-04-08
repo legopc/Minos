@@ -2,7 +2,7 @@ use patchbox_core::control::{AudioParams, MeterFrame};
 use patchbox_core::scene;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 use tokio::sync::{Notify, RwLock};
 
@@ -20,6 +20,9 @@ pub struct AppState {
     pub started_at: Instant,
     /// Notified on graceful shutdown — Dante task listens to cancel cleanly (R-10).
     pub shutdown: Arc<Notify>,
+    /// R-13: Monotonic version counter — incremented on every state mutation.
+    /// Used to generate ETags for optimistic concurrency control.
+    pub state_version: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -30,8 +33,20 @@ impl AppState {
             ws_connections: Arc::new(AtomicUsize::new(0)),
             started_at:     Instant::now(),
             shutdown:       Arc::new(Notify::new()),
+            state_version:  Arc::new(AtomicU64::new(1)),
             config:         cfg,
         }
+    }
+
+    /// R-13: Increment the state version and return the new value.
+    /// Call this after every mutation that changes routing state.
+    pub fn bump_version(&self) -> u64 {
+        self.state_version.fetch_add(1, Ordering::Release) + 1
+    }
+
+    /// R-13: Current ETag string (weak ETag format).
+    pub fn etag(&self) -> String {
+        format!("W/\"{}\"", self.state_version.load(Ordering::Acquire))
     }
 
     pub fn scenes_dir(&self) -> PathBuf {

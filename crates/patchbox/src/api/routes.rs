@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
@@ -120,7 +120,11 @@ fn check_ptp_health() -> (bool, Option<i64>) {
 
 async fn get_state(State(state): State<SharedState>) -> impl IntoResponse {
     let params = state.params.read().await;
-    Json(params.clone())
+    // R-13: Include current ETag so clients can use If-Match on subsequent mutations.
+    let etag = state.etag();
+    let mut headers = HeaderMap::new();
+    headers.insert(axum::http::header::ETAG, etag.parse().unwrap());
+    (headers, Json(params.clone()))
 }
 
 // ── Matrix cell ──────────────────────────────────────────────────────────
@@ -133,8 +137,17 @@ struct GainBody {
 async fn patch_matrix_cell(
     State(state): State<SharedState>,
     Path((input, output)): Path<(usize, usize)>,
+    headers: HeaderMap,
     Json(body): Json<GainBody>,
 ) -> impl IntoResponse {
+    // R-13: Optimistic locking — if the client sends If-Match, reject stale writes.
+    if let Some(if_match) = headers.get(axum::http::header::IF_MATCH) {
+        let current = state.etag();
+        if if_match.to_str().unwrap_or("") != current {
+            return StatusCode::PRECONDITION_FAILED.into_response();
+        }
+    }
+
     let mut params = state.params.write().await;
     let n_in  = params.matrix.inputs;
     let n_out = params.matrix.outputs;
@@ -142,7 +155,12 @@ async fn patch_matrix_cell(
         return StatusCode::UNPROCESSABLE_ENTITY.into_response();
     }
     params.matrix.set(input, output, body.gain.clamp(0.0, 4.0));
-    StatusCode::NO_CONTENT.into_response()
+    drop(params);
+    // Bump version after mutation so subsequent GET /state returns a new ETag.
+    let new_version = state.bump_version();
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(axum::http::header::ETAG, format!("W/\"{}\"", new_version).parse().unwrap());
+    (StatusCode::NO_CONTENT, resp_headers).into_response()
 }
 
 // ── Channel strip controls ───────────────────────────────────────────────
@@ -163,6 +181,8 @@ async fn set_input_name(
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].label = body.name;
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -173,6 +193,8 @@ async fn toggle_input_mute(
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].mute = !p.inputs[id].mute;
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -183,6 +205,8 @@ async fn toggle_input_solo(
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].solo = !p.inputs[id].solo;
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -197,6 +221,8 @@ async fn set_output_name(
     let mut p = state.params.write().await;
     if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.outputs[id].label = body.name;
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -207,6 +233,8 @@ async fn toggle_output_mute(
     let mut p = state.params.write().await;
     if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.outputs[id].mute = !p.outputs[id].mute;
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -218,6 +246,8 @@ async fn set_input_gain_trim(
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].gain_trim = body.gain.clamp(0.0, 4.0);
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -229,6 +259,8 @@ async fn set_output_master_gain(
     let mut p = state.params.write().await;
     if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.outputs[id].master_gain = body.gain.clamp(0.0, 4.0);
+    drop(p);
+    state.bump_version();
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -261,7 +293,10 @@ async fn load_scene(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     match state.load_scene(&name).await {
-        Ok(_)  => StatusCode::NO_CONTENT.into_response(),
+        Ok(_)  => {
+            state.bump_version();
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
         Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
         Err(e) => {

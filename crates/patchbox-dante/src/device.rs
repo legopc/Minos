@@ -115,6 +115,18 @@ impl DanteDevice {
             server.receive_with_callback(Box::new(move |samples_count, channels| {
                 use crate::sample_conv::{i32_to_f32, f32_to_i32};
 
+                // R-11: On first callback invocation, attempt to elevate this thread
+                // to SCHED_FIFO RT priority so the DSP hot path is preemption-resistant.
+                // Only tries once (thread-local flag).
+                #[cfg(target_os = "linux")]
+                try_set_rt_priority_once();
+
+                // R-12: No-alloc / no-lock audit notes:
+                // - params.try_read() is lock-free on the read path if no writer holds it
+                // - Vec allocations below are unavoidable until inferno_aoip exposes
+                //   fixed-size buffer API (tracked as D-01 / future sprint)
+                // - Future: pre-allocate rx_f32/tx_f32 in a ring buffer outside callback
+
                 let guard = match params.try_read() {
                     Ok(g)  => g,
                     Err(_) => return,
@@ -164,5 +176,34 @@ impl DanteDevice {
 
         Ok(())
     }
+}
+
+/// R-11: Set SCHED_FIFO priority on the calling thread (Linux only).
+/// Uses a thread-local flag so the syscall is made at most once per thread.
+/// Requires either `CAP_SYS_NICE` or a `/etc/security/limits.d/` rule
+/// granting the `patchbox` user `rtprio 95`.
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+fn try_set_rt_priority_once() {
+    use std::cell::Cell;
+    thread_local! {
+        static TRIED: Cell<bool> = const { Cell::new(false) };
+    }
+    TRIED.with(|tried| {
+        if tried.get() { return; }
+        tried.set(true);
+
+        // SAFETY: sched_setscheduler is async-signal-safe and only touches
+        // the calling thread's scheduling class.
+        let ret = unsafe {
+            let param = libc::sched_param { sched_priority: 90 };
+            libc::sched_setscheduler(0, libc::SCHED_FIFO, &param)
+        };
+        if ret == 0 {
+            tracing::info!("DSP thread elevated to SCHED_FIFO priority 90");
+        } else {
+            tracing::debug!("SCHED_FIFO not granted (needs CAP_SYS_NICE or rtprio limit): errno={}", unsafe { *libc::__errno_location() });
+        }
+    });
 }
 
