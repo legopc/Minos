@@ -134,6 +134,33 @@ function debounce(fn, ms = 80) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+// ── Row AbortController registry (BUG-W03: event listener cleanup) ───────
+// Each row registers an AbortController. On buildUI() rebuild, all controllers
+// are aborted before clearing innerHTML, preventing listener accumulation.
+
+const rowControllers = new Map(); // inputIdx → AbortController
+const outControllers = new Map(); // outputIdx → AbortController
+
+function abortRowControllers() {
+  rowControllers.forEach(ac => ac.abort());
+  rowControllers.clear();
+  outControllers.forEach(ac => ac.abort());
+  outControllers.clear();
+}
+
+// ── Meter width cache (W-47: avoid offsetWidth reflow inside rAF) ─────────
+// Cached per canvas id; cleared on resize so stale widths aren't used.
+
+const meterWidthCache = new Map();
+window.addEventListener('resize', () => meterWidthCache.clear());
+
+function getMeterWidth(canvas) {
+  if (!meterWidthCache.has(canvas.id)) {
+    meterWidthCache.set(canvas.id, (canvas.parentElement?.offsetWidth ?? 148) - 48);
+  }
+  return meterWidthCache.get(canvas.id);
+}
+
 // ── Initialise UI from state snapshot ────────────────────────────────────
 
 function buildUI() {
@@ -141,6 +168,9 @@ function buildUI() {
   // Ensure order arrays are populated
   if (!state.inputOrder  || state.inputOrder.length  !== nInputs)  state.inputOrder  = Array.from({length: nInputs},  (_, i) => i);
   if (!state.outputOrder || state.outputOrder.length !== nOutputs) state.outputOrder = Array.from({length: nOutputs}, (_, o) => o);
+
+  // Abort all previous row/output controllers to clean up event listeners (BUG-W03)
+  abortRowControllers();
 
   // Output label row (rendered in outputOrder)
   elOutputLabels.innerHTML = '';
@@ -151,6 +181,10 @@ function buildUI() {
 
   for (let rank = 0; rank < nOutputs; rank++) {
     const o = state.outputOrder[rank];
+    const ac = new AbortController();
+    outControllers.set(o, ac);
+    const sig = ac.signal;
+
     const el = document.createElement('div');
     el.className = 'output-label';
     el.id = `out-label-${o}`;
@@ -159,9 +193,9 @@ function buildUI() {
     const nameSpan = document.createElement('span');
     nameSpan.textContent = outputs[o]?.label || `O${o + 1}`;
     nameSpan.title = 'Left-click mute · Right-click master gain · Dbl-click rename';
-    el.addEventListener('click', () => toggleOutputMute(o));
-    el.addEventListener('dblclick', e => { e.stopPropagation(); renameChannel('output', o); });
-    el.addEventListener('contextmenu', e => { e.preventDefault(); showMasterGainTooltip(o, el); });
+    el.addEventListener('click', () => toggleOutputMute(o), { signal: sig });
+    el.addEventListener('dblclick', e => { e.stopPropagation(); renameChannel('output', o); }, { signal: sig });
+    el.addEventListener('contextmenu', e => { e.preventDefault(); showMasterGainTooltip(o, el); }, { signal: sig });
 
     const fader = document.createElement('input');
     fader.type = 'range';
@@ -170,21 +204,21 @@ function buildUI() {
     fader.min = '0'; fader.max = '1'; fader.step = '0.01';
     fader.value = outputs[o]?.master_gain ?? 1.0;
     fader.title = `Master: ${gainLabel(outputs[o]?.master_gain ?? 1.0)} dB`;
-    fader.addEventListener('click', e => e.stopPropagation());
+    fader.addEventListener('click', e => e.stopPropagation(), { signal: sig });
     fader.addEventListener('input', e => {
       const g = parseFloat(fader.value);
       fader.title = `Master: ${gainLabel(g)} dB`;
       state.outputs[o] = state.outputs[o] || {};
       state.outputs[o].master_gain = g;
       sendOutputMasterGain(o, g);
-    });
+    }, { signal: sig });
 
     // D-06: Compressor button per output
     const btnComp = document.createElement('button');
     btnComp.className = 'btn-icon' + (outputs[o]?.compressor?.enabled ? ' active' : '');
     btnComp.textContent = 'C';
     btnComp.title = 'Compressor/limiter';
-    btnComp.addEventListener('click', e => { e.stopPropagation(); openCompModal(o); });
+    btnComp.addEventListener('click', e => { e.stopPropagation(); openCompModal(o); }, { signal: sig });
 
     el.appendChild(nameSpan);
     el.appendChild(fader);
@@ -208,6 +242,12 @@ function buildInputRow(i, rank) {
   const row = document.createElement('div');
   row.className = 'matrix-row';
   row.id = `row-${i}`;
+
+  // AbortController for this row's listeners (BUG-W03)
+  const ac = new AbortController();
+  rowControllers.set(i, ac);
+  const sig = ac.signal;
+
   // U-09: drag-and-drop reorder
   row.draggable = true;
   row.dataset.index = i;
@@ -215,10 +255,10 @@ function buildInputRow(i, rank) {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(i));
     row.classList.add('dragging');
-  });
-  row.addEventListener('dragend', () => row.classList.remove('dragging'));
-  row.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.classList.add('drag-over'); });
-  row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+  }, { signal: sig });
+  row.addEventListener('dragend', () => row.classList.remove('dragging'), { signal: sig });
+  row.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.classList.add('drag-over'); }, { signal: sig });
+  row.addEventListener('dragleave', () => row.classList.remove('drag-over'), { signal: sig });
   row.addEventListener('drop', async e => {
     e.preventDefault();
     row.classList.remove('drag-over');
@@ -238,7 +278,7 @@ function buildInputRow(i, rank) {
     } catch (err) {
       toast('Reorder failed: ' + err.message, 'err');
     }
-  });
+  }, { signal: sig });
 
   // Strip
   const strip = document.createElement('div');
@@ -249,7 +289,7 @@ function buildInputRow(i, rank) {
   nameEl.id = `in-name-${i}`;
   nameEl.textContent = inp.label || `IN ${i + 1}`;
   nameEl.title = 'Click to rename';
-  nameEl.addEventListener('click', () => renameChannel('input', i));
+  nameEl.addEventListener('click', () => renameChannel('input', i), { signal: sig });
 
   // D-04: Dante RX activity indicator dot
   const dotEl = document.createElement('span');
@@ -262,14 +302,14 @@ function buildInputRow(i, rank) {
   btnM.textContent = 'M';
   btnM.title = 'Mute';
   btnM.id = `in-mute-${i}`;
-  btnM.addEventListener('click', () => toggleInputMute(i));
+  btnM.addEventListener('click', () => toggleInputMute(i), { signal: sig });
 
   const btnS = document.createElement('button');
   btnS.className = 'btn-solo' + (inp.solo ? ' active' : '');
   btnS.textContent = 'S';
   btnS.title = 'Solo';
   btnS.id = `in-solo-${i}`;
-  btnS.addEventListener('click', () => toggleInputSolo(i));
+  btnS.addEventListener('click', () => toggleInputSolo(i), { signal: sig });
 
   // Gain trim fader (linear 0–1, displayed as dB)
   const fader = document.createElement('input');
@@ -283,7 +323,7 @@ function buildInputRow(i, rank) {
     const g = parseFloat(fader.value);
     fader.title = `Trim: ${gainLabel(g)} dB`;
     sendInputGainTrim(i, g);
-  });
+  }, { signal: sig });
 
   // D-05: EQ button per input
   const btnEq = document.createElement('button');
@@ -291,7 +331,7 @@ function buildInputRow(i, rank) {
   btnEq.textContent = 'EQ';
   btnEq.title = 'Parametric EQ';
   btnEq.id = `in-eq-${i}`;
-  btnEq.addEventListener('click', () => openEqModal(i));
+  btnEq.addEventListener('click', () => openEqModal(i), { signal: sig });
 
   strip.appendChild(nameEl);
   strip.appendChild(dotEl);
@@ -304,13 +344,13 @@ function buildInputRow(i, rank) {
   // Matrix cells — rendered in outputOrder
   for (let rank = 0; rank < state.nOutputs; rank++) {
     const o = state.outputOrder[rank];
-    row.appendChild(buildCell(i, o));
+    row.appendChild(buildCell(i, o, sig));
   }
 
   return row;
 }
 
-function buildCell(i, o) {
+function buildCell(i, o, sig) {
   const gain = (state.matrix[i] || [])[o] ?? 0;
   const active = gain > 0;
 
@@ -321,8 +361,8 @@ function buildCell(i, o) {
   cell.title = active ? `${gainLabel(gain)} dB (right-click to adjust)` : 'Click to route (right-click to set gain)';
   if (active) cell.setAttribute('data-gain', gainLabel(gain));
 
-  cell.addEventListener('click', () => toggleCell(i, o));
-  cell.addEventListener('contextmenu', e => { e.preventDefault(); showGainTooltip(i, o, cell); });
+  cell.addEventListener('click', () => toggleCell(i, o), { signal: sig });
+  cell.addEventListener('contextmenu', e => { e.preventDefault(); showGainTooltip(i, o, cell); }, { signal: sig });
 
   return cell;
 }
@@ -635,8 +675,7 @@ function paintMeters() {
     else peakHold.inputs[i] = Math.max(-60, peakHold.inputs[i] - PEAK_DECAY);
     const canvas = $(`meter-in-canvas-${i}`);
     if (canvas) {
-      canvas.width = canvas.parentElement?.offsetWidth - 48 || 100;
-      drawMeterCanvas(canvas, db, peakHold.inputs[i]);
+      canvas.width = getMeterWidth(canvas);
     }
   }
   for (let o = 0; o < outputs.length; o++) {
@@ -645,7 +684,7 @@ function paintMeters() {
     else peakHold.outputs[o] = Math.max(-60, peakHold.outputs[o] - PEAK_DECAY);
     const canvas = $(`meter-out-canvas-${o}`);
     if (canvas) {
-      canvas.width = canvas.parentElement?.offsetWidth - 48 || 100;
+      canvas.width = getMeterWidth(canvas);
       drawMeterCanvas(canvas, db, peakHold.outputs[o]);
     }
   }
@@ -666,7 +705,7 @@ function connectWS() {
   ws.onopen = () => {
     wsRetryMs = 1000;
     setWsStatus('online');
-    showToast('Connected', 1500);
+    toast('Connected', 'ok');
   };
 
   ws.onclose = () => {
@@ -685,6 +724,11 @@ function connectWS() {
       const view = new Float32Array(e.data);
       const ni = state.nInputs;
       const no = state.nOutputs;
+      // BUG-W04: bounds check before indexing to avoid OOB reads on stale channel counts
+      if (view.length < ni + no) {
+        console.warn(`WS meter frame too short: got ${view.length}, want ${ni + no}`);
+        return;
+      }
       state.meters.inputs  = Array.from(view.slice(0, ni));
       state.meters.outputs = Array.from(view.slice(ni, ni + no));
     } else {
@@ -859,10 +903,10 @@ $('btn-diff-scene').addEventListener('click', async () => {
   } else {
     body.innerHTML = diffs.map(d =>
       `<div class="diff-row diff-${d.type}">` +
-      `<span class="diff-label">${d.label}</span>` +
-      `<span class="diff-prev">${d.prev}</span>` +
+      `<span class="diff-label">${escHtml(d.label)}</span>` +
+      `<span class="diff-prev">${escHtml(d.prev)}</span>` +
       `<span class="diff-arrow">→</span>` +
-      `<span class="diff-next">${d.next}</span>` +
+      `<span class="diff-next">${escHtml(d.next)}</span>` +
       `</div>`
     ).join('');
   }
