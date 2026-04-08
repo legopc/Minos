@@ -47,6 +47,8 @@ chrono    = { version = "0.4", features = ["serde"] }
 uuid      = { version = "1", features = ["v4", "serde"] }
 dirs      = "5"
 futures-util = "0.3"
+# D-09: mDNS/DNS-SD — advertise HTTP and Dante services on the local network
+mdns-sd   = "0.11"
 # Systemd watchdog / service notification (Linux only)
 sd-notify = { version = "0.4", optional = true }
 

@@ -25,6 +25,9 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/channels/output/:id/master_gain", post(set_output_master_gain))
         .route("/scenes",           get(list_scenes).post(save_scene))
         .route("/scenes/:name",     get(load_scene).delete(delete_scene))
+        // U-01: Zone-scoped view — returns state filtered to zone's outputs.
+        .route("/zones",            get(list_zones))
+        .route("/zones/:zone_id",   get(get_zone_state))
         .with_state(state)
 }
 
@@ -234,4 +237,81 @@ async fn delete_scene(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+// ── U-01: Zone views ──────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct ZoneInfo {
+    id:      String,
+    outputs: Vec<usize>,
+}
+
+/// GET /api/v1/zones — list configured zones.
+async fn list_zones(State(state): State<SharedState>) -> impl IntoResponse {
+    let zones: Vec<ZoneInfo> = state.config.zones
+        .iter()
+        .map(|(id, outputs)| ZoneInfo { id: id.clone(), outputs: outputs.clone() })
+        .collect();
+    Json(zones)
+}
+
+#[derive(Serialize)]
+struct ZoneState {
+    zone_id:  String,
+    outputs:  Vec<serde_json::Value>,
+    /// Full input strips (all inputs are visible from every bar for routing)
+    inputs:   Vec<serde_json::Value>,
+    /// Matrix slice: only the columns (outputs) belonging to this zone
+    matrix:   Vec<Vec<f32>>,
+}
+
+/// GET /api/v1/zones/:zone_id — state scoped to one zone's outputs.
+async fn get_zone_state(
+    Path(zone_id): Path<String>,
+    State(state):  State<SharedState>,
+) -> impl IntoResponse {
+    let output_indices = match state.config.zones.get(&zone_id) {
+        Some(v) => v.clone(),
+        None    => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let params = state.params.read().await;
+    let n_in   = params.inputs.len();
+
+    // Build output slice
+    let outputs: Vec<serde_json::Value> = output_indices.iter()
+        .filter_map(|&o| params.outputs.get(o))
+        .map(|b| serde_json::json!({
+            "label": b.label,
+            "mute":  b.mute,
+            "master_gain": b.master_gain,
+        }))
+        .collect();
+
+    // Build input strips
+    let inputs: Vec<serde_json::Value> = (0..n_in)
+        .filter_map(|i| params.inputs.get(i))
+        .map(|s| serde_json::json!({
+            "label": s.label,
+            "mute":  s.mute,
+            "solo":  s.solo,
+            "gain_trim": s.gain_trim,
+        }))
+        .collect();
+
+    // Build matrix slice — only zone columns
+    let matrix: Vec<Vec<f32>> = (0..n_in)
+        .map(|i| {
+            output_indices.iter()
+                .map(|&o| params.matrix.gains
+                    .get(i)
+                    .and_then(|row| row.get(o))
+                    .copied()
+                    .unwrap_or(0.0))
+                .collect()
+        })
+        .collect();
+
+    Json(ZoneState { zone_id, outputs, inputs, matrix }).into_response()
 }

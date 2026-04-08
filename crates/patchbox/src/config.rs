@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -16,6 +17,16 @@ pub struct Config {
     /// Add `"http://localhost:<port>"` for local development.
     #[serde(default)]
     pub allowed_origins: Vec<String>,
+    /// S-01: API keys. Map of token → label (e.g. "bar-1" → "abc123...").
+    /// Empty = auth disabled (development default). When non-empty, every API
+    /// request must include `X-Api-Key: <token>` or `Authorization: Bearer <token>`.
+    #[serde(default)]
+    pub api_keys: HashMap<String, String>,
+    /// Zone definitions for the bar view (U-01).
+    /// Map of zone-id → list of output indices that belong to that zone.
+    /// e.g. `{ "bar-1": [0, 1], "bar-2": [2, 3] }`
+    #[serde(default)]
+    pub zones: HashMap<String, Vec<usize>>,
 }
 
 impl Default for Config {
@@ -27,6 +38,8 @@ impl Default for Config {
             device_name:     "dante-patchbox".to_owned(),
             scenes_dir:      dirs_next().unwrap_or_else(|| "/var/lib/patchbox/scenes".to_owned()),
             allowed_origins: vec![],
+            api_keys:        HashMap::new(),
+            zones:           HashMap::new(),
         }
     }
 }

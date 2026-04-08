@@ -135,6 +135,10 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Listening on http://{}", addr);
     tracing::info!("Web UI: http://{}:{}", addr.ip(), cfg.port);
 
+    // D-09: mDNS/DNS-SD — advertise the HTTP control UI and a dante-patchbox service
+    // so tablets can discover the server without manual IP configuration.
+    register_mdns(&cfg);
+
     if args.tui {
         let tui_state = Arc::clone(&app_state);
         let port = cfg.port;
@@ -206,4 +210,57 @@ async fn shutdown_signal() {
         _ = ctrl_c    => { tracing::info!("received Ctrl+C, shutting down"); }
         _ = terminate => { tracing::info!("received SIGTERM, shutting down"); }
     }
+}
+
+/// D-09: Register mDNS/DNS-SD services so tablets can auto-discover the server.
+///
+/// Registers two services:
+///   - `_http._tcp` at port `cfg.port` — the web control UI
+///   - `_dante-patchbox._tcp` at port `cfg.port` — custom service type for
+///     patchbox-aware clients
+fn register_mdns(cfg: &config::Config) {
+    use mdns_sd::{ServiceDaemon, ServiceInfo};
+
+    let mdns = match ServiceDaemon::new() {
+        Ok(d)  => d,
+        Err(e) => {
+            tracing::warn!("mDNS daemon failed to start ({}); discovery disabled", e);
+            return;
+        }
+    };
+
+    let hostname = hostname_or_fallback();
+    let port = cfg.port;
+    let device = cfg.device_name.clone();
+
+    // D-03: announce device name + channel count as TXT records
+    let mut txt = std::collections::HashMap::new();
+    txt.insert("device".to_owned(),  device.clone());
+    txt.insert("inputs".to_owned(),  cfg.n_inputs.to_string());
+    txt.insert("outputs".to_owned(), cfg.n_outputs.to_string());
+
+    for svc_type in &["_http._tcp.local.", "_dante-patchbox._tcp.local."] {
+        let instance = format!("{}.{}", device, svc_type);
+        match ServiceInfo::new(svc_type, &device, &hostname, (), port, Some(txt.clone())) {
+            Ok(info) => {
+                if let Err(e) = mdns.register(info) {
+                    tracing::warn!("mDNS register {} failed: {}", instance, e);
+                } else {
+                    tracing::info!("mDNS: registered {} on port {}", instance, port);
+                }
+            }
+            Err(e) => tracing::warn!("mDNS ServiceInfo build failed: {}", e),
+        }
+    }
+
+    // Keep the daemon alive — leak it intentionally (lives for process lifetime).
+    std::mem::forget(mdns);
+}
+
+fn hostname_or_fallback() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .unwrap_or_else(|_| "dante-patchbox.local.".to_owned())
+        .trim()
+        .to_owned()
+        + ".local."
 }
