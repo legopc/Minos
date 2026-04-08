@@ -228,6 +228,7 @@ body::after {
   outline: none;
   cursor: pointer;
   margin-top: 2px;
+  will-change: transform; /* W-49: GPU compositing hint */
 }
 .strip-fader::-webkit-slider-thumb {
   -webkit-appearance: none;

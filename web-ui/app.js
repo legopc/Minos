@@ -6,6 +6,11 @@
 
 'use strict';
 
+// W-50: Register service worker for PWA/offline support
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
 const API  = '/api/v1';
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 
@@ -959,8 +964,24 @@ function setWsStatus(mode) {
 
 // ── Snapshot application ──────────────────────────────────────────────────
 
+// W-45: State fingerprint — skip full buildUI() if only meter data changed
+let _stateFingerprint = '';
+function stateFingerprint(snap) {
+  return JSON.stringify({
+    ni: snap.matrix?.inputs, no: snap.matrix?.outputs,
+    gains: snap.matrix?.gains,
+    inputs: snap.inputs?.map(c => ({ label: c.label, mute: c.mute, solo: c.solo })),
+    outputs: snap.outputs?.map(c => ({ label: c.label, mute: c.mute })),
+    order: snap.input_order,
+  });
+}
+
 function applySnapshot(snap) {
   if (!snap) return;
+
+  const fp = stateFingerprint(snap);
+  const needsRebuild = fp !== _stateFingerprint;
+  _stateFingerprint = fp;
 
   state.nInputs  = snap.matrix?.inputs  ?? state.nInputs;
   state.nOutputs = snap.matrix?.outputs ?? state.nOutputs;
@@ -985,8 +1006,22 @@ function applySnapshot(snap) {
   state.meters.inputs  = new Array(state.nInputs).fill(-60);
   state.meters.outputs = new Array(state.nOutputs).fill(-60);
 
-  buildUI();
-  updateSoloUI(); // W-05
+  if (needsRebuild) {
+    buildUI();
+    updateSoloUI(); // W-05
+  } else {
+    // Lightweight incremental update: just refresh mute/solo/dante indicators
+    for (let i = 0; i < state.nInputs; i++) {
+      const ch = state.inputs[i];
+      if (!ch) continue;
+      const btnM = document.getElementById(`in-mute-${i}`);
+      const btnS = document.getElementById(`in-solo-${i}`);
+      const dot  = document.getElementById(`dante-dot-${i}`);
+      if (btnM) btnM.classList.toggle('active', !!ch.mute);
+      if (btnS) btnS.classList.toggle('active', !!ch.solo);
+      if (dot)  dot.classList.toggle('active', !!(state.danteRxActive?.[i]));
+    }
+  }
 }
 
 async function loadSceneList(selectName = null) {

@@ -12,6 +12,7 @@ const CSP: &str = "default-src 'self'; \
     style-src 'self' https://fonts.googleapis.com; \
     font-src https://fonts.gstatic.com; \
     connect-src 'self' ws: wss:; \
+    worker-src 'self'; \
     object-src 'none'";
 
 /// Fallback handler — serves embedded web-ui assets.
@@ -26,8 +27,8 @@ pub async fn serve_embedded_asset(uri: Uri) -> Response {
                 .first_or_octet_stream()
                 .to_string();
 
-            // W-52: long-lived cache for versioned JS/CSS/fonts; no-cache for HTML
-            let cache_control = if path.ends_with(".html") {
+            // W-52: long-lived cache for versioned JS/CSS/fonts; no-cache for HTML and SW
+            let cache_control = if path.ends_with(".html") || path == "sw.js" || path == "manifest.json" {
                 "no-cache"
             } else {
                 "public, max-age=31536000, immutable"
