@@ -3530,3 +3530,298 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 800);
   });
 })();
+
+// ── Sprint 25 — Zones Multi-bar (Z-01, Z-02, Z-03, Z-04) ────────────────
+
+/* ── Z-01: URL-based zone routing ─────────────────────────────────────────
+ * Hash format: #/zone/<zone-id>   e.g. #/zone/bar-1
+ * When a zone hash is present, the entire UI is scoped to that zone's
+ * outputs — other columns are hidden and a zone nav bar appears.
+ */
+
+let activeZoneId      = null;   // zone id string or null
+let activeZoneOutputs = [];     // set of output indices
+let serverZones       = {};     // { zone_id: [output_indices] }
+
+async function fetchServerZones() {
+  try {
+    const r = await fetch('/api/v1/zones');
+    if (!r.ok) return;
+    const list = await r.json();
+    serverZones = {};
+    list.forEach(z => { serverZones[z.id] = z.outputs; });
+  } catch (_) {}
+}
+
+function parseZoneHash() {
+  const m = window.location.hash.match(/^#\/zone\/(.+)$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function applyZoneMode(zoneId) {
+  const zoneBar = document.getElementById('zone-nav-bar');
+  if (!zoneId || !serverZones[zoneId]) {
+    // All-zones mode
+    activeZoneId      = null;
+    activeZoneOutputs = [];
+    if (zoneBar) zoneBar.style.display = 'none';
+    applyZoneFilter();
+    return;
+  }
+  activeZoneId      = zoneId;
+  activeZoneOutputs = serverZones[zoneId];
+
+  // Update / create zone nav bar
+  if (!zoneBar) buildZoneNavBar();
+  const bar = document.getElementById('zone-nav-bar');
+  if (bar) {
+    bar.style.display = '';
+    bar.querySelector('.zone-nav-name').textContent = zoneId;
+  }
+  applyZoneFilter();
+  renderZoneMasterFader(zoneId);
+  renderZoneSourceSelector(zoneId);
+  renderZonePresetPanel(zoneId);
+}
+
+function applyZoneFilter() {
+  if (!activeZoneId || activeZoneOutputs.length === 0) {
+    // Restore all outputs
+    document.querySelectorAll('[data-col]').forEach(el => el.style.display = '');
+    document.querySelectorAll('.output-label-cell, .output-label-strip')
+      .forEach(el => el.style.display = '');
+    return;
+  }
+  const set = new Set(activeZoneOutputs);
+  // Matrix column headers + cells
+  document.querySelectorAll('[data-col]').forEach(el => {
+    const c = parseInt(el.dataset.col, 10);
+    el.style.display = set.has(c) ? '' : 'none';
+  });
+  // Output labels in strips view
+  document.querySelectorAll('.output-label-strip').forEach(el => {
+    const c = parseInt(el.dataset.output, 10);
+    el.style.display = set.has(c) ? '' : 'none';
+  });
+}
+
+function buildZoneNavBar() {
+  const bar = document.createElement('div');
+  bar.id = 'zone-nav-bar';
+  bar.className = 'zone-nav-bar';
+  bar.innerHTML = `
+    <a href="#" class="zone-nav-back" title="Back to all zones">← All</a>
+    <span class="zone-nav-name"></span>
+    <div id="zone-master-wrap" class="zone-master-wrap"></div>
+    <div id="zone-source-wrap" class="zone-source-wrap"></div>
+    <div id="zone-preset-wrap" class="zone-preset-wrap"></div>
+  `;
+  bar.querySelector('.zone-nav-back').addEventListener('click', e => {
+    e.preventDefault();
+    window.location.hash = '';
+  });
+  // Insert after toolbar
+  const toolbar = document.querySelector('.toolbar');
+  if (toolbar && toolbar.parentNode) {
+    toolbar.parentNode.insertBefore(bar, toolbar.nextSibling);
+  } else {
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+}
+
+// ── Z-02: Per-zone master volume fader ───────────────────────────────────
+
+function renderZoneMasterFader(zoneId) {
+  const wrap = document.getElementById('zone-master-wrap');
+  if (!wrap) return;
+
+  // Derive current average master_gain for zone outputs
+  let gain = 1.0;
+  if (state.outputs && activeZoneOutputs.length > 0) {
+    const vals = activeZoneOutputs
+      .filter(o => state.outputs[o])
+      .map(o => state.outputs[o].master_gain ?? 1.0);
+    if (vals.length) gain = vals.reduce((a, b) => a + b, 0) / vals.length;
+  }
+
+  const db   = Math.round(gainToDb(gain) * 10) / 10;
+  const pct  = Math.round(Math.sqrt(gain / 4) * 100); // sqrt scale for display
+
+  wrap.innerHTML = `
+    <label class="zone-master-label">MASTER</label>
+    <input type="range" class="zone-master-fader" min="0" max="100" step="1"
+           value="${pct}" title="Zone master gain: ${db} dB">
+    <span class="zone-master-db">${db > 0 ? '+' : ''}${db} dB</span>
+  `;
+
+  let zmDebounce = null;
+  const slider = wrap.querySelector('.zone-master-fader');
+  const dbLabel = wrap.querySelector('.zone-master-db');
+
+  slider.addEventListener('input', () => {
+    const v   = parseInt(slider.value, 10) / 100;
+    const g   = Math.pow(v, 2) * 4; // inverse of sqrt scale
+    const d   = Math.round(gainToDb(g) * 10) / 10;
+    dbLabel.textContent = (d > 0 ? '+' : '') + d + ' dB';
+    clearTimeout(zmDebounce);
+    zmDebounce = setTimeout(async () => {
+      try {
+        await fetch(`/api/v1/zones/${encodeURIComponent(zoneId)}/master-gain`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gain: g }),
+        });
+      } catch (e) { showToast('Zone master error: ' + e.message, 'error'); }
+    }, 80);
+  });
+
+  slider.addEventListener('dblclick', () => {
+    slider.value = Math.round(Math.sqrt(1.0 / 4) * 100);
+    slider.dispatchEvent(new Event('input'));
+  });
+}
+
+// ── Z-03: Zone source selector ────────────────────────────────────────────
+
+function renderZoneSourceSelector(zoneId) {
+  const wrap = document.getElementById('zone-source-wrap');
+  if (!wrap || !state.inputs) return;
+
+  // Determine which inputs are currently routed to any zone output (>0 gain)
+  const routedInputs = new Set();
+  (state.inputs || []).forEach((inp, i) => {
+    const routed = activeZoneOutputs.some(o => (state.matrix[i] ?? [])[o] > 0);
+    if (routed) routedInputs.add(i);
+  });
+
+  const chips = (state.inputs || []).map((inp, i) => {
+    const active = routedInputs.has(i);
+    return `<button class="zone-source-chip ${active ? 'active' : ''}"
+                    data-idx="${i}" title="${active ? 'Routed' : 'Click to route'} → ${zoneId}">
+              ${escHtml(inp.label || `In ${i + 1}`)}
+            </button>`;
+  }).join('');
+
+  wrap.innerHTML = `<span class="zone-source-label">SOURCE</span>${chips}`;
+
+  wrap.querySelectorAll('.zone-source-chip').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = parseInt(btn.dataset.idx, 10);
+      const isActive = btn.classList.contains('active');
+      const unity = 1.0;
+      const off   = 0.0;
+
+      try {
+        // Route or un-route this input to/from all zone outputs
+        for (const o of activeZoneOutputs) {
+          await fetch(`/api/v1/matrix/${i}/${o}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gain: isActive ? off : unity }),
+          });
+        }
+        showToast(isActive ? `Unrouted ${state.inputs[i]?.label ?? 'In'} from ${zoneId}` :
+                             `Routed ${state.inputs[i]?.label ?? 'In'} → ${zoneId}`, 'info');
+      } catch (e) { showToast(e.message, 'error'); }
+    });
+  });
+}
+
+// ── Z-04: Zone presets ────────────────────────────────────────────────────
+
+let zonePresets = []; // names for current zone
+
+async function loadZonePresets(zoneId) {
+  try {
+    const r = await fetch(`/api/v1/zones/${encodeURIComponent(zoneId)}/presets`);
+    zonePresets = r.ok ? await r.json() : [];
+  } catch (_) { zonePresets = []; }
+}
+
+async function renderZonePresetPanel(zoneId) {
+  const wrap = document.getElementById('zone-preset-wrap');
+  if (!wrap) return;
+  await loadZonePresets(zoneId);
+
+  const opts = zonePresets.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  wrap.innerHTML = `
+    <span class="zone-preset-label">PRESET</span>
+    <select class="zone-preset-sel" title="Zone preset">
+      <option value="">— select —</option>
+      ${opts}
+    </select>
+    <button class="zone-preset-btn" id="btn-zone-preset-load" title="Load selected preset">Load</button>
+    <button class="zone-preset-btn" id="btn-zone-preset-save" title="Save current zone state as new preset">Save</button>
+    <button class="zone-preset-btn danger" id="btn-zone-preset-del" title="Delete selected preset">✕</button>
+  `;
+
+  document.getElementById('btn-zone-preset-load')?.addEventListener('click', async () => {
+    const sel = wrap.querySelector('.zone-preset-sel');
+    if (!sel.value) { showToast('Select a preset first', 'warn'); return; }
+    try {
+      const r = await fetch(
+        `/api/v1/zones/${encodeURIComponent(zoneId)}/presets/${encodeURIComponent(sel.value)}/load`,
+        { method: 'POST' });
+      if (!r.ok) { showToast('Load failed: ' + r.status, 'error'); return; }
+      showToast(`Loaded preset "${sel.value}"`, 'info');
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+
+  document.getElementById('btn-zone-preset-save')?.addEventListener('click', async () => {
+    const name = prompt('Save zone preset as:');
+    if (!name) return;
+    try {
+      const r = await fetch(`/api/v1/zones/${encodeURIComponent(zoneId)}/presets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!r.ok) { showToast('Save failed: ' + r.status, 'error'); return; }
+      showToast(`Saved preset "${name}"`, 'info');
+      await renderZonePresetPanel(zoneId);
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+
+  document.getElementById('btn-zone-preset-del')?.addEventListener('click', async () => {
+    const sel = wrap.querySelector('.zone-preset-sel');
+    if (!sel.value) { showToast('Select a preset first', 'warn'); return; }
+    if (!confirm(`Delete preset "${sel.value}"?`)) return;
+    try {
+      const r = await fetch(
+        `/api/v1/zones/${encodeURIComponent(zoneId)}/presets/${encodeURIComponent(sel.value)}`,
+        { method: 'DELETE' });
+      if (!r.ok) { showToast('Delete failed: ' + r.status, 'error'); return; }
+      showToast(`Deleted preset "${sel.value}"`, 'info');
+      await renderZonePresetPanel(zoneId);
+    } catch (e) { showToast(e.message, 'error'); }
+  });
+}
+
+// ── Init: zone routing from URL hash ─────────────────────────────────────
+
+(async function initZoneRouting() {
+  await fetchServerZones();
+  const initialZone = parseZoneHash();
+  if (initialZone) applyZoneMode(initialZone);
+
+  window.addEventListener('hashchange', () => {
+    const zoneId = parseZoneHash();
+    applyZoneMode(zoneId);
+  });
+
+  // Also hook state updates to refresh zone UI panels
+  const origApply = typeof applySnapshot === 'function' ? applySnapshot : null;
+  // Refresh zone panels after state updates
+  const zonePanelRefresh = () => {
+    if (!activeZoneId) return;
+    renderZoneMasterFader(activeZoneId);
+    renderZoneSourceSelector(activeZoneId);
+    applyZoneFilter();
+  };
+  // Wire into existing post-snapshot hooks
+  if (window._zonePanelRefreshRegistered !== true) {
+    window._zonePanelRefreshRegistered = true;
+    // Poll-based fallback: refresh zone panels every 3s if zone is active
+    setInterval(zonePanelRefresh, 3000);
+  }
+})();

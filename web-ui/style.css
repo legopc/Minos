@@ -1417,3 +1417,159 @@ body::after {
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* ── Sprint 25 — Zone Nav Bar + Zone Mode UI ─────────────────────────── */
+
+.zone-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-bottom: 1px solid var(--accent);
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.zone-nav-back {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.zone-nav-back:hover { background: var(--accent); color: #000; }
+
+.zone-nav-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* Z-02: Zone master fader */
+.zone-master-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border);
+}
+.zone-master-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.zone-master-fader {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.zone-master-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.zone-master-fader::-moz-range-thumb {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+.zone-master-db {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  min-width: 36px;
+  white-space: nowrap;
+}
+
+/* Z-03: Zone source selector */
+.zone-source-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border);
+  flex-wrap: wrap;
+  max-width: 400px;
+}
+.zone-source-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.zone-source-chip {
+  font-size: 9px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.zone-source-chip:hover { border-color: var(--accent); color: var(--accent); }
+.zone-source-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+
+/* Z-04: Zone presets */
+.zone-preset-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border);
+  margin-left: auto;
+}
+.zone-preset-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.zone-preset-sel {
+  font-size: 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+  max-width: 130px;
+}
+.zone-preset-btn {
+  font-size: 9px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.zone-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.zone-preset-btn.danger:hover { border-color: #c0392b; color: #c0392b; }

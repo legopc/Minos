@@ -6,6 +6,7 @@ use axum::{
     Json, Router,
 };
 use patchbox_core::{eq::EqParams, compressor::CompressorParams, scene};
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 
@@ -40,6 +41,11 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         // U-01: Zone-scoped view — returns state filtered to zone's outputs.
         .route("/zones",            get(list_zones))
         .route("/zones/:zone_id",   get(get_zone_state))
+        // Z-02: Zone master volume + Z-04: Zone presets
+        .route("/zones/:zone_id/master-gain",             post(set_zone_master_gain))
+        .route("/zones/:zone_id/presets",                 get(list_zone_presets).post(save_zone_preset))
+        .route("/zones/:zone_id/presets/:name/load",      post(load_zone_preset))
+        .route("/zones/:zone_id/presets/:name",           axum::routing::delete(delete_zone_preset))
         .with_state(state)
 }
 
@@ -568,3 +574,173 @@ fn is_valid_permutation(order: &[usize], n: usize) -> bool {
     }
     true
 }
+
+// ── Z-02: Zone master gain ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ZoneMasterGainBody { gain: f32 }
+
+/// POST /api/v1/zones/:zone_id/master-gain — set master_gain for all outputs in the zone.
+async fn set_zone_master_gain(
+    Path(zone_id): Path<String>,
+    State(state):  State<SharedState>,
+    Json(body):    Json<ZoneMasterGainBody>,
+) -> impl IntoResponse {
+    let output_indices = match state.config.zones.get(&zone_id) {
+        Some(v) => v.clone(),
+        None    => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let gain = body.gain.clamp(0.0, 4.0);
+    let mut params = state.params.write().await;
+    for &o in &output_indices {
+        if let Some(bus) = params.outputs.get_mut(o) {
+            bus.master_gain = gain;
+        }
+    }
+    state.bump_version();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// ── Z-04: Zone presets ────────────────────────────────────────────────────
+
+/// Zone preset: a snapshot of the matrix columns + output gains for a zone.
+#[derive(Serialize, Deserialize, Clone)]
+struct ZonePreset {
+    zone_id:        String,
+    name:           String,
+    output_indices: Vec<usize>,
+    /// master_gain per zone output (same order as output_indices)
+    output_gains:   Vec<f32>,
+    /// matrix[input][zone_col] — gains for each zone output column
+    matrix:         Vec<Vec<f32>>,
+}
+
+fn zone_presets_dir(state: &SharedState, zone_id: &str) -> std::path::PathBuf {
+    state.scenes_dir().join(format!("zone-{}", zone_id))
+}
+
+fn preset_name_valid(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
+}
+
+fn preset_filename(name: &str) -> String {
+    format!("{}.json", name.replace(' ', "_"))
+}
+
+/// GET /api/v1/zones/:zone_id/presets — list saved zone presets.
+async fn list_zone_presets(
+    Path(zone_id): Path<String>,
+    State(state):  State<SharedState>,
+) -> impl IntoResponse {
+    if !state.config.zones.contains_key(&zone_id) {
+        return (StatusCode::NOT_FOUND, Json(Vec::<String>::new())).into_response();
+    }
+    let dir = zone_presets_dir(&state, &zone_id);
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .map(|rd| {
+            rd.filter_map(|e| {
+                let e = e.ok()?;
+                let fname = e.file_name().into_string().ok()?;
+                fname.strip_suffix(".json").map(|s| s.replace('_', " "))
+            })
+            .collect()
+        })
+        .unwrap_or_default();
+    Json(names).into_response()
+}
+
+#[derive(Deserialize)]
+struct SaveZonePresetBody { name: String }
+
+/// POST /api/v1/zones/:zone_id/presets — save current zone state as a named preset.
+async fn save_zone_preset(
+    Path(zone_id): Path<String>,
+    State(state):  State<SharedState>,
+    Json(body):    Json<SaveZonePresetBody>,
+) -> impl IntoResponse {
+    let output_indices = match state.config.zones.get(&zone_id) {
+        Some(v) => v.clone(),
+        None    => return (StatusCode::NOT_FOUND, "zone not found").into_response(),
+    };
+    if !preset_name_valid(&body.name) {
+        return (StatusCode::BAD_REQUEST, "invalid preset name").into_response();
+    }
+    let params = state.params.read().await;
+    let n_in = params.inputs.len();
+    let output_gains: Vec<f32> = output_indices.iter()
+        .filter_map(|&o| params.outputs.get(o).map(|b| b.master_gain))
+        .collect();
+    let matrix: Vec<Vec<f32>> = (0..n_in).map(|i| {
+        output_indices.iter()
+            .map(|&o| params.matrix.gains.get(i).and_then(|r| r.get(o)).copied().unwrap_or(0.0))
+            .collect()
+    }).collect();
+    let preset = ZonePreset { zone_id: zone_id.clone(), name: body.name.clone(), output_indices, output_gains, matrix };
+    drop(params);
+
+    let dir = zone_presets_dir(&state, &zone_id);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+    let path = dir.join(preset_filename(&body.name));
+    let json = serde_json::to_string_pretty(&preset).unwrap();
+    if let Err(e) = std::fs::write(&path, json) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// POST /api/v1/zones/:zone_id/presets/:name/load — restore a zone preset.
+async fn load_zone_preset(
+    Path((zone_id, name)): Path<(String, String)>,
+    State(state):          State<SharedState>,
+) -> impl IntoResponse {
+    if !state.config.zones.contains_key(&zone_id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let dir   = zone_presets_dir(&state, &zone_id);
+    let path  = dir.join(preset_filename(&name));
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let preset: ZonePreset = match serde_json::from_slice(&bytes) {
+        Ok(p) => p,
+        Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+    };
+    let mut params = state.params.write().await;
+    // Restore matrix columns
+    for (col, &o) in preset.output_indices.iter().enumerate() {
+        for (i, row) in preset.matrix.iter().enumerate() {
+            if let Some(cell) = params.matrix.gains.get_mut(i).and_then(|r| r.get_mut(o)) {
+                *cell = row.get(col).copied().unwrap_or(0.0);
+            }
+        }
+        // Restore output gains
+        if let (Some(gain), Some(bus)) = (preset.output_gains.get(col), params.outputs.get_mut(o)) {
+            bus.master_gain = *gain;
+        }
+    }
+    state.bump_version();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// DELETE /api/v1/zones/:zone_id/presets/:name — delete a zone preset.
+async fn delete_zone_preset(
+    Path((zone_id, name)): Path<(String, String)>,
+    State(state):          State<SharedState>,
+) -> impl IntoResponse {
+    if !state.config.zones.contains_key(&zone_id) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let path = zone_presets_dir(&state, &zone_id).join(preset_filename(&name));
+    match std::fs::remove_file(&path) {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// suppress unused import warning when zones map is empty
+fn _use_hashmap(_: HashMap<String, String>) {}
