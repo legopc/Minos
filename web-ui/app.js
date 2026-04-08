@@ -1251,7 +1251,7 @@ async function boot() {
   requestAnimationFrame(paintMeters);
 }
 
-boot();
+// boot() is now called by initAuth() below after credentials are verified.
 
 // ── U-02: Keyboard navigation ─────────────────────────────────────────────
 
@@ -3852,6 +3852,12 @@ async function renderZonePresetPanel(zoneId) {
 
 // ── Sprint 26 — Auth (A-01, A-02, A-05) ──────────────────────────────────
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Auth — PAM/JWT login gate
+// Always show login on first load. boot() is called only after a valid
+// session is established (new login or restored JWT).
+// ═══════════════════════════════════════════════════════════════════════════
+
 const AUTH_KEY  = 'patchbox-jwt';
 const AUTH_USER = 'patchbox-user';
 const AUTH_ROLE = 'patchbox-role';
@@ -3871,74 +3877,58 @@ function storeAuth(data) {
 }
 
 function clearAuth() {
-  [AUTH_KEY, AUTH_USER, AUTH_ROLE, AUTH_ZONE].forEach(k => localStorage.removeItem(k));
+  localStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(AUTH_USER);
+  localStorage.removeItem(AUTH_ROLE);
+  localStorage.removeItem(AUTH_ZONE);
 }
 
-/// Inject Authorization header into all fetch calls when token is present.
-/// We monkey-patch the global fetch to add the Bearer token automatically.
+// Inject Authorization: Bearer <jwt> into all /api/ requests automatically.
 (function patchFetch() {
-  const orig = window.fetch.bind(window);
+  const _fetch = window.fetch.bind(window);
   window.fetch = function(url, opts = {}) {
     const token = authToken();
-    if (token && typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('/ws'))) {
-      opts.headers = opts.headers || {};
+    if (token && typeof url === 'string' && url.startsWith('/api/') &&
+        !url.includes('/auth/login')) {
+      opts = Object.assign({}, opts);
+      opts.headers = Object.assign({}, opts.headers);
       if (!opts.headers['Authorization'] && !opts.headers['authorization']) {
         opts.headers['Authorization'] = `Bearer ${token}`;
       }
     }
-    return orig(url, opts);
+    return _fetch(url, opts);
   };
 })();
 
-/// Patch WebSocket URL to include token as query param (A-05).
+// Append ?token=<jwt> to WebSocket URLs (A-05).
 (function patchWebSocket() {
   const OrigWS = window.WebSocket;
-  window.WebSocket = function(url, protocols) {
+  function PatchedWS(url, protocols) {
     const token = authToken();
-    if (token && (url.startsWith('ws://') || url.startsWith('wss://'))) {
-      const sep = url.includes('?') ? '&' : '?';
-      url = url + sep + 'token=' + encodeURIComponent(token);
+    if (token) {
+      url += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
     }
-    return new OrigWS(url, protocols);
-  };
-  window.WebSocket.prototype = OrigWS.prototype;
-  window.WebSocket.CONNECTING = OrigWS.CONNECTING;
-  window.WebSocket.OPEN       = OrigWS.OPEN;
-  window.WebSocket.CLOSING    = OrigWS.CLOSING;
-  window.WebSocket.CLOSED     = OrigWS.CLOSED;
+    return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
+  }
+  PatchedWS.prototype             = OrigWS.prototype;
+  PatchedWS.CONNECTING            = OrigWS.CONNECTING;
+  PatchedWS.OPEN                  = OrigWS.OPEN;
+  PatchedWS.CLOSING               = OrigWS.CLOSING;
+  PatchedWS.CLOSED                = OrigWS.CLOSED;
+  window.WebSocket = PatchedWS;
 })();
 
-/// Check if the server requires auth (api_keys non-empty) by looking for 401.
-async function checkAuthRequired() {
-  try {
-    const r = await fetch('/api/v1/state');
-    return r.status === 401;
-  } catch (_) { return false; }
-}
-
-/// Check current token is still valid.
-async function validateToken() {
-  const token = authToken();
-  if (!token) return false;
-  try {
-    const r = await fetch('/api/v1/auth/whoami');
-    return r.ok;
-  } catch (_) { return false; }
-}
-
-/// Show the login overlay.
 function showLoginOverlay() {
-  const overlay = document.getElementById('login-overlay');
-  if (overlay) overlay.style.display = 'flex';
+  const el = document.getElementById('login-overlay');
+  if (el) el.style.display = 'flex';
 }
 
-/// Hide the login overlay.
 function hideLoginOverlay() {
-  const overlay = document.getElementById('login-overlay');
-  if (overlay) overlay.style.display = 'none';
+  const el = document.getElementById('login-overlay');
+  if (el) el.style.display = 'none';
 }
 
-/// A-02: After login, redirect bar_staff users to their zone.
+// A-02: redirect bar_staff to their zone after login.
 function applyRoleRedirect() {
   const role = authRole();
   const zone = authZone();
@@ -3947,7 +3937,6 @@ function applyRoleRedirect() {
   }
 }
 
-/// Add a logout button to the header.
 function addLogoutButton() {
   if (document.getElementById('btn-logout')) return;
   const btn = document.createElement('button');
@@ -3956,38 +3945,57 @@ function addLogoutButton() {
   btn.textContent = `${authUsername()} ⏏`;
   btn.title = 'Sign out';
   btn.style.cssText = 'font-size:9px;opacity:0.7;border-color:transparent';
-  btn.addEventListener('click', () => {
-    clearAuth();
-    window.location.reload();
-  });
+  btn.addEventListener('click', () => { clearAuth(); window.location.reload(); });
   const header = document.getElementById('header');
   if (header) header.appendChild(btn);
 }
 
-/// Init auth flow.
-(async function initAuth() {
-  const authRequired = await checkAuthRequired();
-  if (!authRequired) return; // dev mode, no auth needed
+// Validate the stored JWT against /auth/whoami.
+// Returns the claims object on success, null on failure.
+async function validateStoredToken() {
+  const token = authToken();
+  if (!token) return null;
+  try {
+    const r = await fetch('/api/v1/auth/whoami');
+    if (r.ok) return await r.json();
+    clearAuth(); // token rejected — clear it
+    return null;
+  } catch (_) { return null; }
+}
 
-  const tokenValid = await validateToken();
-  if (tokenValid) {
-    hideLoginOverlay();
+// Main auth gate — always runs, always decides whether to show login.
+// boot() is called from here once a session is confirmed.
+(async function initAuth() {
+  const claims = await validateStoredToken();
+  if (claims) {
+    // Existing valid JWT — go straight in.
     addLogoutButton();
     applyRoleRedirect();
+    boot();
     return;
   }
 
-  // Show login form
+  // No valid session — show login.
   showLoginOverlay();
-  document.getElementById('login-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
-    const errEl    = document.getElementById('login-error');
-    const btn      = document.getElementById('login-submit');
 
-    btn.disabled = true;
-    btn.textContent = 'SIGNING IN…';
+  const form   = document.getElementById('login-form');
+  const errEl  = document.getElementById('login-error');
+  const btnEl  = document.getElementById('login-submit');
+
+  if (!form) return; // login UI missing
+
+  form.addEventListener('submit', async function handleSubmit(e) {
+    e.preventDefault();
+
+    const username = (document.getElementById('login-username')?.value ?? '').trim();
+    const password = document.getElementById('login-password')?.value ?? '';
+
+    if (!username) {
+      if (errEl) { errEl.textContent = 'Username required'; errEl.style.display = ''; }
+      return;
+    }
+
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'SIGNING IN…'; }
     if (errEl) errEl.style.display = 'none';
 
     try {
@@ -3996,27 +4004,26 @@ function addLogoutButton() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ username, password }),
       });
+
+      const body = await r.json().catch(() => ({}));
+
       if (r.ok) {
-        const data = await r.json();
-        storeAuth(data);
+        storeAuth(body);
         hideLoginOverlay();
+        form.removeEventListener('submit', handleSubmit);
         addLogoutButton();
         applyRoleRedirect();
-        // Re-boot the app now that we have a valid token
-        if (typeof boot === 'function') setTimeout(boot, 50);
-        else if (typeof applySnapshot === 'function') setTimeout(applySnapshot, 100);
+        boot();
       } else {
-        const body = await r.json().catch(() => ({}));
         if (errEl) {
-          errEl.textContent = body.error || 'Sign in failed';
+          errEl.textContent = body.error || `Sign in failed (${r.status})`;
           errEl.style.display = '';
         }
       }
-    } catch (e) {
-      if (errEl) { errEl.textContent = 'Network error'; errEl.style.display = ''; }
+    } catch (_) {
+      if (errEl) { errEl.textContent = 'Network error — server unreachable'; errEl.style.display = ''; }
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'SIGN IN';
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'SIGN IN'; }
     }
   });
 })();
