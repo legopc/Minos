@@ -4002,8 +4002,9 @@ function addLogoutButton() {
         hideLoginOverlay();
         addLogoutButton();
         applyRoleRedirect();
-        // Trigger state refresh
-        if (typeof applySnapshot === 'function') setTimeout(applySnapshot, 100);
+        // Re-boot the app now that we have a valid token
+        if (typeof boot === 'function') setTimeout(boot, 50);
+        else if (typeof applySnapshot === 'function') setTimeout(applySnapshot, 100);
       } else {
         const body = await r.json().catch(() => ({}));
         if (errEl) {
