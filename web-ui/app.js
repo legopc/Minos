@@ -901,6 +901,18 @@ function paintMeters() {
     }
   }
 
+  // M-12: Update strip view VU meters if strips view is active
+  if (viewMode === 'strips') {
+    for (let i = 0; i < inputs.length; i++) {
+      const sc = $(`strip-vu-${i}`);
+      if (sc) {
+        sc.width  = 14;
+        sc.height = 200;
+        drawStripMeterV(sc, inputs[i] ?? -60, peakHold.inputs[i], rmsState.inputs[i] > 0 ? 10 * Math.log10(Math.max(1e-10, rmsState.inputs[i])) : -60);
+      }
+    }
+  }
+
   requestAnimationFrame(paintMeters);
 }
 
@@ -1443,45 +1455,284 @@ function buildStripsView() {
   for (let rank = 0; rank < nInputs; rank++) {
     const i = state.inputOrder[rank];
     const inp = inputs[i] || {};
-    const card = document.createElement('div');
-    card.className = 'channel-strip-card';
-
-    const name = document.createElement('span');
-    name.className = 'strip-name';
-    name.textContent = inp.label || `IN ${i + 1}`;
-
     const gain = inp.gain_trim ?? 1.0;
+    const label = inp.label || `IN ${i + 1}`;
+
+    // ── Card container ──────────────────────────────────────────────
+    const card = document.createElement('div');
+    card.className = 'channel-strip-card' + (inp.mute ? ' strip-muted' : '');
+    card.id = `strip-${i}`;
+
+    // ── Header: color dot + name + dante activity dot ────────────
+    const hdr = document.createElement('div');
+    hdr.className = 'strip-header';
+    const colorDot = buildColorDot(`in-${i}`, 'strip');
+    const nameEl = document.createElement('span');
+    nameEl.className = 'strip-name';
+    nameEl.id = `sv-name-${i}`;
+    nameEl.textContent = label;
+    nameEl.title = label;
+    nameEl.addEventListener('click', () => openChannelRenameModal('input', i));
+    const danteDot = document.createElement('span');
+    danteDot.className = 'dante-dot';
+    danteDot.id = `sv-dante-${i}`;
+    danteDot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--fg-dim);flex-shrink:0';
+    hdr.appendChild(colorDot);
+    hdr.appendChild(nameEl);
+    hdr.appendChild(danteDot);
+
+    // ── M-07: Gain staging display ───────────────────────────────
+    const gainStaging = document.createElement('div');
+    gainStaging.className = 'strip-gain-staging';
+    gainStaging.innerHTML = `
+      <div class="gain-stage-row gain-stage-trim">
+        <span class="gain-stage-label">TRIM</span>
+        <div class="gain-stage-bar"><div class="gain-stage-fill" id="gs-trim-${i}" style="width:${gainToPercent(gain)}%"></div></div>
+        <span class="gain-stage-val" id="gs-trim-val-${i}">${gainToDbStr(gain)}</span>
+      </div>
+      <div class="gain-stage-row gain-stage-fader">
+        <span class="gain-stage-label">FADE</span>
+        <div class="gain-stage-bar"><div class="gain-stage-fill" id="gs-fader-${i}" style="width:${stripFaderPct(i)}%"></div></div>
+        <span class="gain-stage-val" id="gs-fader-val-${i}">${stripFaderDbStr(i)}</span>
+      </div>`;
+
+    // ── M-12 + M-01: VU meter canvas + fader side by side ────────
+    const meterFader = document.createElement('div');
+    meterFader.className = 'strip-meter-fader';
+
+    const vuCanvas = document.createElement('canvas');
+    vuCanvas.className = 'strip-vu-canvas';
+    vuCanvas.id = `strip-vu-${i}`;
+    vuCanvas.width = 14;
+    vuCanvas.height = 200;
+
+    // Fader wrap (for unity tick overlay)
+    const faderWrap = document.createElement('div');
+    faderWrap.className = 'strip-fader-wrap';
     const fader = document.createElement('input');
-    fader.type  = 'range';
+    fader.type = 'range';
     fader.className = 'strip-fader-vert';
+    fader.id = `sv-fader-${i}`;
     fader.min = '0'; fader.max = '2'; fader.step = '0.01';
     fader.value = String(gain);
+    fader.setAttribute('aria-label', `${label} gain`);
     if (faderLocked) fader.disabled = true;
-    fader.addEventListener('input', () => sendInputGainTrim(i, parseFloat(fader.value)));
 
-    const btns = document.createElement('div');
-    btns.className = 'strip-buttons';
+    // Unity tick: gain=1.0 → 50% of 0–2 range → 50% from bottom = 100px down from top
+    const unityTick = document.createElement('div');
+    unityTick.className = 'strip-unity-tick';
+    // In vertical writing mode with direction:rtl, the thumb position is:
+    // value=0 → bottom, value=2 → top. unity is at value=1 → middle → top: 50%
+    unityTick.style.top = '50%';
+    unityTick.style.right = '-6px';
+    unityTick.style.marginTop = '-1px';
 
+    // Dual-gesture fader: touch with 2+ fingers → fine mode (1/10 sensitivity)
+    let faderFingers = 0;
+    fader.addEventListener('touchstart', e => { faderFingers = e.touches.length; }, { passive: true });
+    fader.addEventListener('touchend',   () => { faderFingers = 0; }, { passive: true });
+    fader.addEventListener('input', () => {
+      if (faderLocked) return;
+      const raw = parseFloat(fader.value);
+      if (faderFingers >= 2) {
+        // Fine: scale adjustment toward current by 0.1
+        const prev = inp.gain_trim ?? 1.0;
+        const delta = (raw - prev) * 0.1;
+        fader.value = String(Math.max(0, Math.min(2, prev + delta)));
+      }
+      const finalGain = parseFloat(fader.value);
+      inp.gain_trim = finalGain; // optimistic local update
+      updateStripGainStaging(i);
+      sendInputGainTrim(i, finalGain);
+    });
+    // Double-tap to reset
+    wireFaderDoubleClick(fader, i, 'input');
+
+    faderWrap.appendChild(fader);
+    faderWrap.appendChild(unityTick);
+    meterFader.appendChild(vuCanvas);
+    meterFader.appendChild(faderWrap);
+
+    // Fader dB label
+    const dbLabel = document.createElement('div');
+    dbLabel.className = 'strip-fader-db';
+    dbLabel.id = `sv-fader-db-${i}`;
+    dbLabel.textContent = gainToDbStr(gain);
+    fader.addEventListener('input', () => {
+      const g = parseFloat(fader.value);
+      dbLabel.textContent = gainToDbStr(g);
+    });
+
+    // ── DSP buttons ───────────────────────────────────────────────
+    const dspBtns = document.createElement('div');
+    dspBtns.className = 'strip-dsp-btns';
+    const btnEq = document.createElement('button');
+    btnEq.className = 'btn-icon'; btnEq.textContent = 'EQ';
+    btnEq.title = 'Open EQ';
+    btnEq.addEventListener('click', () => openEqModal && openEqModal(i));
+    const btnPhase = document.createElement('button');
+    btnPhase.className = 'btn-icon' + (phaseState[`in-${i}`] ? ' active' : '');
+    btnPhase.id = `sv-phase-${i}`;
+    btnPhase.textContent = 'φ';
+    btnPhase.title = 'Phase invert';
+    btnPhase.addEventListener('click', () => togglePhase(`in-${i}`, btnPhase));
+    const btnStereo = document.createElement('button');
+    btnStereo.className = 'btn-icon' + (stereoLink[`in-${i}`] ? ' active' : '');
+    btnStereo.id = `sv-stereo-${i}`;
+    btnStereo.textContent = '⊸';
+    btnStereo.title = 'Stereo link';
+    btnStereo.addEventListener('click', () => toggleStereoLink && toggleStereoLink(`in-${i}`, btnStereo));
+    dspBtns.appendChild(btnEq);
+    dspBtns.appendChild(btnPhase);
+    dspBtns.appendChild(btnStereo);
+
+    // ── Mute / Solo row ───────────────────────────────────────────
+    const msRow = document.createElement('div');
+    msRow.className = 'strip-ms-row';
     const btnM = document.createElement('button');
     btnM.className = 'btn-mute' + (inp.mute ? ' active' : '');
-    btnM.textContent = 'M';
-    btnM.id = `sv-mute-${i}`;
+    btnM.textContent = 'M'; btnM.id = `sv-mute-${i}`;
+    btnM.title = 'Mute';
     btnM.addEventListener('click', () => toggleInputMute(i));
-
     const btnS = document.createElement('button');
     btnS.className = 'btn-solo' + (inp.solo ? ' active' : '');
-    btnS.textContent = 'S';
-    btnS.id = `sv-solo-${i}`;
+    btnS.textContent = 'S'; btnS.id = `sv-solo-${i}`;
+    btnS.title = aflPflMode === 'afl' ? 'AFL Solo' : 'PFL Solo';
     btnS.addEventListener('click', () => toggleInputSolo(i));
+    msRow.appendChild(btnM);
+    msRow.appendChild(btnS);
 
-    btns.appendChild(btnM);
-    btns.appendChild(btnS);
-    card.appendChild(name);
-    card.appendChild(fader);
-    card.appendChild(btns);
+    // ── Assemble ─────────────────────────────────────────────────
+    card.appendChild(hdr);
+    card.appendChild(gainStaging);
+    card.appendChild(meterFader);
+    card.appendChild(dbLabel);
+    card.appendChild(dspBtns);
+    card.appendChild(msRow);
     el.appendChild(card);
   }
 }
+
+// ── M-01 helpers: gain ↔ dB ──────────────────────────────────────────────
+
+function gainToDb(gain) {
+  return 20 * Math.log10(Math.max(gain, 0.001));
+}
+function gainToDbStr(gain) {
+  const db = gainToDb(gain);
+  if (db <= -55) return '-∞';
+  return (db >= 0 ? '+' : '') + db.toFixed(1) + 'dB';
+}
+function gainToPercent(gain) {
+  // 0–2 gain → 0–100%
+  return Math.min(100, (gain / 2) * 100);
+}
+
+// ── M-07: Gain staging helpers ───────────────────────────────────────────
+
+function stripFaderPct(i) {
+  // Average active matrix cell gain for this input
+  const row = state.matrix[i];
+  if (!row) return 0;
+  const active = row.filter(v => v > 0);
+  if (!active.length) return 0;
+  const avg = active.reduce((a, b) => a + b, 0) / active.length;
+  return gainToPercent(avg);
+}
+function stripFaderDbStr(i) {
+  const row = state.matrix[i];
+  if (!row) return '--';
+  const active = row.filter(v => v > 0);
+  if (!active.length) return '--';
+  const avg = active.reduce((a, b) => a + b, 0) / active.length;
+  return gainToDbStr(avg);
+}
+function updateStripGainStaging(i) {
+  const inp = state.inputs[i] || {};
+  const gain = inp.gain_trim ?? 1.0;
+  const trimFill = $(`gs-trim-${i}`);
+  const trimVal  = $(`gs-trim-val-${i}`);
+  const fadFill  = $(`gs-fader-${i}`);
+  const fadVal   = $(`gs-fader-val-${i}`);
+  if (trimFill) trimFill.style.width = gainToPercent(gain) + '%';
+  if (trimVal)  trimVal.textContent  = gainToDbStr(gain);
+  if (fadFill)  fadFill.style.width  = stripFaderPct(i) + '%';
+  if (fadVal)   fadVal.textContent   = stripFaderDbStr(i);
+}
+
+// ── M-12: Vertical VU meter canvas drawing ───────────────────────────────
+
+function drawStripMeterV(canvas, db, peak, rms) {
+  const W = canvas.width;   // 14
+  const H = canvas.height;  // 200
+  const ctx = canvas.getContext('2d');
+  const pct    = Math.max(0, Math.min(1, (db   + 60) / 60));
+  const peakPct = Math.max(0, Math.min(1, (peak + 60) / 60));
+  const rmsPct  = Math.max(0, Math.min(1, ((rms ?? db) + 60) / 60));
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#12121a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Main bar bottom-to-top with gradient (green → amber → red)
+  const barH = Math.round(pct * H);
+  if (barH > 0) {
+    const grad = ctx.createLinearGradient(0, H, 0, 0);
+    grad.addColorStop(0.0,  '#22c55e');
+    grad.addColorStop(0.70, '#f59e0b');
+    grad.addColorStop(0.90, '#ef4444');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - barH, W, barH);
+  }
+
+  // RMS overlay (inner strip, blue tint)
+  const rmsH = Math.round(rmsPct * H);
+  if (rmsH > 0) {
+    ctx.fillStyle = 'rgba(0,180,255,0.3)';
+    ctx.fillRect(Math.floor(W * 0.3), H - rmsH, Math.ceil(W * 0.4), rmsH);
+  }
+
+  // Peak hold: horizontal white line
+  const peakY = Math.round((1 - peakPct) * H);
+  if (peakY < H - 1) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, peakY, W, 2);
+  }
+
+  // -12 dB tick mark (1/5 down from top of full range at 60dB span → 40% from bottom)
+  const tickY = Math.round(H * (1 - 48 / 60)); // -12dB relative to 0dBFS
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(0, tickY, W, 1);
+}
+
+// ── M-06: AFL/PFL solo mode ───────────────────────────────────────────────
+
+let aflPflMode = localStorage.getItem('patchbox-solo-mode') || 'pfl';
+
+function initAflPfl() {
+  const btn = $('btn-afl-pfl');
+  if (!btn) return;
+  updateAflPflBtn(btn);
+  btn.addEventListener('click', () => {
+    aflPflMode = aflPflMode === 'pfl' ? 'afl' : 'pfl';
+    localStorage.setItem('patchbox-solo-mode', aflPflMode);
+    updateAflPflBtn(btn);
+    haptic(20);
+    toast(`Solo mode: ${aflPflMode.toUpperCase()}`, 'ok');
+    // Update strip solo button titles
+    document.querySelectorAll('[id^="sv-solo-"]').forEach(b => {
+      b.title = aflPflMode === 'afl' ? 'AFL Solo' : 'PFL Solo';
+    });
+  });
+}
+
+function updateAflPflBtn(btn) {
+  btn.textContent = aflPflMode.toUpperCase();
+  btn.classList.toggle('afl-mode', aflPflMode === 'afl');
+  btn.title = `Solo mode: ${aflPflMode === 'pfl' ? 'PFL (Pre Fader Listen)' : 'AFL (After Fader Listen)'} — click to toggle`;
+}
+
+initAflPfl();
 
 document.querySelectorAll('.view-tab').forEach(btn => {
   btn.addEventListener('click', () => setViewMode(btn.dataset.view));
