@@ -2370,3 +2370,90 @@ body.compact .strip-meter {
   height: 200px;
   margin: 0;
 }
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* SPRINT 29: Virtual Scrolling, Debounced Faders, Responsive Reflow         */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/* T-03: Debounced Fader Pending Indicator */
+.strip-fader.fader-pending,
+.out-master-fader.fader-pending {
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.4);
+}
+
+.strip-fader.fader-pending::after,
+.out-master-fader.fader-pending::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -8px;
+  width: 6px;
+  height: 6px;
+  background: #f5a623;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  animation: fader-pulse 600ms infinite;
+}
+
+@keyframes fader-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* T-04: Responsive Reflow for Mobile/Compact Modes */
+body.mobile .matrix-cell {
+  min-width: 24px;
+  min-height: 24px;
+  font-size: 9px;
+}
+
+body.mobile .strip-label {
+  font-size: 9px;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.mobile .output-label {
+  font-size: 8px;
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.compact .matrix-cell {
+  min-width: 20px;
+  min-height: 20px;
+  font-size: 7px;
+}
+
+body.compact .strip-label,
+body.compact .output-label {
+  display: none;
+}
+
+body.compact .strip-meter {
+  display: none;
+}
+
+/* T-01: Virtual Scrolling Styles */
+#matrix-area {
+  position: relative;
+  overflow: auto;
+}
+
+#matrix-rows {
+  display: table;
+}
+
+.matrix-row {
+  display: table-row;
+}
+
+/* Phantom rows for scroll height maintenance (when virtual scrolling is active) */
+.matrix-phantom-row {
+  display: table-row;
+  height: 32px;
+  visibility: hidden;
+}

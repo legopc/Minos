@@ -1433,6 +1433,14 @@ document.getElementById('comp-modal-close').addEventListener('click', () => {
 
 document.getElementById('comp-modal-apply').addEventListener('click', async () => {
   const modal = document.getElementById('comp-modal');
+  
+  // M-11: Gate mode (INPUT channels)
+  if (modal.dataset.mode === 'gate') {
+    applyGateSettings();
+    return;
+  }
+  
+  // D-06: Compressor mode (OUTPUT channels)
   const ch    = parseInt(modal.dataset.channel, 10);
 
   const compParams = {
@@ -5254,20 +5262,6 @@ function initSprint28() {
   if (gateRangeInput) gateRangeInput.addEventListener('input', updateGateDisplay);
   if (gateAttackInput) gateAttackInput.addEventListener('input', updateGateDisplay);
   if (gateReleaseInput) gateReleaseInput.addEventListener('input', updateGateDisplay);
-  
-  // Intercept comp modal apply button for gate mode
-  const compApplyBtn = document.getElementById('comp-modal-apply');
-  if (compApplyBtn) {
-    const origHandler = compApplyBtn.onclick;
-    compApplyBtn.addEventListener('click', function(e) {
-      const modal = document.getElementById('comp-modal');
-      if (modal.dataset.mode === 'gate') {
-        e.preventDefault();
-        e.stopPropagation();
-        applyGateSettings();
-      }
-    });
-  }
 }
 
 // Initialize on document ready
