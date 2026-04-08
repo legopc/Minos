@@ -1,0 +1,21 @@
+[package]
+name        = "patchbox-dante"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "inferno_aoip integration for dante-patchbox — Dante I/O layer"
+
+[dependencies]
+patchbox-core = { workspace = true }
+tokio         = { workspace = true }
+anyhow        = { workspace = true }
+thiserror     = { workspace = true }
+tracing       = { workspace = true }
+serde         = { workspace = true }
+
+# NOTE: inferno_aoip is not yet added as a dependency until the library API
+# (open question A1) is resolved. This crate currently contains stubs that
+# will be replaced when the integration point is confirmed.
+#
+# Candidate:
+#   inferno_aoip = { git = "https://gitlab.com/lumifaza/inferno", branch = "dev" }

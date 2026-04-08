@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DANTE PATCHBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Barlow+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Header ─────────────────────────────────────────────────── -->
+    <header id="header">
+      <span class="title">DANTE PATCHBOX</span>
+      <span class="sep">·</span>
+      <span id="device-name" class="label">—</span>
+      <span class="sep">·</span>
+      <span id="api-status" class="badge badge--offline">OFFLINE</span>
+      <span class="spacer"></span>
+      <span id="ws-status" class="badge badge--offline">WS OFFLINE</span>
+    </header>
+
+    <!-- ── Matrix area ───────────────────────────────────────────── -->
+    <main id="matrix-area">
+
+      <!-- Output labels (top row) -->
+      <div id="output-labels" class="label-row">
+        <div class="corner-cell">IN\OUT</div>
+        <!-- populated by JS -->
+      </div>
+
+      <!-- Matrix rows (one row = one input) -->
+      <div id="matrix-rows">
+        <!-- populated by JS -->
+      </div>
+
+    </main>
+
+    <!-- ── VU meter column ───────────────────────────────────────── -->
+    <aside id="meter-panel">
+      <div class="panel-title">METERS</div>
+      <div id="meters-inputs">
+        <div class="meter-group-label">IN</div>
+        <!-- populated by JS -->
+      </div>
+      <div id="meters-outputs">
+        <div class="meter-group-label">OUT</div>
+        <!-- populated by JS -->
+      </div>
+    </aside>
+
+    <!-- ── Scene bar ─────────────────────────────────────────────── -->
+    <footer id="scene-bar">
+      <span class="label">SCENE</span>
+      <select id="scene-select"><option>—</option></select>
+      <button id="btn-load-scene">LOAD</button>
+      <input id="scene-name-input" type="text" placeholder="new-scene">
+      <button id="btn-save-scene">SAVE</button>
+      <span class="spacer"></span>
+      <span id="toast" class="toast"></span>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

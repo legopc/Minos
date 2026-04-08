@@ -1,0 +1,45 @@
+[package]
+name        = "patchbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Dante AoIP matrix mixer and DSP patchbay — main binary"
+
+[[bin]]
+name = "patchbox"
+path = "src/main.rs"
+
+[dependencies]
+patchbox-core  = { workspace = true }
+patchbox-dante = { workspace = true }
+
+# HTTP server
+axum        = { version = "0.7", features = ["macros", "ws"] }
+tower-http  = { version = "0.5", features = ["cors", "fs"] }
+tokio       = { workspace = true }
+# Asset embedding
+rust-embed  = { version = "8", features = ["compression"] }
+mime_guess  = "2"
+# Serialization
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+toml        = { workspace = true }
+# CLI
+clap        = { workspace = true }
+# TUI
+ratatui     = "0.29"
+crossterm   = "0.28"
+# Error handling
+anyhow      = { workspace = true }
+thiserror   = { workspace = true }
+# Logging
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+# Misc
+chrono    = { version = "0.4", features = ["serde"] }
+uuid      = { version = "1", features = ["v4", "serde"] }
+dirs      = "5"
+futures-util = "0.3"
+
+[dev-dependencies]
+axum-test = "14"

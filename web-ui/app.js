@@ -1,0 +1,564 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   DANTE PATCHBOX — app.js
+   Plain vanilla JS — no framework, no build step.
+   Design: debounced REST calls, optimistic UI, Canvas VU meters, WebSocket.
+   ───────────────────────────────────────────────────────────────────────── */
+
+'use strict';
+
+const API  = '/api/v1';
+const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+
+// ── Application State ─────────────────────────────────────────────────────
+
+const state = {
+  nInputs:  0,
+  nOutputs: 0,
+  matrix:   [],    // [nInputs][nOutputs] = gain (0..1), 0 = not routed
+  inputs:   [],    // [{ label, mute, solo, gain_trim }]
+  outputs:  [],    // [{ label, mute, master_gain }]
+  meters: {
+    inputs:  [],   // f32 dBFS
+    outputs: [],
+  },
+};
+
+// ── DOM refs ─────────────────────────────────────────────────────────────
+
+const $ = id => document.getElementById(id);
+
+const elApiStatus   = $('api-status');
+const elWsStatus    = $('ws-status');
+const elDeviceName  = $('device-name');
+const elOutputLabels = $('output-labels');
+const elMatrixRows   = $('matrix-rows');
+const elMetersIn     = $('meters-inputs');
+const elMetersOut    = $('meters-outputs');
+const elSceneSelect  = $('scene-select');
+const elSceneNameInput = $('scene-name-input');
+const elToast        = $('toast');
+
+// Gain fader tooltip
+let gainTooltip = null;
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+
+let toastTimer = null;
+function toast(msg, type = 'ok') {
+  elToast.textContent = msg;
+  elToast.className   = `toast ${type} show`;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { elToast.classList.remove('show'); }, 2500);
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────
+
+async function apiFetch(path, method = 'GET', body = undefined) {
+  const opts = {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+  };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`${method} ${path} → ${res.status} ${txt}`);
+  }
+  if (res.status === 204) return null;
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('json') ? res.json() : res.text();
+}
+
+// ── Debounce (same 80ms as inferno-iradio) ────────────────────────────────
+
+function debounce(fn, ms = 80) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// ── Initialise UI from state snapshot ────────────────────────────────────
+
+function buildUI() {
+  const { nInputs, nOutputs, inputs, outputs } = state;
+
+  // Output label row
+  elOutputLabels.innerHTML = '';
+  const corner = document.createElement('div');
+  corner.className = 'corner-cell';
+  corner.textContent = 'IN\\OUT';
+  elOutputLabels.appendChild(corner);
+
+  for (let o = 0; o < nOutputs; o++) {
+    const el = document.createElement('div');
+    el.className = 'output-label';
+    el.id = `out-label-${o}`;
+    if (outputs[o]?.mute) el.classList.add('muted');
+    el.textContent = outputs[o]?.label || `O${o + 1}`;
+    el.title = 'Click to mute output';
+    el.addEventListener('click', () => toggleOutputMute(o));
+    elOutputLabels.appendChild(el);
+  }
+
+  // Matrix rows
+  elMatrixRows.innerHTML = '';
+  for (let i = 0; i < nInputs; i++) {
+    elMatrixRows.appendChild(buildInputRow(i));
+  }
+
+  // Meters
+  buildMeters();
+}
+
+function buildInputRow(i) {
+  const inp = state.inputs[i] || {};
+  const row = document.createElement('div');
+  row.className = 'matrix-row';
+  row.id = `row-${i}`;
+
+  // Strip
+  const strip = document.createElement('div');
+  strip.className = 'input-strip';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'strip-name';
+  nameEl.id = `in-name-${i}`;
+  nameEl.textContent = inp.label || `IN ${i + 1}`;
+  nameEl.title = 'Click to rename';
+  nameEl.addEventListener('click', () => renameChannel('input', i));
+
+  const btnM = document.createElement('button');
+  btnM.className = 'btn-mute' + (inp.mute ? ' active' : '');
+  btnM.textContent = 'M';
+  btnM.title = 'Mute';
+  btnM.id = `in-mute-${i}`;
+  btnM.addEventListener('click', () => toggleInputMute(i));
+
+  const btnS = document.createElement('button');
+  btnS.className = 'btn-solo' + (inp.solo ? ' active' : '');
+  btnS.textContent = 'S';
+  btnS.title = 'Solo';
+  btnS.id = `in-solo-${i}`;
+  btnS.addEventListener('click', () => toggleInputSolo(i));
+
+  strip.appendChild(nameEl);
+  strip.appendChild(btnM);
+  strip.appendChild(btnS);
+  row.appendChild(strip);
+
+  // Matrix cells
+  for (let o = 0; o < state.nOutputs; o++) {
+    row.appendChild(buildCell(i, o));
+  }
+
+  return row;
+}
+
+function buildCell(i, o) {
+  const gain = (state.matrix[i] || [])[o] ?? 0;
+  const active = gain > 0;
+
+  const cell = document.createElement('div');
+  cell.className = 'matrix-cell' + (active ? ' active' : '');
+  cell.id = `cell-${i}-${o}`;
+  if (active) cell.setAttribute('data-gain', gainLabel(gain));
+
+  cell.addEventListener('click', () => toggleCell(i, o));
+  cell.addEventListener('contextmenu', e => { e.preventDefault(); showGainTooltip(i, o, cell); });
+
+  return cell;
+}
+
+function gainLabel(g) {
+  if (g <= 0) return '0.0';
+  const db = 20 * Math.log10(g);
+  return db.toFixed(1);
+}
+
+// ── Matrix cell toggle ────────────────────────────────────────────────────
+
+async function toggleCell(i, o) {
+  const current = (state.matrix[i] || [])[o] ?? 0;
+  const newGain = current > 0 ? 0.0 : 1.0;
+
+  // Optimistic update
+  applyGain(i, o, newGain);
+
+  try {
+    await apiFetch(`/matrix/${i}/${o}`, 'PATCH', { gain: newGain });
+  } catch (err) {
+    // Revert
+    applyGain(i, o, current);
+    toast(`Error: ${err.message}`, 'err');
+  }
+}
+
+function applyGain(i, o, gain) {
+  if (!state.matrix[i]) state.matrix[i] = [];
+  state.matrix[i][o] = gain;
+
+  const cell = $(`cell-${i}-${o}`);
+  if (!cell) return;
+
+  const active = gain > 0;
+  cell.classList.toggle('active', active);
+  if (active) {
+    cell.setAttribute('data-gain', gainLabel(gain));
+  } else {
+    cell.removeAttribute('data-gain');
+  }
+}
+
+// ── Gain fader tooltip (right-click) ─────────────────────────────────────
+
+const sendGain = debounce(async (i, o, gain) => {
+  try {
+    await apiFetch(`/matrix/${i}/${o}`, 'PATCH', { gain });
+  } catch (err) {
+    toast(`Gain error: ${err.message}`, 'err');
+  }
+});
+
+function showGainTooltip(i, o, cellEl) {
+  if (!gainTooltip) {
+    gainTooltip = document.createElement('div');
+    gainTooltip.className = 'gain-tooltip';
+    gainTooltip.innerHTML =
+      `<label id="gt-label"></label>` +
+      `<input type="range" id="gt-range" min="0" max="1" step="0.01">` +
+      `<span class="gain-value" id="gt-value"></span>`;
+    document.body.appendChild(gainTooltip);
+
+    document.addEventListener('click', e => {
+      if (!gainTooltip.contains(e.target)) gainTooltip.classList.remove('visible');
+    });
+
+    const range = $('gt-range');
+    range.addEventListener('input', e => {
+      const g = parseFloat(e.target.value);
+      $('gt-value').textContent = gainLabel(g) + ' dB';
+      applyGain(gainTooltip._i, gainTooltip._o, g);
+      sendGain(gainTooltip._i, gainTooltip._o, g);
+    });
+  }
+
+  const rect = cellEl.getBoundingClientRect();
+  gainTooltip.style.left = `${rect.left}px`;
+  gainTooltip.style.top  = `${rect.bottom + 4}px`;
+
+  const gain = (state.matrix[i] || [])[o] ?? 0;
+  gainTooltip._i = i;
+  gainTooltip._o = o;
+
+  const inLabel  = state.inputs[i]?.label  || `IN ${i + 1}`;
+  const outLabel = state.outputs[o]?.label || `OUT ${o + 1}`;
+  $('gt-label').textContent = `${inLabel} → ${outLabel}`;
+  $('gt-range').value       = gain;
+  $('gt-value').textContent = gainLabel(gain) + ' dB';
+
+  gainTooltip.classList.add('visible');
+}
+
+// ── Channel controls ─────────────────────────────────────────────────────
+
+async function toggleInputMute(i) {
+  const was = state.inputs[i]?.mute ?? false;
+  state.inputs[i] = state.inputs[i] || {};
+  state.inputs[i].mute = !was;
+  updateStripButtons(i);
+
+  try {
+    await apiFetch(`/channels/input/${i}/mute`, 'POST');
+  } catch (err) {
+    state.inputs[i].mute = was;
+    updateStripButtons(i);
+    toast(`Error: ${err.message}`, 'err');
+  }
+}
+
+async function toggleInputSolo(i) {
+  const was = state.inputs[i]?.solo ?? false;
+  state.inputs[i] = state.inputs[i] || {};
+  state.inputs[i].solo = !was;
+  updateStripButtons(i);
+
+  try {
+    await apiFetch(`/channels/input/${i}/solo`, 'POST');
+  } catch (err) {
+    state.inputs[i].solo = was;
+    updateStripButtons(i);
+    toast(`Error: ${err.message}`, 'err');
+  }
+}
+
+function updateStripButtons(i) {
+  const inp = state.inputs[i] || {};
+  const btnM = $(`in-mute-${i}`);
+  const btnS = $(`in-solo-${i}`);
+  if (btnM) btnM.classList.toggle('active', !!inp.mute);
+  if (btnS) btnS.classList.toggle('active', !!inp.solo);
+}
+
+async function toggleOutputMute(o) {
+  const was = state.outputs[o]?.mute ?? false;
+  state.outputs[o] = state.outputs[o] || {};
+  state.outputs[o].mute = !was;
+  const lbl = $(`out-label-${o}`);
+  if (lbl) lbl.classList.toggle('muted', !was);
+
+  try {
+    await apiFetch(`/channels/output/${o}/mute`, 'POST');
+  } catch (err) {
+    state.outputs[o].mute = was;
+    if (lbl) lbl.classList.toggle('muted', was);
+    toast(`Error: ${err.message}`, 'err');
+  }
+}
+
+// ── Channel rename ────────────────────────────────────────────────────────
+
+function renameChannel(type, id) {
+  const current = type === 'input'
+    ? (state.inputs[id]?.label || `IN ${id + 1}`)
+    : (state.outputs[id]?.label || `OUT ${id + 1}`);
+
+  const name = prompt(`Rename ${type} ${id + 1}:`, current);
+  if (!name || name === current) return;
+
+  const path = `/channels/${type}/${id}/name`;
+  apiFetch(path, 'POST', { name })
+    .then(() => {
+      if (type === 'input') {
+        state.inputs[id] = state.inputs[id] || {};
+        state.inputs[id].label = name;
+        const el = $(`in-name-${id}`);
+        if (el) el.textContent = name;
+        const meter = $(`meter-in-label-${id}`);
+        if (meter) meter.textContent = name.slice(0, 5).toUpperCase();
+      } else {
+        state.outputs[id] = state.outputs[id] || {};
+        state.outputs[id].label = name;
+        const el = $(`out-label-${id}`);
+        if (el) el.textContent = name;
+        const meter = $(`meter-out-label-${id}`);
+        if (meter) meter.textContent = name.slice(0, 5).toUpperCase();
+      }
+      toast(`Renamed to "${name}"`, 'ok');
+    })
+    .catch(err => toast(`Rename failed: ${err.message}`, 'err'));
+}
+
+// ── Meter DOM ─────────────────────────────────────────────────────────────
+
+function buildMeters() {
+  // Clear previous group content (keep label)
+  while (elMetersIn.children.length > 1) elMetersIn.removeChild(elMetersIn.lastChild);
+  while (elMetersOut.children.length > 1) elMetersOut.removeChild(elMetersOut.lastChild);
+
+  for (let i = 0; i < state.nInputs; i++) {
+    elMetersIn.appendChild(buildMeterRow('in', i, state.inputs[i]?.label));
+  }
+  for (let o = 0; o < state.nOutputs; o++) {
+    elMetersOut.appendChild(buildMeterRow('out', o, state.outputs[o]?.label));
+  }
+}
+
+function buildMeterRow(dir, idx, label) {
+  const row  = document.createElement('div');
+  row.className = 'meter-row';
+
+  const lbl  = document.createElement('div');
+  lbl.className = 'meter-label';
+  lbl.id = `meter-${dir}-label-${idx}`;
+  lbl.textContent = (label || `${dir.toUpperCase()}${idx + 1}`).slice(0, 5).toUpperCase();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'meter-bar-wrap';
+
+  const bar = document.createElement('div');
+  bar.className = 'meter-bar';
+  bar.id = `meter-${dir}-bar-${idx}`;
+
+  wrap.appendChild(bar);
+  row.appendChild(lbl);
+  row.appendChild(wrap);
+  return row;
+}
+
+// ── Meter paint (rAF loop) ────────────────────────────────────────────────
+
+function dbToPercent(db) {
+  // Map -60..0 dBFS to 0..100%
+  return Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+}
+
+function paintMeters() {
+  const { inputs, outputs } = state.meters;
+
+  for (let i = 0; i < inputs.length; i++) {
+    const bar = $(`meter-in-bar-${i}`);
+    if (!bar) continue;
+    const pct = dbToPercent(inputs[i] ?? -60);
+    bar.style.width = pct + '%';
+    bar.className = 'meter-bar' + (pct > 95 ? ' clip' : pct > 75 ? ' warn' : '');
+  }
+  for (let o = 0; o < outputs.length; o++) {
+    const bar = $(`meter-out-bar-${o}`);
+    if (!bar) continue;
+    const pct = dbToPercent(outputs[o] ?? -60);
+    bar.style.width = pct + '%';
+    bar.className = 'meter-bar' + (pct > 95 ? ' clip' : pct > 75 ? ' warn' : '');
+  }
+
+  requestAnimationFrame(paintMeters);
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
+
+let ws = null;
+let wsRetryMs = 1000;
+
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    wsRetryMs = 1000;
+    setWsStatus(true);
+  };
+
+  ws.onclose = () => {
+    setWsStatus(false);
+    setTimeout(connectWS, wsRetryMs);
+    wsRetryMs = Math.min(wsRetryMs * 2, 30000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) {
+      // Binary metering frame: [nInputs f32s, nOutputs f32s]
+      const view = new Float32Array(e.data);
+      const ni = state.nInputs;
+      const no = state.nOutputs;
+      state.meters.inputs  = Array.from(view.slice(0, ni));
+      state.meters.outputs = Array.from(view.slice(ni, ni + no));
+    } else {
+      // JSON control message
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.op === 'snapshot') applySnapshot(msg.state);
+      } catch (err) {
+        console.warn('WS JSON parse error', err);
+      }
+    }
+  };
+}
+
+function setWsStatus(online) {
+  elWsStatus.textContent = online ? 'WS ONLINE' : 'WS OFFLINE';
+  elWsStatus.className   = 'badge ' + (online ? 'badge--online' : 'badge--offline');
+}
+
+// ── Snapshot application ──────────────────────────────────────────────────
+
+function applySnapshot(snap) {
+  if (!snap) return;
+
+  state.nInputs  = snap.matrix?.inputs  ?? state.nInputs;
+  state.nOutputs = snap.matrix?.outputs ?? state.nOutputs;
+
+  // Rebuild flat gains matrix
+  state.matrix = [];
+  const cells = snap.matrix?.cells ?? [];
+  for (let i = 0; i < state.nInputs; i++) {
+    state.matrix[i] = [];
+    for (let o = 0; o < state.nOutputs; o++) {
+      state.matrix[i][o] = cells[i * state.nOutputs + o] ?? 0;
+    }
+  }
+
+  state.inputs  = snap.inputs  ?? [];
+  state.outputs = snap.outputs ?? [];
+  state.meters.inputs  = new Array(state.nInputs).fill(-60);
+  state.meters.outputs = new Array(state.nOutputs).fill(-60);
+
+  buildUI();
+}
+
+// ── Scene management ──────────────────────────────────────────────────────
+
+async function loadSceneList() {
+  try {
+    const names = await apiFetch('/scenes');
+    if (!Array.isArray(names)) return;
+    elSceneSelect.innerHTML = '<option value="">— select —</option>' +
+      names.map(n => `<option value="${n}">${n}</option>`).join('');
+  } catch (_) {}
+}
+
+$('btn-load-scene').addEventListener('click', async () => {
+  const name = elSceneSelect.value;
+  if (!name) return;
+  try {
+    await apiFetch(`/scenes/${encodeURIComponent(name)}`);
+    toast(`Loaded scene "${name}"`, 'ok');
+    const full = await apiFetch('/state');
+    if (full) applySnapshot(full);
+  } catch (err) {
+    toast(`Load failed: ${err.message}`, 'err');
+  }
+});
+
+$('btn-save-scene').addEventListener('click', async () => {
+  const name = elSceneNameInput.value.trim();
+  if (!name) { toast('Enter a scene name', 'err'); return; }
+  try {
+    await apiFetch('/scenes', 'POST', { name });
+    toast(`Saved scene "${name}"`, 'ok');
+    elSceneNameInput.value = '';
+    loadSceneList();
+  } catch (err) {
+    toast(`Save failed: ${err.message}`, 'err');
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+
+async function boot() {
+  // Check API health
+  try {
+    const health = await apiFetch('/health');
+    elApiStatus.textContent = '[ONLINE]';
+    elApiStatus.className   = 'badge badge--online';
+    elDeviceName.textContent = health.device_name || 'patchbox';
+    state.nInputs  = health.inputs;
+    state.nOutputs = health.outputs;
+  } catch (err) {
+    elApiStatus.textContent = '[OFFLINE]';
+    elApiStatus.className   = 'badge badge--offline';
+    console.error('API health failed', err);
+    setTimeout(boot, 3000);
+    return;
+  }
+
+  // Fetch full state
+  try {
+    const full = await apiFetch('/state');
+    if (full) applySnapshot(full);
+    else buildUI();
+  } catch (err) {
+    console.warn('state fetch failed', err);
+    buildUI();
+  }
+
+  // Load scene list
+  loadSceneList();
+
+  // Connect WebSocket
+  connectWS();
+
+  // Start meter paint loop
+  requestAnimationFrame(paintMeters);
+}
+
+boot();

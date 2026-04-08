@@ -1,0 +1,22 @@
+[package]
+name        = "patchbox-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NxM DSP matrix engine for dante-patchbox — no I/O, no async"
+
+[dependencies]
+dasp       = { version = "0.11", features = ["signal"] }
+dasp_graph = "0.11"
+fundsp     = "0.19"
+# Lock-free triple-buffer for RT-safe parameter updates
+triple_buffer = "9"
+# Serialization
+serde      = { workspace = true }
+serde_json = { workspace = true }
+toml       = { workspace = true }
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"
