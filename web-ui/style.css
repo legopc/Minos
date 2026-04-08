@@ -731,6 +731,63 @@ body::after {
   vertical-align: middle;
 }
 .dante-dot.active { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }
+/* P-01: Dante subscription state variants */
+.dante-dot.dante-pending { background: var(--yellow); box-shadow: 0 0 4px rgba(251,191,36,0.5); }
+.dante-dot.dante-lost    { background: var(--red);    box-shadow: 0 0 6px rgba(239,68,68,0.7); animation: dante-lost-blink 0.8s ease-in-out infinite; }
+
+@keyframes dante-lost-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* P-04: Row-level broken connection highlight */
+.matrix-row.dante-lost-row {
+  background: rgba(239, 68, 68, 0.06);
+  animation: row-warn-fade 4s ease-out forwards;
+}
+@keyframes row-warn-fade {
+  0%   { background: rgba(239,68,68,0.15); }
+  100% { background: transparent; }
+}
+
+/* P-03: Channel search input in toolbar */
+.matrix-search-input {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  height: 24px;
+  width: 140px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.matrix-search-input:focus { border-color: var(--accent); }
+.matrix-search-input::placeholder { color: var(--text-dim); }
+.matrix-search-input::-webkit-search-cancel-button { cursor: pointer; filter: invert(0.6); }
+
+/* P-08: Tooltip for cell hover signal info — using title attr, enhanced tooltip via ::after */
+.matrix-cell.has-signal::after {
+  content: attr(data-signal);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a2a;
+  border: 1px solid var(--accent);
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 200;
+  display: none;
+}
+.matrix-cell.has-signal:hover::after { display: block; }
 
 /* ── W-05: Solo count badge ────────────────────────────────────────── */
 .badge--solo {

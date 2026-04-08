@@ -351,6 +351,7 @@ function buildUI() {
   // W-15/W-24: re-apply filters after rebuild
   applyActiveFilter();
   applyZoneFilter();
+  if (searchQuery) applySearchFilter();
 }
 
 function buildInputRow(i, rank) {
@@ -1034,6 +1035,8 @@ function applySnapshot(snap) {
       if (dot)  dot.classList.toggle('active', !!(state.danteRxActive?.[i]));
     }
   }
+  // P-01/P-04: check Dante connection state changes after every snapshot
+  if (typeof runPatchbayChecks === 'function') runPatchbayChecks();
 }
 
 async function loadSceneList(selectName = null) {
@@ -1945,6 +1948,129 @@ function renderZoneEditor() {
   if (zones.length === 0) {
     body.innerHTML = '<p style="color:var(--text-dim);padding:12px;font-size:11px">No zones defined. Click + ZONE to add one.</p>';
   }
+}
+
+// ── Sprint 23 — Patchbay Intelligence ────────────────────────────────────
+
+// P-03: Channel search/filter ─────────────────────────────────────────────
+
+let searchQuery = '';
+
+function applySearchFilter() {
+  const q = searchQuery.toLowerCase().trim();
+  // Filter input rows
+  for (let i = 0; i < state.nInputs; i++) {
+    const label = (state.inputs[i]?.label || `IN ${i + 1}`).toLowerCase();
+    const row = $(`row-${i}`);
+    if (row && q) row.style.display = label.includes(q) ? '' : 'none';
+    else if (row) row.style.display = '';
+  }
+  // Filter output columns by hiding labels + cells
+  for (let o = 0; o < state.nOutputs; o++) {
+    const label = (state.outputs[o]?.label || `OUT ${o + 1}`).toLowerCase();
+    const lbl = $(`out-label-${o}`);
+    const visible = !q || label.includes(q);
+    if (lbl) lbl.style.display = visible ? '' : 'none';
+    document.querySelectorAll(`.matrix-cell[data-col="${o}"]`).forEach(c => {
+      c.style.display = visible ? '' : 'none';
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const searchEl = document.getElementById('matrix-search');
+  if (searchEl) {
+    searchEl.addEventListener('input', e => {
+      searchQuery = e.target.value;
+      applySearchFilter();
+    });
+  }
+});
+
+// P-01: Enhanced Dante subscription status overlay ─────────────────────────
+
+function updateDanteStatusDots() {
+  for (let i = 0; i < state.nInputs; i++) {
+    const dot = $(`in-dot-${i}`) || $(`sv-dante-${i}`);
+    if (!dot) continue;
+    const active = !!(state.danteRxActive?.[i]);
+    // Check if this input has active routes
+    const hasRoutes = (state.matrix[i] || []).some(v => v > 0);
+
+    dot.classList.remove('active', 'dante-pending', 'dante-lost');
+    if (active) {
+      dot.classList.add('active');
+      dot.title = 'Dante RX active';
+    } else if (hasRoutes) {
+      dot.classList.add('dante-lost');
+      dot.title = 'Dante RX lost — connection may be broken';
+    } else {
+      dot.title = 'No Dante flow (unpatched)';
+    }
+  }
+}
+
+// P-04: Broken connection indicator ──────────────────────────────────────
+
+let prevDanteRxActive = [];
+
+function checkDanteConnectionLoss() {
+  const now = state.danteRxActive || [];
+  for (let i = 0; i < now.length; i++) {
+    const wasActive = prevDanteRxActive[i];
+    const isActive  = now[i];
+    if (wasActive && !isActive) {
+      const hasRoutes = (state.matrix[i] || []).some(v => v > 0);
+      if (hasRoutes) {
+        const label = state.inputs[i]?.label || `IN ${i + 1}`;
+        toast(`⚠ Dante RX lost: ${label}`, 'err');
+        // Flash the row
+        const row = $(`row-${i}`);
+        if (row) {
+          row.classList.remove('dante-lost-row');
+          void row.offsetWidth; // reflow to restart animation
+          row.classList.add('dante-lost-row');
+          setTimeout(() => row.classList.remove('dante-lost-row'), 4000);
+        }
+        // Flash active cells for this input
+        for (let o = 0; o < state.nOutputs; o++) {
+          if ((state.matrix[i][o] ?? 0) > 0) {
+            const cell = $(`cell-${i}-${o}`);
+            if (cell) {
+              cell.style.outline = '2px solid var(--red)';
+              setTimeout(() => { if (cell) cell.style.outline = ''; }, 3000);
+            }
+          }
+        }
+      }
+    }
+  }
+  prevDanteRxActive = [...now];
+}
+
+// P-08: Live signal level in cell hover tooltip ───────────────────────────
+
+function updateCellSignalTooltips() {
+  if (viewMode !== 'matrix') return;
+  for (let i = 0; i < state.nInputs; i++) {
+    const db = state.meters.inputs[i] ?? -60;
+    for (let o = 0; o < state.nOutputs; o++) {
+      const gain = (state.matrix[i] || [])[o] ?? 0;
+      if (gain <= 0) continue;
+      const cell = $(`cell-${i}-${o}`);
+      if (!cell) continue;
+      const dbStr = db <= -55 ? '–∞' : db.toFixed(1);
+      cell.title = `${gainLabel(gain)} dB gain · Signal: ${dbStr} dBFS (right-click to adjust)`;
+    }
+  }
+}
+
+// Run signal tooltip update periodically (cheaper than per-frame)
+setInterval(updateCellSignalTooltips, 2000);
+
+function runPatchbayChecks() {
+  checkDanteConnectionLoss();
+  updateDanteStatusDots();
 }
 
 // ── W-56: Dark/light theme toggle ─────────────────────────────────────────
