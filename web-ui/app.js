@@ -743,7 +743,28 @@ function buildMeters() {
 
 // U-08: Peak-hold state — decays 0.5 dB/frame (~30 dB/sec at 60fps)
 const peakHold = { inputs: [], outputs: [] };
-const PEAK_DECAY = 0.5;
+let PEAK_DECAY = parseFloat(localStorage.getItem('patchbox-peak-decay') ?? '0.5'); // W-32
+
+// W-30: Clip latch — per-channel, cleared on click
+const clipLatch = { inputs: [], outputs: [] };
+
+// W-33: RMS tracking — exponential moving average of linear power
+const RMS_ALPHA = 0.15; // smoothing factor (higher = faster)
+const rmsState = { inputs: [], outputs: [] };
+
+// W-31: Gradient cache (keyed by canvas width)
+const gradCache = new Map();
+function getCachedGrad(ctx, w) {
+  if (!gradCache.has(w)) {
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0,    '#3aff6a');
+    g.addColorStop(0.75, '#ff9a3a');
+    g.addColorStop(1,    '#ff3a3a');
+    gradCache.set(w, g);
+  }
+  return gradCache.get(w);
+}
+window.addEventListener('resize', () => gradCache.clear());
 
 function buildMeterRow(dir, idx, label) {
   const row  = document.createElement('div');
@@ -754,14 +775,25 @@ function buildMeterRow(dir, idx, label) {
   lbl.id = `meter-${dir}-label-${idx}`;
   lbl.textContent = (label || `${dir.toUpperCase()}${idx + 1}`).slice(0, 5).toUpperCase();
 
-  // U-08: canvas replaces CSS bar
   const canvas = document.createElement('canvas');
   canvas.className = 'meter-canvas';
   canvas.id = `meter-${dir}-canvas-${idx}`;
   canvas.height = 10;
 
+  // W-30: Clip latch indicator
+  const clip = document.createElement('div');
+  clip.className = 'meter-clip';
+  clip.id = `meter-${dir}-clip-${idx}`;
+  clip.title = 'Clip! Click to reset';
+  clip.addEventListener('click', () => {
+    if (dir === 'in') clipLatch.inputs[idx] = false;
+    else clipLatch.outputs[idx] = false;
+    clip.classList.remove('active');
+  });
+
   row.appendChild(lbl);
   row.appendChild(canvas);
+  row.appendChild(clip);
   return row;
 }
 
@@ -772,12 +804,13 @@ function dbToPercent(db) {
   return Math.max(0, Math.min(100, (db + 60) / 60 * 100));
 }
 
-function drawMeterCanvas(canvas, db, peak) {
+function drawMeterCanvas(canvas, db, peak, rms) {
   const w = canvas.width;
   const h = canvas.height;
   const ctx = canvas.getContext('2d');
   const pct = Math.max(0, Math.min(1, (db + 60) / 60));
   const peakPct = Math.max(0, Math.min(1, (peak + 60) / 60));
+  const rmsPct  = Math.max(0, Math.min(1, ((rms ?? db) + 60) / 60));
 
   ctx.clearRect(0, 0, w, h);
 
@@ -785,18 +818,21 @@ function drawMeterCanvas(canvas, db, peak) {
   ctx.fillStyle = '#12121a';
   ctx.fillRect(0, 0, w, h);
 
-  // Bar gradient: green → orange → red
+  // W-31: Use cached gradient
   const barW = Math.round(pct * w);
   if (barW > 0) {
-    const grad = ctx.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0,    '#3aff6a');
-    grad.addColorStop(0.75, '#ff9a3a');
-    grad.addColorStop(1,    '#ff3a3a');
-    ctx.fillStyle = grad;
+    ctx.fillStyle = getCachedGrad(ctx, w);
     ctx.fillRect(0, 0, barW, h);
   }
 
-  // Peak-hold line (white dot)
+  // W-33: RMS bar (darker, thinner, overlaid at bottom half)
+  const rmsW = Math.round(rmsPct * w);
+  if (rmsW > 0) {
+    ctx.fillStyle = 'rgba(0,180,255,0.35)';
+    ctx.fillRect(0, Math.floor(h * 0.6), rmsW, Math.ceil(h * 0.4));
+  }
+
+  // Peak-hold line (white)
   const peakX = Math.round(peakPct * w);
   if (peakX > 1) {
     ctx.fillStyle = '#ffffff';
@@ -807,27 +843,56 @@ function drawMeterCanvas(canvas, db, peak) {
 function paintMeters() {
   const { inputs, outputs } = state.meters;
 
-  // Ensure peak arrays are sized
+  // Ensure arrays are sized
   if (peakHold.inputs.length  !== inputs.length)  peakHold.inputs  = new Array(inputs.length).fill(-60);
   if (peakHold.outputs.length !== outputs.length) peakHold.outputs = new Array(outputs.length).fill(-60);
+  if (clipLatch.inputs.length  !== inputs.length)  clipLatch.inputs  = new Array(inputs.length).fill(false);
+  if (clipLatch.outputs.length !== outputs.length) clipLatch.outputs = new Array(outputs.length).fill(false);
+  if (rmsState.inputs.length  !== inputs.length)  rmsState.inputs  = new Array(inputs.length).fill(-60);
+  if (rmsState.outputs.length !== outputs.length) rmsState.outputs = new Array(outputs.length).fill(-60);
 
   for (let i = 0; i < inputs.length; i++) {
     const db = inputs[i] ?? -60;
+    // Peak hold
     if (db > peakHold.inputs[i]) peakHold.inputs[i] = db;
     else peakHold.inputs[i] = Math.max(-60, peakHold.inputs[i] - PEAK_DECAY);
+    // W-33: RMS (exponential moving average on linear power)
+    const linPow = Math.pow(10, db / 10);
+    const rmsLin = rmsState.inputs[i] === -60 ? linPow : rmsState.inputs[i] * (1 - RMS_ALPHA) + linPow * RMS_ALPHA;
+    rmsState.inputs[i] = rmsLin;
+    const rmsDb = 10 * Math.log10(Math.max(1e-10, rmsLin));
+    // W-30: Clip latch
+    if (db >= -0.1) {
+      clipLatch.inputs[i] = true;
+      const clipEl = $(`meter-in-clip-${i}`);
+      if (clipEl) clipEl.classList.add('active');
+    }
+    // W-35: Signal presence pulse on active cells
+    if (db > -40) signalPulse('in', i, db);
     const canvas = $(`meter-in-canvas-${i}`);
     if (canvas) {
       canvas.width = getMeterWidth(canvas);
+      drawMeterCanvas(canvas, db, peakHold.inputs[i], rmsDb);
     }
   }
+
   for (let o = 0; o < outputs.length; o++) {
     const db = outputs[o] ?? -60;
     if (db > peakHold.outputs[o]) peakHold.outputs[o] = db;
     else peakHold.outputs[o] = Math.max(-60, peakHold.outputs[o] - PEAK_DECAY);
+    const linPow = Math.pow(10, db / 10);
+    const rmsLin = rmsState.outputs[o] === -60 ? linPow : rmsState.outputs[o] * (1 - RMS_ALPHA) + linPow * RMS_ALPHA;
+    rmsState.outputs[o] = rmsLin;
+    const rmsDb = 10 * Math.log10(Math.max(1e-10, rmsLin));
+    if (db >= -0.1) {
+      clipLatch.outputs[o] = true;
+      const clipEl = $(`meter-out-clip-${o}`);
+      if (clipEl) clipEl.classList.add('active');
+    }
     const canvas = $(`meter-out-canvas-${o}`);
     if (canvas) {
       canvas.width = getMeterWidth(canvas);
-      drawMeterCanvas(canvas, db, peakHold.outputs[o]);
+      drawMeterCanvas(canvas, db, peakHold.outputs[o], rmsDb);
     }
   }
 
@@ -1869,3 +1934,130 @@ document.addEventListener('DOMContentLoaded', () => {
     dragSelectMode  = null;
   });
 });
+
+// ── W-32: Peak-hold decay rate configurable ──────────────────────────────
+
+(function addPeakDecayControl() {
+  // Add a tiny peak-decay selector to the toolbar
+  const toolbar = document.getElementById('matrix-toolbar');
+  if (!toolbar) return;
+
+  const wrap = document.createElement('label');
+  wrap.className = 'toolbar-label';
+  wrap.title = 'Peak hold decay speed';
+
+  const span = document.createElement('span');
+  span.textContent = 'PEAK';
+  span.style.cssText = 'font-size:9px;opacity:.6;margin-right:3px;';
+
+  const sel = document.createElement('select');
+  sel.className = 'btn-icon';
+  sel.style.cssText = 'font-size:9px;padding:2px 4px;';
+  sel.innerHTML = `
+    <option value="0.1">Slow</option>
+    <option value="0.5">Med</option>
+    <option value="1.5">Fast</option>
+    <option value="0">Hold</option>
+  `;
+  sel.value = String(PEAK_DECAY);
+  // Fallback: pick closest
+  if (!sel.value) sel.value = '0.5';
+  sel.addEventListener('change', () => {
+    PEAK_DECAY = parseFloat(sel.value);
+    localStorage.setItem('patchbox-peak-decay', String(PEAK_DECAY));
+  });
+
+  wrap.appendChild(span);
+  wrap.appendChild(sel);
+  toolbar.appendChild(wrap);
+})();
+
+// ── W-34: Master bus meter (first two outputs as L/R) ────────────────────
+
+(function addMasterMeter() {
+  const meters = document.getElementById('meters-out');
+  if (!meters) return;
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:9px;opacity:.5;letter-spacing:.1em;margin-top:6px;';
+  title.textContent = 'MASTER L/R';
+
+  const masterRow = document.createElement('div');
+  masterRow.id = 'master-lr-row';
+  masterRow.style.cssText = 'display:flex;gap:2px;margin-top:2px;height:14px;';
+
+  ['L', 'R'].forEach((ch, idx) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'flex:1;position:relative;';
+
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:8px;opacity:.5;position:absolute;left:2px;top:1px;z-index:1;';
+    lbl.textContent = ch;
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `master-lr-canvas-${idx}`;
+    canvas.height = 14;
+    canvas.style.cssText = 'width:100%;height:14px;border-radius:2px;display:block;';
+
+    wrap.appendChild(lbl);
+    wrap.appendChild(canvas);
+    masterRow.appendChild(wrap);
+  });
+
+  meters.appendChild(title);
+  meters.appendChild(masterRow);
+
+  // Paint master L/R in the meter loop — tapped by paintMasterLR()
+})();
+
+function paintMasterLR() {
+  const outs = state.meters.outputs;
+  [0, 1].forEach(idx => {
+    const canvas = document.getElementById(`master-lr-canvas-${idx}`);
+    if (!canvas) return;
+    const db = outs[idx] ?? -60;
+    canvas.width = canvas.offsetWidth || 60;
+    drawMeterCanvas(canvas, db, Math.max(peakHold.outputs[idx] ?? db, db), null);
+  });
+}
+
+// Hook paintMasterLR into rAF (patch requestAnimationFrame chain)
+const _origPaintMeters_rAF = paintMeters;
+// Extend via a wrapper that also calls paintMasterLR each frame
+(function wrapPaintMetersForMaster() {
+  // The rAF is self-scheduling inside paintMeters. We'll call paintMasterLR
+  // after the meters DOM exists. Actually simpler: call it from a separate rAF loop.
+  function masterLoop() {
+    paintMasterLR();
+    requestAnimationFrame(masterLoop);
+  }
+  requestAnimationFrame(masterLoop);
+})();
+
+// ── W-35: Signal presence pulse on active cells ───────────────────────────
+// When input i has signal AND cell[i][o] is active, add a CSS pulse class
+
+const SIGNAL_THRESHOLD_DB = -40;
+const _cellPulseActive = new Set();
+
+function signalPulse(dir, idx, db) {
+  if (dir !== 'in') return;
+  const row = state.matrix[idx] || [];
+  const hasSignal = db > SIGNAL_THRESHOLD_DB;
+  for (let o = 0; o < state.nOutputs; o++) {
+    const cellId = `cell-${idx}-${o}`;
+    const el = document.getElementById(cellId);
+    if (!el) continue;
+    if (hasSignal && row[o] > 0) {
+      if (!_cellPulseActive.has(cellId)) {
+        el.classList.add('signal-pulse');
+        _cellPulseActive.add(cellId);
+      }
+    } else {
+      if (_cellPulseActive.has(cellId)) {
+        el.classList.remove('signal-pulse');
+        _cellPulseActive.delete(cellId);
+      }
+    }
+  }
+}
