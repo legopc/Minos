@@ -3995,3 +3995,424 @@ function addLogoutButton() {
     }
   });
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sprint 27 — P-02, P-05, P-06, P-09
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Shared helpers ──────────────────────────────────────────────────────────
+
+/// Extract device prefix from a channel name.
+/// "Bar1_L" → "Bar1", "Stage_01_L" → "Stage_01", "FOH" → "FOH"
+function deviceOf(name) {
+  if (!name) return '—';
+  // split on last '_' if the suffix is a short code (≤3 chars) — e.g. _L, _R, _01
+  const m = name.match(/^(.+?)_([A-Za-z0-9]{1,3})$/);
+  if (m) return m[1];
+  // fall back to stripping trailing digits
+  return name.replace(/\d+$/, '') || name;
+}
+
+/// Group an array of {id, name} channel objects by device prefix.
+/// Returns Map<string, [{id,name}]> sorted by device name.
+function groupByDevice(channels) {
+  const map = new Map();
+  for (const ch of channels) {
+    const dev = deviceOf(ch.name);
+    if (!map.has(dev)) map.set(dev, []);
+    map.get(dev).push(ch);
+  }
+  return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
+// ── P-02: Device tree browser ───────────────────────────────────────────────
+
+const deviceTreeCollapsed = {};
+let treeActive = false;
+
+function initTreeBrowser() {
+  const btnTree = document.getElementById('btn-tree');
+  const panel   = document.getElementById('tree-panel');
+  const close   = document.getElementById('tree-panel-close');
+  if (!btnTree || !panel) return;
+
+  btnTree.addEventListener('click', () => {
+    treeActive = !treeActive;
+    btnTree.classList.toggle('active', treeActive);
+    panel.classList.toggle('hidden', !treeActive);
+    if (treeActive) renderTreePanel();
+  });
+  close.addEventListener('click', () => {
+    treeActive = false;
+    btnTree.classList.remove('active');
+    panel.classList.add('hidden');
+  });
+}
+
+function renderTreePanel() {
+  const body = document.getElementById('tree-panel-body');
+  if (!body || !window.state) return;
+
+  const inputs  = (window.state.inputs  || []);
+  const outputs = (window.state.outputs || []);
+  const inGroups  = groupByDevice(inputs);
+  const outGroups = groupByDevice(outputs);
+
+  let html = '<div class="tree-section-title">INPUTS</div>';
+  for (const [dev, chs] of inGroups) {
+    const collapsed = deviceTreeCollapsed['in:' + dev];
+    html += `<div class="tree-device" data-dev="${escHtml(dev)}" data-type="in">
+      <div class="tree-device-header" data-dev="${escHtml(dev)}" data-type="in">
+        <span class="tree-caret">${collapsed ? '▶' : '▼'}</span>
+        <span class="tree-dev-name">${escHtml(dev)}</span>
+        <span class="tree-dev-count">${chs.length}</span>
+      </div>
+      <div class="tree-device-rows${collapsed ? ' hidden' : ''}">`;
+    for (const ch of chs) {
+      html += `<div class="tree-ch-row" data-id="${ch.id}" data-type="in">${escHtml(ch.name)}</div>`;
+    }
+    html += '</div></div>';
+  }
+
+  html += '<div class="tree-section-title" style="margin-top:12px">OUTPUTS</div>';
+  for (const [dev, chs] of outGroups) {
+    const collapsed = deviceTreeCollapsed['out:' + dev];
+    html += `<div class="tree-device" data-dev="${escHtml(dev)}" data-type="out">
+      <div class="tree-device-header" data-dev="${escHtml(dev)}" data-type="out">
+        <span class="tree-caret">${collapsed ? '▶' : '▼'}</span>
+        <span class="tree-dev-name">${escHtml(dev)}</span>
+        <span class="tree-dev-count">${chs.length}</span>
+      </div>
+      <div class="tree-device-rows${collapsed ? ' hidden' : ''}">`;
+    for (const ch of chs) {
+      html += `<div class="tree-ch-row" data-id="${ch.id}" data-type="out">${escHtml(ch.name)}</div>`;
+    }
+    html += '</div></div>';
+  }
+
+  body.innerHTML = html;
+
+  // Toggle collapse on device header click
+  body.querySelectorAll('.tree-device-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const dev   = hdr.dataset.dev;
+      const type  = hdr.dataset.type;
+      const key   = type + ':' + dev;
+      deviceTreeCollapsed[key] = !deviceTreeCollapsed[key];
+      renderTreePanel();
+    });
+  });
+
+  // Highlight rows on channel click
+  body.querySelectorAll('.tree-ch-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id   = Number(row.dataset.id);
+      const type = row.dataset.type;
+      highlightChannel(id, type);
+    });
+  });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/// Flash-highlight the matrix row or column for a channel.
+function highlightChannel(id, type) {
+  if (type === 'in') {
+    const tr = document.querySelector(`#matrix-rows tr[data-row="${id}"]`);
+    if (tr) { tr.classList.add('tree-highlight'); setTimeout(() => tr.classList.remove('tree-highlight'), 1200); }
+  } else {
+    document.querySelectorAll(`#output-labels .output-label[data-col="${id}"]`).forEach(el => {
+      el.classList.add('tree-highlight');
+      setTimeout(() => el.classList.remove('tree-highlight'), 1200);
+    });
+  }
+}
+
+// ── P-05: Batch connect ─────────────────────────────────────────────────────
+
+let batchActive = false;
+const batchSelectedRows = new Set();
+
+function initBatchConnect() {
+  const btnBatch  = document.getElementById('btn-batch');
+  const bar       = document.getElementById('batch-action-bar');
+  const applyBtn  = document.getElementById('batch-apply-btn');
+  const clearBtn  = document.getElementById('batch-clear-btn');
+  const outSel    = document.getElementById('batch-output-select');
+  if (!btnBatch || !bar) return;
+
+  btnBatch.addEventListener('click', () => {
+    batchActive = !batchActive;
+    btnBatch.classList.toggle('active', batchActive);
+    if (!batchActive) {
+      clearBatchSelection();
+      bar.classList.add('hidden');
+    }
+    // Re-render row headers as clickable
+    document.querySelectorAll('#matrix-rows tr').forEach(tr => {
+      const th = tr.querySelector('th');
+      if (th) th.style.cursor = batchActive ? 'pointer' : '';
+    });
+  });
+
+  // Row header click handler (delegated)
+  document.getElementById('matrix-rows')?.addEventListener('click', e => {
+    if (!batchActive) return;
+    const th = e.target.closest('th');
+    if (!th) return;
+    const tr = th.closest('tr');
+    if (!tr) return;
+    const rowId = Number(tr.dataset.row);
+    if (batchSelectedRows.has(rowId)) {
+      batchSelectedRows.delete(rowId);
+      tr.classList.remove('batch-selected');
+    } else {
+      batchSelectedRows.add(rowId);
+      tr.classList.add('batch-selected');
+    }
+    updateBatchBar();
+  });
+
+  applyBtn.addEventListener('click', async () => {
+    const col = Number(outSel.value);
+    if (isNaN(col) || batchSelectedRows.size === 0) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = '…';
+    const promises = [];
+    for (const row of batchSelectedRows) {
+      promises.push(
+        fetch(`/api/v1/matrix/${row}/${col}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({gain:1}) })
+      );
+    }
+    await Promise.all(promises);
+    applyBtn.disabled = false;
+    applyBtn.textContent = 'APPLY';
+    clearBatchSelection();
+    bar.classList.add('hidden');
+  });
+
+  clearBtn.addEventListener('click', () => {
+    clearBatchSelection();
+    bar.classList.add('hidden');
+  });
+}
+
+function clearBatchSelection() {
+  batchSelectedRows.clear();
+  document.querySelectorAll('#matrix-rows tr.batch-selected').forEach(tr => tr.classList.remove('batch-selected'));
+  const countEl = document.getElementById('batch-selected-count');
+  if (countEl) countEl.textContent = '0 rows';
+}
+
+function updateBatchBar() {
+  const bar      = document.getElementById('batch-action-bar');
+  const countEl  = document.getElementById('batch-selected-count');
+  const outSel   = document.getElementById('batch-output-select');
+  if (!bar) return;
+
+  if (batchSelectedRows.size > 0) {
+    bar.classList.remove('hidden');
+    if (countEl) countEl.textContent = `${batchSelectedRows.size} row${batchSelectedRows.size > 1 ? 's' : ''}`;
+    // Populate output dropdown from current state
+    if (outSel && window.state?.outputs) {
+      const prev = outSel.value;
+      outSel.innerHTML = window.state.outputs.map((o, i) =>
+        `<option value="${i}"${String(i) === String(prev) ? ' selected' : ''}>${escHtml(o.name || `OUT ${i+1}`)}</option>`
+      ).join('');
+    }
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+// ── P-06: Routing templates ─────────────────────────────────────────────────
+
+function initTemplatePanel() {
+  const btnTpl   = document.getElementById('btn-templates');
+  const panel    = document.getElementById('template-panel');
+  const closeBtn = document.getElementById('template-panel-close');
+  const saveBtn  = document.getElementById('template-save-btn');
+  if (!btnTpl || !panel) return;
+
+  btnTpl.addEventListener('click', () => {
+    const open = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', open);
+    if (!open) loadTemplateList();
+  });
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+
+  saveBtn.addEventListener('click', async () => {
+    const nameEl = document.getElementById('template-name-input');
+    const name   = nameEl?.value.trim();
+    if (!name) { nameEl?.focus(); return; }
+    if (!window.state?.matrix) return;
+    const matrix = window.state.matrix.map(row => row.map(g => g > 0));
+    saveBtn.disabled = true;
+    saveBtn.textContent = '…';
+    try {
+      const r = await fetch('/api/v1/templates', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, matrix }),
+      });
+      if (r.ok || r.status === 204) {
+        nameEl.value = '';
+        await loadTemplateList();
+      } else {
+        alert('Save failed: ' + r.status);
+      }
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'SAVE';
+    }
+  });
+}
+
+async function loadTemplateList() {
+  const listEl = document.getElementById('template-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<span class="template-loading">Loading…</span>';
+  try {
+    const r = await fetch('/api/v1/templates');
+    const names = await r.json();
+    if (!names.length) { listEl.innerHTML = '<span class="template-empty">No templates saved</span>'; return; }
+    listEl.innerHTML = names.map(n => `
+      <div class="template-item">
+        <span class="template-item-name">${escHtml(n)}</span>
+        <button class="btn-header template-load-btn" data-name="${escHtml(n)}" style="font-size:9px">LOAD</button>
+        <button class="btn-icon template-del-btn" data-name="${escHtml(n)}" title="Delete">✕</button>
+      </div>`).join('');
+
+    listEl.querySelectorAll('.template-load-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.name;
+        btn.disabled = true;
+        btn.textContent = '…';
+        await fetch(`/api/v1/templates/${encodeURIComponent(name)}/load`, { method: 'POST' });
+        btn.disabled = false;
+        btn.textContent = 'LOAD';
+      });
+    });
+    listEl.querySelectorAll('.template-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.name;
+        if (!confirm(`Delete template "${name}"?`)) return;
+        await fetch(`/api/v1/templates/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await loadTemplateList();
+      });
+    });
+  } catch {
+    listEl.innerHTML = '<span class="template-empty">Error loading templates</span>';
+  }
+}
+
+// ── P-09: Spider / cable view ───────────────────────────────────────────────
+
+let spiderActive = false;
+let spiderSvg    = null;
+
+function initSpiderView() {
+  const btn = document.getElementById('btn-spider');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    spiderActive = !spiderActive;
+    btn.classList.toggle('active', spiderActive);
+    if (spiderActive) {
+      ensureSpiderSvg();
+      drawSpider();
+    } else {
+      removeSpiderSvg();
+    }
+  });
+}
+
+function ensureSpiderSvg() {
+  if (spiderSvg) return;
+  const matrixArea = document.getElementById('matrix-area');
+  if (!matrixArea) return;
+  spiderSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  spiderSvg.id = 'spider-svg';
+  spiderSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;overflow:visible';
+  matrixArea.style.position = 'relative';
+  matrixArea.appendChild(spiderSvg);
+}
+
+function removeSpiderSvg() {
+  if (spiderSvg) { spiderSvg.remove(); spiderSvg = null; }
+}
+
+function drawSpider() {
+  if (!spiderActive || !spiderSvg || !window.state) return;
+  spiderSvg.innerHTML = '';
+
+  const matrixArea = document.getElementById('matrix-area');
+  if (!matrixArea) return;
+  const areaRect = matrixArea.getBoundingClientRect();
+
+  const matrix  = window.state.matrix  || [];
+  const outputs = window.state.outputs || [];
+
+  for (let r = 0; r < matrix.length; r++) {
+    const row = matrix[r];
+    const tr  = document.querySelector(`#matrix-rows tr[data-row="${r}"]`);
+    if (!tr) continue;
+    const th = tr.querySelector('th');
+    if (!th) continue;
+    const thRect = th.getBoundingClientRect();
+    const x1 = thRect.right  - areaRect.left;
+    const y1 = thRect.top    + thRect.height / 2 - areaRect.top;
+
+    for (let c = 0; c < row.length; c++) {
+      if (!(row[c] > 0)) continue;
+      const outLabel = document.querySelector(`#output-labels .output-label[data-col="${c}"]`);
+      if (!outLabel) continue;
+      const olRect = outLabel.getBoundingClientRect();
+      const x2 = olRect.left + olRect.width / 2 - areaRect.left;
+      const y2 = olRect.bottom - areaRect.top;
+
+      const cx1 = x1 + Math.abs(x2 - x1) * 0.5;
+      const cy1 = y1;
+      const cx2 = x2;
+      const cy2 = y2 - Math.abs(y1 - y2) * 0.5;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`);
+      path.setAttribute('stroke', 'rgba(245,166,35,0.4)');
+      path.setAttribute('stroke-width', '1.5');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke-linecap', 'round');
+      spiderSvg.appendChild(path);
+    }
+  }
+}
+
+// ── Wire up toolbar buttons after DOM is ready ──────────────────────────────
+
+(function initSprint27() {
+  function onReady(fn) {
+    if (document.readyState !== 'loading') fn();
+    else document.addEventListener('DOMContentLoaded', fn);
+  }
+  onReady(() => {
+    initTreeBrowser();
+    initBatchConnect();
+    initTemplatePanel();
+    initSpiderView();
+
+    // Re-draw spider + tree whenever state is refreshed
+    const origApply = window.applySnapshot;
+    if (typeof origApply === 'function') {
+      window.applySnapshot = async function(...args) {
+        const result = await origApply.apply(this, args);
+        if (treeActive) renderTreePanel();
+        if (spiderActive) { ensureSpiderSvg(); drawSpider(); }
+        return result;
+      };
+    }
+
+    // Also redraw spider on window resize
+    window.addEventListener('resize', () => { if (spiderActive) drawSpider(); });
+  });
+})();

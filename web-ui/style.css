@@ -1644,3 +1644,197 @@ body::after {
   letter-spacing: 0.15em;
   cursor: pointer;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Sprint 27 — P-02, P-05, P-06, P-09
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Active state for toolbar toggle buttons */
+#matrix-toolbar .btn-header.active {
+  background: var(--yellow, #f5a623);
+  color: #000;
+  border-color: var(--yellow, #f5a623);
+}
+
+/* ── P-02: Device tree panel ──────────────────────────────────────────────── */
+.side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 240px;
+  height: 100vh;
+  background: var(--surface, #1a1a1a);
+  border-left: 1px solid var(--border, #333);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.4);
+  transition: transform 0.15s ease;
+}
+.side-panel.hidden {
+  display: none;
+}
+.side-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #333);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--yellow, #f5a623);
+}
+.side-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.tree-section-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted, #666);
+  padding: 4px 12px 2px;
+}
+.tree-device-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+}
+.tree-device-header:hover {
+  background: var(--hover, rgba(255,255,255,0.05));
+}
+.tree-caret { font-size: 8px; color: var(--muted, #666); min-width: 10px; }
+.tree-dev-name { flex: 1; color: var(--text, #eee); }
+.tree-dev-count {
+  font-size: 9px;
+  color: var(--muted, #666);
+  background: var(--surface2, #222);
+  border-radius: 8px;
+  padding: 1px 5px;
+}
+.tree-ch-row {
+  padding: 3px 12px 3px 28px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim, #aaa);
+  cursor: pointer;
+}
+.tree-ch-row:hover {
+  background: var(--hover, rgba(255,255,255,0.05));
+  color: var(--yellow, #f5a623);
+}
+
+/* Flash highlight for tree-selected rows/columns */
+@keyframes treeFlash {
+  0%   { background: rgba(245,166,35,0.3); }
+  100% { background: transparent; }
+}
+.tree-highlight {
+  animation: treeFlash 1.2s ease-out forwards;
+}
+
+/* ── P-05: Batch connect bar ───────────────────────────────────────────────── */
+.batch-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  background: var(--surface, #1a1a1a);
+  border-top: 2px solid var(--yellow, #f5a623);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  z-index: 300;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+}
+.batch-action-bar.hidden { display: none; }
+.batch-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--yellow, #f5a623);
+}
+.batch-count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim, #aaa);
+  min-width: 50px;
+}
+.batch-select {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  background: var(--surface2, #222);
+  color: var(--text, #eee);
+  border: 1px solid var(--border, #333);
+  border-radius: 3px;
+  padding: 3px 6px;
+  max-width: 180px;
+}
+.batch-btn { font-size: 10px; }
+
+/* Batch-selected row highlight */
+#matrix-rows tr.batch-selected > th {
+  background: rgba(245,166,35,0.2) !important;
+  color: var(--yellow, #f5a623) !important;
+  border-left: 3px solid var(--yellow, #f5a623);
+}
+
+/* ── P-06: Template panel ──────────────────────────────────────────────────── */
+.template-save-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #333);
+}
+.template-name-input {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  background: var(--surface2, #222);
+  color: var(--text, #eee);
+  border: 1px solid var(--border, #333);
+  border-radius: 3px;
+  padding: 4px 8px;
+}
+.template-name-input:focus { outline: none; border-color: var(--yellow, #f5a623); }
+.template-list { padding: 4px 0; }
+.template-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, #222);
+}
+.template-item:hover { background: var(--hover, rgba(255,255,255,0.04)); }
+.template-item-name {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--text, #eee);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.template-loading, .template-empty {
+  display: block;
+  padding: 12px;
+  font-size: 10px;
+  color: var(--muted, #666);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ── P-09: Spider SVG overlay ──────────────────────────────────────────────── */
+#spider-svg { pointer-events: none; }

@@ -59,6 +59,14 @@
         <button id="btn-afl-pfl" class="btn-header" title="Solo mode: AFL (After Fader Listen) or PFL (Pre Fader Listen)">PFL</button>
         <!-- P-03: Channel search/filter -->
         <input id="matrix-search" type="search" class="matrix-search-input" placeholder="Filter channels…" autocomplete="off" title="Filter inputs and outputs by name">
+        <!-- P-02: Device tree browser -->
+        <button id="btn-tree" class="btn-header" title="Device tree browser">⟨⟩ TREE</button>
+        <!-- P-05: Batch connect -->
+        <button id="btn-batch" class="btn-header" title="Batch connect mode">BATCH</button>
+        <!-- P-06: Routing templates -->
+        <button id="btn-templates" class="btn-header" title="Routing templates">TEMPLATES</button>
+        <!-- P-09: Spider/cable view -->
+        <button id="btn-spider" class="btn-header" title="Spider/cable view">SPIDER</button>
       </div>
 
       <!-- Output labels (top row) -->
@@ -275,6 +283,44 @@
         <div id="login-error" class="login-error" style="display:none"></div>
         <button id="login-submit" type="submit" class="btn-primary login-btn">SIGN IN</button>
       </form>
+    </div>
+  </div>
+
+  <!-- P-05: Batch connect action bar -->
+  <div id="batch-action-bar" class="batch-action-bar hidden">
+    <span class="batch-label">BATCH CONNECT</span>
+    <span id="batch-selected-count" class="batch-count">0 rows</span>
+    <label class="batch-label">→ OUTPUT:</label>
+    <select id="batch-output-select" class="batch-select"></select>
+    <button id="batch-apply-btn" class="btn-primary batch-btn">APPLY</button>
+    <button id="batch-clear-btn" class="btn-header batch-btn">CLEAR</button>
+  </div>
+
+  <!-- P-02: Device tree panel -->
+  <div id="tree-panel" class="side-panel hidden">
+    <div class="side-panel-header">
+      <span>DEVICE TREE</span>
+      <button id="tree-panel-close" class="btn-icon" title="Close">✕</button>
+    </div>
+    <div class="side-panel-body" id="tree-panel-body">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- P-06: Routing templates panel -->
+  <div id="template-panel" class="side-panel hidden">
+    <div class="side-panel-header">
+      <span>TEMPLATES</span>
+      <button id="template-panel-close" class="btn-icon" title="Close">✕</button>
+    </div>
+    <div class="side-panel-body">
+      <div class="template-save-row">
+        <input id="template-name-input" type="text" placeholder="Template name…" class="template-name-input" maxlength="64">
+        <button id="template-save-btn" class="btn-primary" style="font-size:10px">SAVE</button>
+      </div>
+      <div id="template-list" class="template-list">
+        <!-- populated by JS -->
+      </div>
     </div>
   </div>
 

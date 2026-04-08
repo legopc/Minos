@@ -47,6 +47,10 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/zones/:zone_id/presets",                 get(list_zone_presets).post(save_zone_preset))
         .route("/zones/:zone_id/presets/:name/load",      post(load_zone_preset))
         .route("/zones/:zone_id/presets/:name",           axum::routing::delete(delete_zone_preset))
+        // P-06: Routing templates
+        .route("/templates",           get(list_templates).post(save_template))
+        .route("/templates/:name",     axum::routing::delete(delete_template))
+        .route("/templates/:name/load", post(load_template))
         // A-01: PAM.d login + JWT
         .route("/auth/login",  post(login))
         .route("/auth/whoami", get(whoami))
@@ -742,6 +746,129 @@ async fn delete_zone_preset(
     let path = zone_presets_dir(&state, &zone_id).join(preset_filename(&name));
     match std::fs::remove_file(&path) {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// ── P-06: Routing Templates ───────────────────────────────────────────────
+
+fn templates_dir(state: &SharedState) -> std::path::PathBuf {
+    state.scenes_dir().join("templates")
+}
+
+fn template_filename(name: &str) -> String {
+    format!("{}.json", name)
+}
+
+fn sanitise_template_name(name: &str) -> Result<(), (StatusCode, String)> {
+    if name.is_empty() || name.len() > 128 {
+        return Err((StatusCode::BAD_REQUEST, "invalid template name".into()));
+    }
+    let bad = ['/', '\\', '\0', ':'];
+    if name.chars().any(|c| bad.contains(&c)) || name.contains("..") || name.starts_with('.') {
+        return Err((StatusCode::BAD_REQUEST, format!("forbidden characters in name: {}", name)));
+    }
+    Ok(())
+}
+
+/// GET /api/v1/templates — list saved routing templates.
+async fn list_templates(State(state): State<SharedState>) -> impl IntoResponse {
+    let dir = templates_dir(&state);
+    let names: Vec<String> = std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries.flatten()
+                .filter_map(|e| {
+                    let p = e.path();
+                    if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                        p.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Json(names)
+}
+
+#[derive(Deserialize)]
+struct SaveTemplateBody {
+    name:   String,
+    matrix: Vec<Vec<bool>>,
+}
+
+/// POST /api/v1/templates — save routing template.
+async fn save_template(
+    State(state): State<SharedState>,
+    Json(body):   Json<SaveTemplateBody>,
+) -> impl IntoResponse {
+    if let Err((code, msg)) = sanitise_template_name(&body.name) {
+        return (code, msg).into_response();
+    }
+    let dir = templates_dir(&state);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+    let path = dir.join(template_filename(&body.name));
+    let payload = serde_json::json!({ "name": body.name, "matrix": body.matrix });
+    match serde_json::to_string_pretty(&payload) {
+        Ok(json) => match std::fs::write(&path, json) {
+            Ok(_)  => StatusCode::NO_CONTENT.into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// POST /api/v1/templates/:name/load — apply a routing template to the live matrix.
+async fn load_template(
+    Path(name):   Path<String>,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    if let Err((code, msg)) = sanitise_template_name(&name) {
+        return (code, msg).into_response();
+    }
+    let path = templates_dir(&state).join(template_filename(&name));
+    let bytes = match std::fs::read(&path) {
+        Ok(b)  => b,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let val: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v)  => v,
+        Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+    };
+    let matrix = match val.get("matrix").and_then(|m| m.as_array()) {
+        Some(m) => m.clone(),
+        None    => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+    };
+    let mut params = state.params.write().await;
+    for (r, row) in matrix.iter().enumerate() {
+        if let Some(cells) = row.as_array() {
+            for (c, cell) in cells.iter().enumerate() {
+                if let Some(gain_row) = params.matrix.gains.get_mut(r) {
+                    if let Some(gain) = gain_row.get_mut(c) {
+                        *gain = if cell.as_bool().unwrap_or(false) { 1.0 } else { 0.0 };
+                    }
+                }
+            }
+        }
+    }
+    drop(params);
+    state.bump_version();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// DELETE /api/v1/templates/:name — delete a routing template.
+async fn delete_template(
+    Path(name):   Path<String>,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    if let Err((code, msg)) = sanitise_template_name(&name) {
+        return (code, msg).into_response();
+    }
+    let path = templates_dir(&state).join(template_filename(&name));
+    match std::fs::remove_file(&path) {
+        Ok(_)  => StatusCode::NO_CONTENT.into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
