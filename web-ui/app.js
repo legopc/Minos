@@ -4697,24 +4697,28 @@ function initShortcutsModal() {
   const modal = $('shortcuts-modal');
   const closeBtn = $('shortcuts-modal-close');
   if (!modal || !closeBtn) return;
-  
-  closeBtn.addEventListener('click', () => {
-    modal.classList.add('hidden');
+
+  function closeModal() { modal.classList.add('hidden'); }
+  function openModal()  { modal.classList.remove('hidden'); }
+
+  closeBtn.addEventListener('click', closeModal);
+
+  // Click backdrop (outside modal-inner) to close
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeModal();
   });
-  
-  // Global ? key handler
+
+  // Global keyboard handlers
   document.addEventListener('keydown', e => {
-    if (e.key === '?' && !isModalOpen()) {
+    if (e.key === '?' && !modal.classList.contains('hidden')) {
       e.preventDefault();
-      modal.classList.remove('hidden');
-    }
-  });
-  
-  // Escape closes the modal
-  modal.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
+      closeModal();
+    } else if (e.key === '?' && !isModalOpen()) {
       e.preventDefault();
-      modal.classList.add('hidden');
+      openModal();
+    } else if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      e.preventDefault();
+      closeModal();
     }
   });
 }
