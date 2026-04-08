@@ -1043,3 +1043,20 @@ body::after {
   touch-action: manipulation;
 }
 .channel-color-tag:hover { transform: scale(1.4); }
+
+/* ── W-14: Shift-drag bulk select ─────────────────────────────────────── */
+.matrix-cell.drag-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: rgba(245,158,11,0.15) !important;
+}
+
+/* ── W-08: Stereo link indicator ──────────────────────────────────────── */
+.output-label.stereo-linked::before {
+  content: '⊸';
+  font-size: 8px;
+  color: var(--green);
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}

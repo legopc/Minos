@@ -313,6 +313,16 @@ function buildUI() {
     btnComp.title = 'Compressor/limiter';
     btnComp.addEventListener('click', e => { e.stopPropagation(); openCompModal(o); }, { signal: sig });
 
+    // W-08: Stereo link button (appears on even outputs to link with next odd)
+    if (o % 2 === 0 && o + 1 < state.nOutputs) {
+      const btnLink = document.createElement('button');
+      btnLink.className = 'btn-icon' + (getStereoPartner(o) !== null ? ' active' : '');
+      btnLink.textContent = '⊸';
+      btnLink.title = `Stereo link OUT ${o + 1} ↔ OUT ${o + 2}`;
+      btnLink.addEventListener('click', e => { e.stopPropagation(); toggleStereoLink(o, o + 1); btnLink.classList.toggle('active'); }, { signal: sig });
+      el.appendChild(btnLink);
+    }
+
     el.appendChild(nameSpan);
     el.appendChild(fader);
     el.appendChild(btnComp);
@@ -435,6 +445,23 @@ function buildInputRow(i, rank) {
   btnEq.id = `in-eq-${i}`;
   btnEq.addEventListener('click', () => openEqModal(i), { signal: sig });
 
+  // W-07: Phase invert button
+  const btnPhase = document.createElement('button');
+  const phaseKey = `in-phase-${i}`;
+  const phaseOn  = !!phaseState[phaseKey];
+  btnPhase.className = 'btn-icon' + (phaseOn ? ' active' : '');
+  btnPhase.textContent = 'φ';
+  btnPhase.title = 'Phase invert (polarity flip)';
+  btnPhase.id = `in-phase-${i}`;
+  btnPhase.addEventListener('click', () => togglePhase(phaseKey, btnPhase), { signal: sig });
+
+  // W-12: Fan-out button (route to all zone outputs)
+  const btnFan = document.createElement('button');
+  btnFan.className = 'btn-icon';
+  btnFan.textContent = '⇶';
+  btnFan.title = 'Fan-out: route to all outputs in current zone';
+  btnFan.addEventListener('click', () => fanOutInput(i), { signal: sig });
+
   // W-09: colour tag dot
   const colorTag = buildColorTag(`in-${i}`);
 
@@ -444,7 +471,9 @@ function buildInputRow(i, rank) {
   strip.appendChild(btnM);
   strip.appendChild(btnS);
   strip.appendChild(fader);
+  strip.appendChild(btnPhase);
   strip.appendChild(btnEq);
+  strip.appendChild(btnFan);
   row.appendChild(strip);
 
   // Matrix cells — rendered in outputOrder
@@ -656,7 +685,7 @@ const sendInputGainTrim = debounce(async (i, gain) => {
   }
 });
 
-const sendOutputMasterGain = debounce(async (o, gain) => {
+let sendOutputMasterGain = debounce(async (o, gain) => {
   try {
     await apiFetch(`/channels/output/${o}/master_gain`, 'POST', { gain });
   } catch (err) {
@@ -1667,3 +1696,176 @@ function sortChannelsByName() {
   apiFetch('/channels/input/reorder', 'POST', { order }).catch(err => toast('Reorder failed', 'err'));
   toast('Sorted by name', 'ok');
 }
+
+// ── W-07: Phase invert (polarity) ─────────────────────────────────────────
+
+let phaseState = {};
+
+function loadPhaseState() {
+  try {
+    const raw = localStorage.getItem('patchbox-phase');
+    phaseState = raw ? JSON.parse(raw) : {};
+  } catch (_) { phaseState = {}; }
+}
+
+function togglePhase(key, btn) {
+  phaseState[key] = !phaseState[key];
+  localStorage.setItem('patchbox-phase', JSON.stringify(phaseState));
+  btn.classList.toggle('active', phaseState[key]);
+  haptic(20);
+  toast(phaseState[key] ? 'Phase inverted' : 'Phase normal', 'ok');
+  // TODO: send to backend when /channels/input/{i}/phase endpoint is added
+}
+
+loadPhaseState();
+
+// ── W-08: Stereo link for output pairs ───────────────────────────────────
+// Linked output pairs move faders together.
+// Stored as array of [o1, o2] pairs in localStorage.
+
+let stereoLinks = [];
+
+function loadStereoLinks() {
+  try {
+    const raw = localStorage.getItem('patchbox-stereo-links');
+    stereoLinks = raw ? JSON.parse(raw) : [];
+  } catch (_) { stereoLinks = []; }
+}
+
+function saveStereoLinks() {
+  localStorage.setItem('patchbox-stereo-links', JSON.stringify(stereoLinks));
+}
+
+function getStereoPartner(o) {
+  for (const pair of stereoLinks) {
+    if (pair[0] === o) return pair[1];
+    if (pair[1] === o) return pair[0];
+  }
+  return null;
+}
+
+function toggleStereoLink(o1, o2) {
+  const existing = stereoLinks.findIndex(p => (p[0] === o1 && p[1] === o2) || (p[0] === o2 && p[1] === o1));
+  if (existing >= 0) {
+    stereoLinks.splice(existing, 1);
+    toast(`Unlinked OUT ${o1 + 1} / OUT ${o2 + 1}`, 'ok');
+  } else {
+    stereoLinks.push([o1, o2]);
+    toast(`Linked OUT ${o1 + 1} / OUT ${o2 + 1}`, 'ok');
+  }
+  saveStereoLinks();
+  haptic(30);
+}
+
+loadStereoLinks();
+
+// Patch sendOutputMasterGain to propagate to stereo-linked partner
+sendOutputMasterGain = debounce(async (o, gain) => {
+  const partner = getStereoPartner(o);
+  if (partner !== null) {
+    const partnerEl = document.getElementById(`out-gain-${partner}`);
+    if (partnerEl) { partnerEl.value = String(gain); }
+    try { await apiFetch(`/channels/output/${partner}/master_gain`, 'POST', { gain }); } catch (_) {}
+  }
+  try {
+    await apiFetch(`/channels/output/${o}/master_gain`, 'POST', { gain });
+  } catch (err) {
+    toast(`Master gain error: ${err.message}`, 'err');
+  }
+}, 80);
+
+// ── W-12: Fan-out input to all outputs in current zone ────────────────────
+
+async function fanOutInput(i) {
+  haptic(40);
+  const zoneSelEl = document.getElementById('zone-select');
+  const zoneIdx = zoneSelEl ? parseInt(zoneSelEl.value, 10) : NaN;
+
+  // Determine target outputs
+  let targetOutputs;
+  if (!isNaN(zoneIdx) && zones[zoneIdx]) {
+    targetOutputs = zones[zoneIdx].outputs;
+  } else {
+    targetOutputs = Array.from({length: state.nOutputs}, (_, o) => o);
+  }
+
+  let count = 0;
+  for (const o of targetOutputs) {
+    if (((state.matrix[i] || [])[o] ?? 0) <= 0) {
+      applyGain(i, o, 1.0);
+      try { await apiFetch(`/matrix/${i}/${o}`, 'PATCH', { gain: 1.0 }); count++; } catch (_) {}
+    }
+  }
+  toast(`Fan-out: routed to ${count} output${count !== 1 ? 's' : ''}`, 'ok');
+}
+
+// ── W-14: Shift-drag bulk cell multi-select ───────────────────────────────
+
+let dragSelectStart = null;  // { i, o }
+let dragSelectMode  = null;  // 'on' | 'off'
+let isDragSelecting = false;
+
+// Patch buildCell to add shift-drag support
+const _buildCell = buildCell;
+// We re-declare using a decorator-like approach on the matrix click handler:
+
+// Add pointer events for drag-select on the matrix-rows container
+document.addEventListener('DOMContentLoaded', () => {
+  const rows = document.getElementById('matrix-rows');
+  if (!rows) return;
+
+  rows.addEventListener('pointerdown', e => {
+    if (!e.shiftKey) return;
+    const cell = e.target.closest('.matrix-cell');
+    if (!cell) return;
+    const [, ci, co] = cell.id.split('-').map(Number);
+    if (isNaN(ci) || isNaN(co)) return;
+    isDragSelecting = true;
+    dragSelectStart = { i: ci, o: co };
+    dragSelectMode = ((state.matrix[ci] || [])[co] ?? 0) > 0 ? 'off' : 'on';
+    rows.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  rows.addEventListener('pointermove', e => {
+    if (!isDragSelecting) return;
+    const cell = document.elementFromPoint(e.clientX, e.clientY)?.closest('.matrix-cell');
+    if (!cell) return;
+    const [, ci, co] = cell.id.split('-').map(Number);
+    if (isNaN(ci) || isNaN(co)) return;
+
+    // Select range from dragSelectStart to current
+    const r0 = Math.min(dragSelectStart.i, ci), r1 = Math.max(dragSelectStart.i, ci);
+    const c0 = Math.min(dragSelectStart.o, co), c1 = Math.max(dragSelectStart.o, co);
+
+    // Highlight selection
+    document.querySelectorAll('.matrix-cell.drag-selected').forEach(c => c.classList.remove('drag-selected'));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const el = document.getElementById(`cell-${r}-${c}`);
+        if (el) el.classList.add('drag-selected');
+      }
+    }
+  });
+
+  rows.addEventListener('pointerup', async e => {
+    if (!isDragSelecting) return;
+    isDragSelecting = false;
+
+    const selected = document.querySelectorAll('.matrix-cell.drag-selected');
+    const newGain = dragSelectMode === 'on' ? 1.0 : 0.0;
+    const promises = [];
+    selected.forEach(cell => {
+      const [, ci, co] = cell.id.split('-').map(Number);
+      if (isNaN(ci) || isNaN(co)) return;
+      applyGain(ci, co, newGain);
+      promises.push(apiFetch(`/matrix/${ci}/${co}`, 'PATCH', { gain: newGain }).catch(() => {}));
+    });
+    await Promise.all(promises);
+    document.querySelectorAll('.matrix-cell.drag-selected').forEach(c => c.classList.remove('drag-selected'));
+    toast(`${dragSelectMode === 'on' ? 'Routed' : 'Cleared'} ${selected.length} cell${selected.length !== 1 ? 's' : ''}`, 'ok');
+    haptic(30);
+    dragSelectStart = null;
+    dragSelectMode  = null;
+  });
+});
