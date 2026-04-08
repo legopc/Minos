@@ -9,14 +9,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- S-03: Global rate limiting via `tower_governor` (200 burst / 20 req/s sustained)
-- S-05: RBAC role system — Admin / Operator / BarStaff / ReadOnly injected per API key
-- D-02: PTP/statime health check in `/api/v1/health` (`ptp_ok`, `ptp_offset_ns` fields)
-- O-01: aarch64 cross-compile target in CI (EliteDesk ARM / Raspberry Pi)
-- O-02: Automated GitHub Releases workflow on version tags
-- O-04: MSRV declared as `1.80` in workspace `Cargo.toml`
+- R-04: Dante device task wrapped in exponential-backoff retry loop (2s→60s cap); cancels cleanly on shutdown
+- R-11: `try_set_rt_priority_once()` — elevates DSP audio callback thread to SCHED_FIFO priority 90 (Linux, first invocation only; needs `CAP_SYS_NICE` or rtprio limit)
+- R-12: No-alloc / no-lock audit comments on DSP hot path; future improvement tracked as D-01
+- R-13: `state_version` AtomicU64 counter in `AppState`; `GET /api/v1/state` returns `ETag: W/"N"` header; `PATCH /api/v1/matrix/:in/:out` honours `If-Match` and returns 412 on stale write; all mutation handlers bump version
+- S-04: Optional TLS support via `axum-server` + `rustls`; enable with `--features tls`; configure via `--tls-cert`/`--tls-key` CLI args or `PATCHBOX_TLS_CERT`/`PATCHBOX_TLS_KEY` env vars
 
 ---
+
 
 ## [0.1.0] — Sprint 1–7 Baseline
 

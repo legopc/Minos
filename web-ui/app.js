@@ -51,7 +51,62 @@ function toast(msg, type = 'ok') {
   toastTimer = setTimeout(() => { elToast.classList.remove('show'); }, 2500);
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────
+// ── Undo / Redo Stack (U-05) ──────────────────────────────────────────────
+//
+// Records matrix cell changes as {type, i, o, prev, next} snapshots.
+// Max 50 entries. Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes.
+
+const undoStack = [];
+const redoStack = [];
+const UNDO_MAX  = 50;
+
+function recordUndo(entry) {
+  undoStack.push(entry);
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  redoStack.length = 0; // new action clears redo history
+  updateUndoIndicator();
+}
+
+function updateUndoIndicator() {
+  const el = $('undo-indicator');
+  if (el) el.textContent = undoStack.length ? `↩ ${undoStack.length}` : '';
+}
+
+async function performUndo() {
+  const entry = undoStack.pop();
+  if (!entry) { toast('Nothing to undo', 'err'); return; }
+  redoStack.push(entry);
+  applyGain(entry.i, entry.o, entry.prev);
+  try {
+    await apiFetch(`/matrix/${entry.i}/${entry.o}`, 'PATCH', { gain: entry.prev });
+    toast(`Undo: ${gainLabel(entry.prev)} dB`, 'ok');
+  } catch (err) {
+    applyGain(entry.i, entry.o, entry.next);
+    undoStack.push(entry);
+    redoStack.pop();
+    toast(`Undo failed: ${err.message}`, 'err');
+  }
+  updateUndoIndicator();
+}
+
+async function performRedo() {
+  const entry = redoStack.pop();
+  if (!entry) { toast('Nothing to redo', 'err'); return; }
+  undoStack.push(entry);
+  applyGain(entry.i, entry.o, entry.next);
+  try {
+    await apiFetch(`/matrix/${entry.i}/${entry.o}`, 'PATCH', { gain: entry.next });
+    toast(`Redo: ${gainLabel(entry.next)} dB`, 'ok');
+  } catch (err) {
+    applyGain(entry.i, entry.o, entry.prev);
+    redoStack.push(entry);
+    undoStack.pop();
+    toast(`Redo failed: ${err.message}`, 'err');
+  }
+  updateUndoIndicator();
+}
+
+
 
 async function apiFetch(path, method = 'GET', body = undefined) {
   const opts = {
@@ -222,12 +277,15 @@ async function toggleCell(i, o) {
 
   // Optimistic update
   applyGain(i, o, newGain);
+  recordUndo({ i, o, prev: current, next: newGain });
 
   try {
     await apiFetch(`/matrix/${i}/${o}`, 'PATCH', { gain: newGain });
   } catch (err) {
     // Revert
     applyGain(i, o, current);
+    undoStack.pop();
+    updateUndoIndicator();
     toast(`Error: ${err.message}`, 'err');
   }
 }
@@ -277,7 +335,17 @@ function showGainTooltip(i, o, cellEl) {
     document.body.appendChild(gainTooltip);
 
     document.addEventListener('click', e => {
-      if (!gainTooltip.contains(e.target)) gainTooltip.classList.remove('visible');
+      if (!gainTooltip.contains(e.target)) {
+        // U-05: record undo entry if gain changed while tooltip was open
+        const i = gainTooltip._i;
+        const o = gainTooltip._o;
+        const after = (state.matrix[i] || [])[o] ?? 0;
+        if (gainTooltip._gainBefore !== undefined && gainTooltip._gainBefore !== after) {
+          recordUndo({ i, o, prev: gainTooltip._gainBefore, next: after });
+          gainTooltip._gainBefore = after;
+        }
+        gainTooltip.classList.remove('visible');
+      }
     });
 
     const range = $('gt-range');
@@ -296,6 +364,7 @@ function showGainTooltip(i, o, cellEl) {
   const gain = (state.matrix[i] || [])[o] ?? 0;
   gainTooltip._i = i;
   gainTooltip._o = o;
+  gainTooltip._gainBefore = gain; // U-05: capture for undo on close
 
   const inLabel  = state.inputs[i]?.label  || `IN ${i + 1}`;
   const outLabel = state.outputs[o]?.label || `OUT ${o + 1}`;
@@ -620,7 +689,7 @@ $('btn-load-scene').addEventListener('click', async () => {
   const name = elSceneSelect.value;
   if (!name) { toast('Select a scene first', 'err'); return; }
   try {
-    await apiFetch(`/scenes/${encodeURIComponent(name)}`);
+    await apiFetch(`/scenes/${encodeURIComponent(name)}/load`, 'POST');
     const full = await apiFetch('/state');
     if (full) applySnapshot(full);
     toast(`Loaded scene "${name}"`, 'ok');
@@ -660,6 +729,83 @@ $('btn-save-scene').addEventListener('click', saveScene);
 
 elSceneNameInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') saveScene();
+});
+
+// ── U-06: Scene diff ─────────────────────────────────────────────────────
+
+$('btn-diff-scene').addEventListener('click', async () => {
+  const name = elSceneSelect.value;
+  if (!name) { toast('Select a scene to diff against', 'err'); return; }
+
+  let saved;
+  try {
+    saved = await apiFetch(`/scenes/${encodeURIComponent(name)}`);
+  } catch (err) {
+    toast(`Cannot load scene for diff: ${err.message}`, 'err');
+    return;
+  }
+
+  const cur = state;
+  const diffs = [];
+
+  // Compare matrix gains
+  for (let i = 0; i < cur.nInputs; i++) {
+    for (let o = 0; o < cur.nOutputs; o++) {
+      const curGain  = (cur.matrix[i] || [])[o] ?? 0;
+      const savedGain = ((saved.params?.matrix?.gains || [])[i] || [])[o] ?? 0;
+      if (Math.abs(curGain - savedGain) > 0.001) {
+        const inLabel  = cur.inputs[i]?.label  || `IN ${i + 1}`;
+        const outLabel = cur.outputs[o]?.label || `OUT ${o + 1}`;
+        diffs.push({
+          label: `${inLabel} → ${outLabel}`,
+          prev: `${gainLabel(savedGain)} dB`,
+          next: `${gainLabel(curGain)} dB`,
+          type: 'matrix',
+        });
+      }
+    }
+  }
+
+  // Compare input mutes/solos
+  for (let i = 0; i < cur.nInputs; i++) {
+    const ci = cur.inputs[i] || {};
+    const si = (saved.params?.inputs || [])[i] || {};
+    const inLabel = ci.label || `IN ${i + 1}`;
+    if (ci.mute !== si.mute) diffs.push({ label: inLabel, prev: si.mute ? 'muted' : 'live', next: ci.mute ? 'muted' : 'live', type: 'mute' });
+    if (ci.solo !== si.solo) diffs.push({ label: inLabel, prev: si.solo ? 'solo' : '—', next: ci.solo ? 'solo' : '—', type: 'solo' });
+  }
+
+  // Compare output mutes
+  for (let o = 0; o < cur.nOutputs; o++) {
+    const co = cur.outputs[o] || {};
+    const so = (saved.params?.outputs || [])[o] || {};
+    const outLabel = co.label || `OUT ${o + 1}`;
+    if (co.mute !== so.mute) diffs.push({ label: outLabel, prev: so.mute ? 'muted' : 'live', next: co.mute ? 'muted' : 'live', type: 'mute' });
+  }
+
+  $('diff-title').textContent = `Diff: current vs "${name}"`;
+  const body = $('diff-body');
+  if (diffs.length === 0) {
+    body.innerHTML = '<p class="diff-none">No differences — current state matches the saved scene.</p>';
+  } else {
+    body.innerHTML = diffs.map(d =>
+      `<div class="diff-row diff-${d.type}">` +
+      `<span class="diff-label">${d.label}</span>` +
+      `<span class="diff-prev">${d.prev}</span>` +
+      `<span class="diff-arrow">→</span>` +
+      `<span class="diff-next">${d.next}</span>` +
+      `</div>`
+    ).join('');
+  }
+  $('diff-modal').classList.remove('hidden');
+});
+
+$('btn-diff-close').addEventListener('click', () => {
+  $('diff-modal').classList.add('hidden');
+});
+
+$('diff-modal').addEventListener('click', e => {
+  if (e.target === $('diff-modal')) $('diff-modal').classList.add('hidden');
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -719,6 +865,20 @@ function focusCell(r, c) {
 document.addEventListener('keydown', async e => {
   // Ignore when typing in input fields
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  // U-05: Undo / Redo
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'z' || e.key === 'Z') {
+      e.preventDefault();
+      if (e.shiftKey) { await performRedo(); } else { await performUndo(); }
+      return;
+    }
+    if (e.key === 'y' || e.key === 'Y') {
+      e.preventDefault();
+      await performRedo();
+      return;
+    }
+  }
 
   switch (e.key) {
     case 'ArrowUp':    e.preventDefault(); focusCell(focus.row - 1, focus.col); break;

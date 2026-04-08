@@ -2,13 +2,13 @@
 
 > **Document type:** Engineering review and improvement backlog  
 > **Scope:** Full-stack Rust AoIP matrix mixer — Dante I/O, DSP core, axum REST/WS API, vanilla web UI, TUI, Docker/systemd  
-> **Total items:** 58 (4 bug fixes + 54 improvements) — 28 resolved (Sprints 1–6), 30 open  
+> **Total items:** 58 (4 bug fixes + 54 improvements) — 45 resolved (Sprints 1–9), 13 open  
 > **Generated:** July 2025; updated after Sprint 6 (April 2026)  
 > **Basis:** Research branches A–F (codebase structure, code quality, security, ops/reliability, web research, build hygiene) against commit `e30cba6`
 
 ---
 
-## Resolved Items (28) — Sprints 1–6
+## Resolved Items (42) — Sprints 1–9
 
 | ID | Title | Sprint |
 |----|-------|--------|
@@ -43,6 +43,20 @@
 | U-01 | Zone/bar-scoped view + zone API | Sprint 6 |
 | D-09 | mDNS/DNS-SD registration | Sprint 6 |
 | D-03 | Dante device name + channel TXT records | Sprint 6 |
+| S-03 | Rate limiting (GlobalKeyExtractor, 200 burst/20 req/s) | Sprint 7 |
+| S-05 | RBAC roles (Admin/Operator/BarStaff/ReadOnly) | Sprint 7 |
+| D-02 | PTP daemon health check in /health endpoint | Sprint 7 |
+| O-01 | aarch64 cross-compile in CI matrix | Sprint 8 |
+| O-02 | GitHub Release workflow on v* tags | Sprint 8 |
+| O-04 | MSRV 1.80 declared + CI check | Sprint 8 |
+| O-06 | CHANGELOG.md (Keep a Changelog format) | Sprint 8 |
+| O-08 | README rewrite (prerequisites, API table, troubleshooting) | Sprint 8 |
+| T-02 | DSP correctness tests (16 tests) | Sprint 8 |
+| R-04 | Dante device auto-reconnect (exponential backoff) | Sprint 9 |
+| R-11 | SCHED_FIFO RT thread priority for DSP callback | Sprint 9 |
+| R-12 | No-alloc/no-lock DSP hot-path audit + comments | Sprint 9 |
+| R-13 | ETag optimistic locking on routing state | Sprint 9 |
+| S-04 | TLS termination via rustls (--tls-cert/--tls-key, optional feature) | Sprint 9 |
 
 ---
 

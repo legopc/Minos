@@ -1,7 +1,9 @@
 # ── Stage 1: builder ──────────────────────────────────────────────────────
 # Use the official Rust image. For cross-compiling to aarch64 (e.g. RPi 4 /
 # EliteDesk ARM) add --platform linux/arm64 or use cross.
-FROM rust:1.77-slim-bookworm AS builder
+FROM rust:1.80-slim-bookworm AS builder
+
+ARG FEATURES=""
 
 # System deps for linking
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,10 +34,24 @@ COPY web-ui/       web-ui/
 RUN touch crates/patchbox/src/main.rs crates/patchbox/src/lib.rs \
           crates/patchbox-core/src/lib.rs crates/patchbox-dante/src/lib.rs
 
-RUN cargo build --release --package patchbox
+RUN if [ -n "$FEATURES" ]; then \
+        cargo build --release --package patchbox --features "$FEATURES"; \
+    else \
+        cargo build --release --package patchbox; \
+    fi
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
+
+# O-05: OCI image labels (source, description, version, license, authors)
+ARG VERSION="0.1.0"
+LABEL org.opencontainers.image.title="dante-patchbox" \
+      org.opencontainers.image.description="Dante AoIP matrix mixer and DSP patchbay for pub/venue sound systems" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/legopc/dante-patchbox" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.authors="legopc" \
+      org.opencontainers.image.documentation="https://github.com/legopc/dante-patchbox/blob/main/README.md"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -62,5 +78,6 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s \
 # For real Dante I/O, rebuild with:
 #   docker build --build-arg FEATURES=inferno -t dante-patchbox:inferno .
 # and the container needs --network host + CAP_NET_RAW + a running statime daemon.
+# For TLS support: --build-arg FEATURES=tls
 ENTRYPOINT ["/usr/local/bin/patchbox"]
 CMD ["--port", "8080"]

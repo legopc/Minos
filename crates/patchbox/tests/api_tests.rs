@@ -198,8 +198,8 @@ async fn save_and_load_scene() {
         .json(&json!({ "name": "Changed" }))
         .await;
 
-    // Load scene — should restore
-    srv.get("/api/v1/scenes/test-scene").await
+    // Load scene — should restore (POST /scenes/:name/load applies the scene)
+    srv.post("/api/v1/scenes/test-scene/load").await
         .assert_status(axum::http::StatusCode::NO_CONTENT);
 
     let state: Value = srv.get("/api/v1/state").await.json();

@@ -4,6 +4,7 @@ members = [
     "crates/patchbox-dante",
     "crates/patchbox",
 ]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]

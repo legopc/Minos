@@ -57,13 +57,26 @@
       <span class="label">SCENE</span>
       <select id="scene-select"><option value="">— select —</option></select>
       <button id="btn-load-scene">LOAD</button>
+      <button id="btn-diff-scene" title="Compare current state with selected scene">DIFF</button>
       <button id="btn-delete-scene" class="btn-danger" title="Delete selected scene">✕</button>
       <span class="scene-sep">│</span>
       <input id="scene-name-input" type="text" placeholder="new-scene" maxlength="32">
       <button id="btn-save-scene">SAVE</button>
       <span class="spacer"></span>
+      <span id="undo-indicator" class="undo-indicator" title="Ctrl+Z to undo"></span>
       <span id="toast" class="toast"></span>
     </footer>
+
+    <!-- ── Scene diff modal (U-06) ───────────────────────────────── -->
+    <div id="diff-modal" class="diff-modal hidden">
+      <div class="diff-modal-inner">
+        <div class="diff-modal-header">
+          <span id="diff-title">Scene Diff</span>
+          <button id="btn-diff-close" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div id="diff-body" class="diff-body"></div>
+      </div>
+    </div>
 
   </div>
 

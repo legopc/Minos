@@ -1,0 +1,32 @@
+[package]
+name = "patchbox-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json    = "1"
+serde         = { version = "1", features = ["derive"] }
+
+[dependencies.patchbox-core]
+path = "../crates/patchbox-core"
+
+# T-04: fuzz_scene_name — property-tests sanitise_name() against path traversal
+[[bin]]
+name = "fuzz_scene_name"
+path = "fuzz_targets/fuzz_scene_name.rs"
+test = false
+doc  = false
+bench = false
+
+# T-04: fuzz_api_json — property-tests JSON request body parsing never panics
+[[bin]]
+name = "fuzz_api_json"
+path = "fuzz_targets/fuzz_api_json.rs"
+test = false
+doc  = false
+bench = false

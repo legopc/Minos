@@ -24,7 +24,8 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/channels/output/:id/mute",     post(toggle_output_mute))
         .route("/channels/output/:id/master_gain", post(set_output_master_gain))
         .route("/scenes",           get(list_scenes).post(save_scene))
-        .route("/scenes/:name",     get(load_scene).delete(delete_scene))
+        .route("/scenes/:name",     get(get_scene).delete(delete_scene))
+        .route("/scenes/:name/load", post(load_scene))
         // U-01: Zone-scoped view — returns state filtered to zone's outputs.
         .route("/zones",            get(list_zones))
         .route("/zones/:zone_id",   get(get_zone_state))
@@ -269,6 +270,22 @@ async fn set_output_master_gain(
 async fn list_scenes(State(state): State<SharedState>) -> impl IntoResponse {
     let names = scene::list(&state.scenes_dir());
     Json(names)
+}
+
+/// U-06: Read scene data without applying it — used for diff view.
+async fn get_scene(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match scene::load(&state.scenes_dir(), &name) {
+        Ok(s)  => Json(s).into_response(),
+        Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
+        Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
+        Err(e) => {
+            tracing::error!("get_scene failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 #[derive(Deserialize)]
