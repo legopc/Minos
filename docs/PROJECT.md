@@ -129,7 +129,16 @@ Each bar control point:
 | Sprint 10 | O-05, U-05, U-06, T-04 | ✅ Done | 5e5aade |
 | Sprint 11 | D-05, D-06, U-09 | ✅ Done | 8dec442 |
 | Sprint 12 | D-01, D-04, D-10 | ✅ Done | af74401 |
-| **Next** | Remaining 8 open items: D-07, D-08, S-01 (full JWT), U-01 zone view, S-05 RBAC, D-09 mDNS, D-03 names, D-02 PTP | 🔜 Planned | — |
+| Sprint 13 | BUG-W01–04, W-41, W-43, W-44, W-47, W-52 (security + bugs) | ✅ Done | 8e6963a |
+| Sprint 14 | W-04, W-05, W-16–18, W-21–22 (touch/mobile) | ✅ Done | af2d3a1 |
+| Sprint 15 | W-10, W-11, W-13, W-15, W-24 (zones/views) | ✅ Done | 5f5723d |
+| Sprint 16 | W-02, W-03, W-09, W-55, W-56, W-59 (amber redesign) | ✅ Done | b6a181c |
+| Sprint 17 | W-07, W-08, W-12, W-14 (phase, stereo link, fan-out, bulk select) | ✅ Done | 14aab70 |
+| Sprint 18 | W-30–35 (metering: clip latch, RMS, gradient cache, peak decay, master L/R) | ✅ Done | 50a5660 |
+| Sprint 19 | W-23, W-25, W-26 (zone overview, groups, scheduler) | ✅ Done | 9d8b243 |
+| Sprint 20 | W-45, W-46, W-49, W-50 (perf fingerprint, GPU faders, PWA) | ✅ Done | bdf6ad5 |
+| Sprint 21 | W-36–40, W-57–58 (ARIA, focus trap, HC theme, onboarding) | ✅ Done | 962ef86 |
+| **Next** | Generate new improvement roadmap (v3) — evaluate current state | 🔜 Planned | — |
 
 ## Reference Projects (in this ecosystem)
 

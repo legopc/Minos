@@ -2,10 +2,11 @@
 
 > **Document type:** Engineering review and improvement backlog — Web UI focused  
 > **Scope:** `web-ui/` (index.html, app.js, style.css) + supporting Rust API surface  
-> **Total items:** 64 (4 bug fixes + 60 improvements) — 0 resolved, 64 open  
+> **Total items:** 64 (4 bug fixes + 60 improvements) — 54 resolved, 10 open  
 > **Generated:** April 2026  
 > **Basis:** Research branches A–F against deployed build (Sprint 12, commit `af74401`)  
 > **Design skill:** Anthropic frontend-design skill (industrial/utilitarian aesthetic, amber accents, touch-first)
+> **Last updated:** Sprints 13-21 complete (April 2026)
 
 ---
 
@@ -28,7 +29,17 @@
 
 ## Resolved Items
 
-None yet — this is the v2 generation point.
+| Sprint | Theme | Items |
+|--------|-------|-------|
+| **Sprint 13** | Bug fixes + security | BUG-W01, BUG-W02, BUG-W03, BUG-W04, W-41, W-43, W-44, W-47, W-52 |
+| **Sprint 14** | Touch/mobile UX | W-04, W-05, W-16, W-17, W-18, W-21, W-22 |
+| **Sprint 15** | Zones/views | W-10, W-11, W-13, W-15, W-24 |
+| **Sprint 16** | Redesign + polish | W-02, W-03, W-09, W-55, W-56, W-59 |
+| **Sprint 17** | Mixer UX completeness | W-07, W-08, W-12, W-14 |
+| **Sprint 18** | Metering improvements | W-30, W-31, W-32, W-33, W-34, W-35 |
+| **Sprint 19** | Zone overview + scheduling | W-23, W-25, W-26 |
+| **Sprint 20** | Performance + PWA | W-45, W-46, W-49, W-50 |
+| **Sprint 21** | Accessibility + polish | W-36, W-37, W-38, W-39, W-40, W-57, W-58 |
 
 ---
 
