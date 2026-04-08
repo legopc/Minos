@@ -2541,3 +2541,239 @@ document.addEventListener('DOMContentLoaded', () => {
   btnSched.addEventListener('click', openScheduleModal);
   toolbar.appendChild(btnSched);
 });
+
+// ── Sprint 21: Accessibility + Polish ─────────────────────────────────────
+
+// W-36: ARIA attributes on custom sliders/buttons
+document.addEventListener('DOMContentLoaded', () => {
+  function applyAria() {
+    // Faders: aria-label, aria-valuemin/max
+    document.querySelectorAll('.strip-fader').forEach(el => {
+      if (!el.getAttribute('aria-label')) {
+        const row = el.closest('[id^="input-row-"]');
+        const idx = row ? row.id.replace('input-row-', '') : '?';
+        el.setAttribute('aria-label', `Input ${parseInt(idx, 10) + 1} gain`);
+        el.setAttribute('aria-valuemin', el.min || '0');
+        el.setAttribute('aria-valuemax', el.max || '100');
+      }
+    });
+    document.querySelectorAll('.out-master-fader').forEach(el => {
+      if (!el.getAttribute('aria-label')) {
+        el.setAttribute('aria-label', 'Output master gain');
+        el.setAttribute('aria-valuemin', el.min || '0');
+        el.setAttribute('aria-valuemax', el.max || '100');
+      }
+    });
+    // Mute/solo buttons: aria-pressed
+    document.querySelectorAll('[id^="in-mute-"], [id^="in-solo-"]').forEach(btn => {
+      btn.setAttribute('role', 'button');
+      btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
+    });
+    // Matrix cells: aria-label + aria-pressed
+    document.querySelectorAll('.matrix-cell').forEach(cell => {
+      const [, i, o] = cell.id.split('-').map(Number);
+      if (!isNaN(i) && !isNaN(o)) {
+        const inName  = state.inputs[i]?.label  || `IN ${i + 1}`;
+        const outName = state.outputs[o]?.label || `OUT ${o + 1}`;
+        cell.setAttribute('role', 'button');
+        cell.setAttribute('aria-label', `Route ${inName} to ${outName}`);
+        cell.setAttribute('aria-pressed', cell.classList.contains('active') ? 'true' : 'false');
+      }
+    });
+  }
+
+  // Apply after each buildUI and periodically
+  const origBuildUI = window.buildUI; // NOTE: buildUI is a module-level function
+  applyAria();
+  document.addEventListener('patchbox:ui-built', applyAria);
+});
+
+// Dispatch event after buildUI — patch it
+// We use a MutationObserver on matrix-rows to detect rebuilds
+(function observeBuildUI() {
+  const container = document.getElementById('matrix-rows');
+  if (!container) {
+    document.addEventListener('DOMContentLoaded', () => observeBuildUI());
+    return;
+  }
+  const obs = new MutationObserver(() => {
+    document.dispatchEvent(new CustomEvent('patchbox:ui-built'));
+  });
+  obs.observe(container, { childList: true });
+})();
+
+// W-38: Focus trap + ESC to close for ALL modals
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const modals = [
+    document.getElementById('eq-modal'),
+    document.getElementById('comp-modal'),
+    document.getElementById('zone-modal'),
+    document.getElementById('zone-group-modal'),
+    document.getElementById('schedule-modal'),
+    document.getElementById('zone-overview-panel'),
+  ];
+  modals.forEach(m => {
+    if (!m) return;
+    const isVisible = m.style.display !== 'none' && !m.classList.contains('hidden');
+    if (isVisible) {
+      m.style.display = 'none';
+      m.classList.add('hidden');
+    }
+  });
+});
+
+// Focus trap helper
+function trapFocus(modal) {
+  const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const first = focusable[0];
+  const last  = focusable[focusable.length - 1];
+  if (!first) return;
+  first.focus();
+  modal.addEventListener('keydown', function trap(e) {
+    if (e.key !== 'Tab') return;
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+}
+
+// Apply focus trap when modals open (patch existing open calls)
+['eq-modal', 'comp-modal', 'zone-modal'].forEach(id => {
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(m => {
+      if (m.type === 'attributes' && m.attributeName === 'style') {
+        const el = document.getElementById(id);
+        if (el && el.style.display !== 'none') trapFocus(el);
+      }
+    });
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById(id);
+    if (el) observer.observe(el, { attributes: true });
+  });
+});
+
+// W-39: High-contrast theme variant
+document.addEventListener('DOMContentLoaded', () => {
+  const toolbar = document.getElementById('matrix-toolbar');
+  if (!toolbar) return;
+
+  const btnHC = document.createElement('button');
+  btnHC.id = 'btn-hc';
+  btnHC.className = 'btn-icon';
+  btnHC.textContent = '◈';
+  btnHC.title = 'Toggle high-contrast mode';
+  const hcOn = localStorage.getItem('patchbox-hc') === '1';
+  if (hcOn) document.documentElement.setAttribute('data-theme', 'hc');
+  btnHC.addEventListener('click', () => {
+    const isHC = document.documentElement.getAttribute('data-theme') === 'hc';
+    if (isHC) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.removeItem('patchbox-hc');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'hc');
+      localStorage.setItem('patchbox-hc', '1');
+    }
+  });
+  toolbar.appendChild(btnHC);
+});
+
+// W-40: prefers-color-scheme support — auto-apply light theme if user prefers light
+(function applyColorScheme() {
+  const saved = localStorage.getItem('patchbox-theme');
+  if (saved) return; // user has explicit preference, don't override
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+    if (localStorage.getItem('patchbox-theme')) return;
+    if (e.matches) document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+  });
+})();
+
+// W-57: Scene thumbnail / state preview on hover
+(function addScenePreviews() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('scene-select');
+    if (!sel) return;
+
+    const preview = document.createElement('div');
+    preview.id = 'scene-preview';
+    preview.style.cssText = 'position:fixed;display:none;background:var(--bg-mid);border:1px solid var(--border);border-radius:6px;padding:10px 12px;z-index:150;min-width:160px;font-size:9px;pointer-events:none;box-shadow:0 4px 16px #000a;';
+    document.body.appendChild(preview);
+
+    sel.addEventListener('mouseover', async e => {
+      const opt = e.target.closest('option');
+      if (!opt || !opt.value) return;
+      try {
+        const scene = await apiFetch(`/scenes/${encodeURIComponent(opt.value)}`);
+        if (!scene || !scene.state) { preview.style.display = 'none'; return; }
+        const sstate = scene.state;
+        const ni = sstate.matrix?.inputs ?? 0;
+        const no = sstate.matrix?.outputs ?? 0;
+        const gains = sstate.matrix?.gains ?? [];
+        let routeCount = 0;
+        for (let i = 0; i < ni; i++) {
+          for (let o = 0; o < no; o++) {
+            if ((gains[i]?.[o] ?? 0) > 0) routeCount++;
+          }
+        }
+        preview.innerHTML = `
+          <div style="font-weight:600;margin-bottom:6px;letter-spacing:.1em;">${escHtml(opt.value)}</div>
+          <div style="opacity:.6;">Matrix: ${ni}×${no}</div>
+          <div style="opacity:.6;">Active routes: ${routeCount}</div>
+        `;
+        const rect = sel.getBoundingClientRect();
+        preview.style.left = `${rect.right + 8}px`;
+        preview.style.top  = `${rect.top}px`;
+        preview.style.display = 'block';
+      } catch (_) {}
+    });
+
+    sel.addEventListener('mouseleave', () => {
+      preview.style.display = 'none';
+    });
+  });
+})();
+
+// W-58: First-run onboarding overlay
+(function showOnboarding() {
+  if (localStorage.getItem('patchbox-onboarded')) return;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:#000c;display:flex;align-items:center;justify-content:center;z-index:500;';
+
+      const box = document.createElement('div');
+      box.style.cssText = 'background:var(--bg-mid);border:1px solid var(--accent);border-radius:12px;padding:28px 32px;max-width:420px;text-align:center;';
+
+      box.innerHTML = `
+        <div style="font-size:22px;margin-bottom:4px;">🎛</div>
+        <h2 style="font-size:14px;letter-spacing:.2em;margin:0 0 12px;">DANTE PATCHBOX</h2>
+        <p style="font-size:11px;opacity:.7;line-height:1.6;margin:0 0 16px;">
+          Welcome! This is your AoIP matrix mixer.<br>
+          <strong>Click</strong> a matrix cell to route input → output.<br>
+          <strong>Drag</strong> input labels to reorder channels.<br>
+          <strong>Shift+drag</strong> cells to bulk select.<br>
+          <strong>⇶</strong> fans an input to all zone outputs.<br>
+          <strong>⏰</strong> opens the zone scheduler.<br>
+          <strong>▦</strong> shows the zone overview.
+        </p>
+        <button id="onboard-ok" style="background:var(--accent);color:#000;border:none;border-radius:4px;padding:8px 24px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.1em;">GOT IT</button>
+      `;
+
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      document.getElementById('onboard-ok').addEventListener('click', () => {
+        overlay.remove();
+        localStorage.setItem('patchbox-onboarded', '1');
+      });
+    }, 800);
+  });
+})();

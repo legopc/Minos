@@ -1106,3 +1106,34 @@ body::after {
   gap: 4px;
   margin-bottom: 2px;
 }
+
+/* ── Sprint 21: Accessibility ─────────────────────────────────────────────── */
+
+/* W-39: High-contrast theme */
+[data-theme=hc] {
+  --bg:        #000000;
+  --bg-low:    #0a0a0a;
+  --bg-mid:    #111111;
+  --text:      #ffffff;
+  --text-dim:  #cccccc;
+  --accent:    #ffff00;
+  --accent-dim:#333300;
+  --border:    #ffffff;
+  --border-hi: #ffff00;
+  --green:     #00ff88;
+  --red:       #ff3a3a;
+  --cell-on:   #333300;
+  --cell-on-hi:#666600;
+}
+
+/* W-36: ARIA pressed state visual feedback */
+[aria-pressed="true"] {
+  outline: 1px solid var(--accent);
+}
+
+/* Keyboard focus ring */
+:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
