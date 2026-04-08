@@ -1573,3 +1573,74 @@ body::after {
 }
 .zone-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
 .zone-preset-btn.danger:hover { border-color: #c0392b; color: #c0392b; }
+
+/* ── Sprint 26 — Login Overlay (A-01) ───────────────────────────────── */
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-box {
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.login-logo {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  text-align: center;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.login-field label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.login-field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+}
+.login-field input:focus { border-color: var(--accent); }
+
+.login-error {
+  font-size: 10px;
+  color: #e74c3c;
+  text-align: center;
+  padding: 4px;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+}

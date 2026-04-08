@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 
+use crate::api::{jwt, pam_auth};
 use crate::state::SharedState;
 
 pub fn api_router(state: SharedState) -> Router<SharedState> {
@@ -46,6 +47,9 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/zones/:zone_id/presets",                 get(list_zone_presets).post(save_zone_preset))
         .route("/zones/:zone_id/presets/:name/load",      post(load_zone_preset))
         .route("/zones/:zone_id/presets/:name",           axum::routing::delete(delete_zone_preset))
+        // A-01: PAM.d login + JWT
+        .route("/auth/login",  post(login))
+        .route("/auth/whoami", get(whoami))
         .with_state(state)
 }
 
@@ -744,3 +748,94 @@ async fn delete_zone_preset(
 
 // suppress unused import warning when zones map is empty
 fn _use_hashmap(_: HashMap<String, String>) {}
+
+// ── A-01: PAM.d Login + JWT ───────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct LoginBody {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct LoginResponse {
+    token:    String,
+    role:     String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zone:     Option<String>,
+    username: String,
+}
+
+/// POST /api/v1/auth/login — authenticate via PAM, return JWT.
+/// Rate-limited upstream to 5 req/min per IP (see mod.rs governor config).
+async fn login(
+    State(state): State<SharedState>,
+    Json(body):   Json<LoginBody>,
+) -> impl IntoResponse {
+    // Basic input validation
+    if body.username.is_empty() || body.password.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"missing credentials"}))).into_response();
+    }
+    if body.username.len() > 64 || body.password.len() > 256 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"input too long"}))).into_response();
+    }
+
+    // PAM service: use "patchbox" if /etc/pam.d/patchbox exists, else fall back to "login"
+    let service = if std::path::Path::new("/etc/pam.d/patchbox").exists() {
+        "patchbox"
+    } else {
+        "login"
+    };
+
+    match pam_auth::authenticate(service, &body.username, &body.password).await {
+        Ok(()) => {
+            let (role, zone) = pam_auth::role_for_user(&body.username);
+            let claims = jwt::Claims::new(&body.username, role, zone.clone());
+            match jwt::generate(&claims, &state.jwt_secret) {
+                Ok(token) => Json(LoginResponse {
+                    token,
+                    role:     role.to_owned(),
+                    zone,
+                    username: body.username,
+                }).into_response(),
+                Err(e) => {
+                    tracing::error!("JWT generation failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(pam_auth::PamError::AuthFailed) | Err(pam_auth::PamError::UserUnknown) => {
+            // Constant-time delay to prevent timing attacks
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"invalid credentials"}))).into_response()
+        }
+        Err(e) => {
+            tracing::warn!("PAM error for user {}: {}", body.username, e);
+            (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error":"auth service unavailable"}))).into_response()
+        }
+    }
+}
+
+/// GET /api/v1/auth/whoami — decode JWT from Authorization header and return claims.
+async fn whoami(
+    State(state): State<SharedState>,
+    headers:      HeaderMap,
+) -> impl IntoResponse {
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "));
+
+    match token {
+        Some(t) => match jwt::validate(t, &state.jwt_secret) {
+            Ok(claims) => Json(serde_json::json!({
+                "username": claims.sub,
+                "role":     claims.role,
+                "zone":     claims.zone,
+                "exp":      claims.exp,
+            })).into_response(),
+            Err(_) => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"invalid token"}))).into_response(),
+        },
+        None => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error":"no token"}))).into_response(),
+    }
+}

@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 use tokio::sync::{Notify, RwLock};
 
+use crate::api::jwt;
 use crate::config::Config;
 
 pub struct AppState {
@@ -31,6 +32,8 @@ pub struct AppState {
     /// Bit N set = input channel N is actively receiving a Dante flow.
     /// Written lock-free by the audio callback; read by /api/v1/state.
     pub dante_rx_active: Arc<AtomicU64>,
+    /// A-01: JWT signing secret — generated once at startup, never persisted.
+    pub jwt_secret: Vec<u8>,
 }
 
 impl AppState {
@@ -47,7 +50,8 @@ impl AppState {
             input_order:    Arc::new(RwLock::new((0..n_in).collect())),
             output_order:   Arc::new(RwLock::new((0..n_out).collect())),
             dante_rx_active: Arc::new(AtomicU64::new(0)),
-            config:         cfg,
+            jwt_secret:       jwt::generate_secret(),
+            config:           cfg,
         }
     }
 

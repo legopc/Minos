@@ -1,15 +1,12 @@
-//! S-01 + S-05: API key authentication and RBAC middleware.
+//! S-01 + S-05 + A-01: API key / JWT authentication and RBAC middleware.
 //!
-//! When `Config.api_keys` is non-empty, every request to `/api/v1/*` must
-//! present a valid token via:
-//!   - `X-Api-Key: <token>` header, OR
-//!   - `Authorization: Bearer <token>` header
+//! Accepts:
+//!   - X-Api-Key: <api-key>             (static key from config)
+//!   - Authorization: Bearer <api-key>  (static key)
+//!   - Authorization: Bearer <jwt>      (A-01: PAM-issued JWT token)
 //!
-//! The `/health` endpoint is exempt so load-balancer probes don't need keys.
-//! Static assets and the WebSocket upgrade are also exempt.
-//!
-//! On success the `Role` is inserted as an axum extension so downstream
-//! handlers can enforce fine-grained access control (S-05).
+//! When `Config.api_keys` is empty (development), the middleware passes through
+//! all requests with Admin role. When non-empty, every request must authenticate.
 
 use axum::{
     extract::{Request, State},
@@ -19,10 +16,11 @@ use axum::{
 };
 use std::sync::Arc;
 
+use crate::api::jwt;
 use crate::config::Role;
 use crate::state::AppState;
 
-/// Axum middleware function for API key + RBAC validation.
+/// Axum middleware function for API key / JWT RBAC validation.
 pub async fn require_api_key(
     State(state): State<Arc<AppState>>,
     mut req: Request,
@@ -36,14 +34,31 @@ pub async fn require_api_key(
         return Ok(next.run(req).await);
     }
 
-    // /health is always exempt.
-    if req.uri().path().ends_with("/health") {
+    // /health and /auth/login are always exempt.
+    let path = req.uri().path();
+    if path.ends_with("/health") || path.ends_with("/auth/login") {
         req.extensions_mut().insert(Role::ReadOnly);
         return Ok(next.run(req).await);
     }
 
-    let token = extract_token(req.headers());
+    let bearer = extract_bearer(req.headers());
 
+    // 1. Try JWT token first (A-01)
+    if let Some(t) = bearer {
+        if let Ok(claims) = jwt::validate(t, &state.jwt_secret) {
+            let role = match claims.role.as_str() {
+                "admin"     => Role::Admin,
+                "operator"  => Role::Operator,
+                "bar_staff" => Role::BarStaff,
+                _           => Role::ReadOnly,
+            };
+            req.extensions_mut().insert(role);
+            return Ok(next.run(req).await);
+        }
+    }
+
+    // 2. Try static API key
+    let token = extract_token(req.headers());
     match token.and_then(|t| keys.get(t)) {
         Some(entry) => {
             req.extensions_mut().insert(entry.role.clone());
@@ -59,15 +74,15 @@ pub fn role_from_request(req: &Request) -> Role {
     req.extensions().get::<Role>().cloned().unwrap_or(Role::ReadOnly)
 }
 
+fn extract_bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers.get("authorization")?.to_str().ok()?.strip_prefix("Bearer ")
+}
+
 fn extract_token(headers: &axum::http::HeaderMap) -> Option<&str> {
     // X-Api-Key header (preferred for device clients)
     if let Some(v) = headers.get("x-api-key") {
         return v.to_str().ok();
     }
     // Authorization: Bearer <token>
-    if let Some(v) = headers.get("authorization") {
-        let s = v.to_str().ok()?;
-        return s.strip_prefix("Bearer ");
-    }
-    None
+    extract_bearer(headers)
 }

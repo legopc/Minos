@@ -3825,3 +3825,173 @@ async function renderZonePresetPanel(zoneId) {
     setInterval(zonePanelRefresh, 3000);
   }
 })();
+
+// ── Sprint 26 — Auth (A-01, A-02, A-05) ──────────────────────────────────
+
+const AUTH_KEY  = 'patchbox-jwt';
+const AUTH_USER = 'patchbox-user';
+const AUTH_ROLE = 'patchbox-role';
+const AUTH_ZONE = 'patchbox-zone';
+
+function authToken()    { return localStorage.getItem(AUTH_KEY); }
+function authRole()     { return localStorage.getItem(AUTH_ROLE) || 'readonly'; }
+function authZone()     { return localStorage.getItem(AUTH_ZONE) || null; }
+function authUsername() { return localStorage.getItem(AUTH_USER) || ''; }
+
+function storeAuth(data) {
+  localStorage.setItem(AUTH_KEY,  data.token);
+  localStorage.setItem(AUTH_USER, data.username);
+  localStorage.setItem(AUTH_ROLE, data.role);
+  if (data.zone) localStorage.setItem(AUTH_ZONE, data.zone);
+  else localStorage.removeItem(AUTH_ZONE);
+}
+
+function clearAuth() {
+  [AUTH_KEY, AUTH_USER, AUTH_ROLE, AUTH_ZONE].forEach(k => localStorage.removeItem(k));
+}
+
+/// Inject Authorization header into all fetch calls when token is present.
+/// We monkey-patch the global fetch to add the Bearer token automatically.
+(function patchFetch() {
+  const orig = window.fetch.bind(window);
+  window.fetch = function(url, opts = {}) {
+    const token = authToken();
+    if (token && typeof url === 'string' && (url.startsWith('/api/') || url.startsWith('/ws'))) {
+      opts.headers = opts.headers || {};
+      if (!opts.headers['Authorization'] && !opts.headers['authorization']) {
+        opts.headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+    return orig(url, opts);
+  };
+})();
+
+/// Patch WebSocket URL to include token as query param (A-05).
+(function patchWebSocket() {
+  const OrigWS = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    const token = authToken();
+    if (token && (url.startsWith('ws://') || url.startsWith('wss://'))) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = url + sep + 'token=' + encodeURIComponent(token);
+    }
+    return new OrigWS(url, protocols);
+  };
+  window.WebSocket.prototype = OrigWS.prototype;
+  window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+  window.WebSocket.OPEN       = OrigWS.OPEN;
+  window.WebSocket.CLOSING    = OrigWS.CLOSING;
+  window.WebSocket.CLOSED     = OrigWS.CLOSED;
+})();
+
+/// Check if the server requires auth (api_keys non-empty) by looking for 401.
+async function checkAuthRequired() {
+  try {
+    const r = await fetch('/api/v1/state');
+    return r.status === 401;
+  } catch (_) { return false; }
+}
+
+/// Check current token is still valid.
+async function validateToken() {
+  const token = authToken();
+  if (!token) return false;
+  try {
+    const r = await fetch('/api/v1/auth/whoami');
+    return r.ok;
+  } catch (_) { return false; }
+}
+
+/// Show the login overlay.
+function showLoginOverlay() {
+  const overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+/// Hide the login overlay.
+function hideLoginOverlay() {
+  const overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+/// A-02: After login, redirect bar_staff users to their zone.
+function applyRoleRedirect() {
+  const role = authRole();
+  const zone = authZone();
+  if (role === 'bar_staff' && zone && !window.location.hash.includes(zone)) {
+    window.location.hash = `/zone/${zone}`;
+  }
+}
+
+/// Add a logout button to the header.
+function addLogoutButton() {
+  if (document.getElementById('btn-logout')) return;
+  const btn = document.createElement('button');
+  btn.id = 'btn-logout';
+  btn.className = 'btn-header';
+  btn.textContent = `${authUsername()} ⏏`;
+  btn.title = 'Sign out';
+  btn.style.cssText = 'font-size:9px;opacity:0.7;border-color:transparent';
+  btn.addEventListener('click', () => {
+    clearAuth();
+    window.location.reload();
+  });
+  const header = document.getElementById('header');
+  if (header) header.appendChild(btn);
+}
+
+/// Init auth flow.
+(async function initAuth() {
+  const authRequired = await checkAuthRequired();
+  if (!authRequired) return; // dev mode, no auth needed
+
+  const tokenValid = await validateToken();
+  if (tokenValid) {
+    hideLoginOverlay();
+    addLogoutButton();
+    applyRoleRedirect();
+    return;
+  }
+
+  // Show login form
+  showLoginOverlay();
+  document.getElementById('login-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl    = document.getElementById('login-error');
+    const btn      = document.getElementById('login-submit');
+
+    btn.disabled = true;
+    btn.textContent = 'SIGNING IN…';
+    if (errEl) errEl.style.display = 'none';
+
+    try {
+      const r = await fetch('/api/v1/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ username, password }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        storeAuth(data);
+        hideLoginOverlay();
+        addLogoutButton();
+        applyRoleRedirect();
+        // Trigger state refresh
+        if (typeof applySnapshot === 'function') setTimeout(applySnapshot, 100);
+      } else {
+        const body = await r.json().catch(() => ({}));
+        if (errEl) {
+          errEl.textContent = body.error || 'Sign in failed';
+          errEl.style.display = '';
+        }
+      }
+    } catch (e) {
+      if (errEl) { errEl.textContent = 'Network error'; errEl.style.display = ''; }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'SIGN IN';
+    }
+  });
+})();

@@ -1,22 +1,30 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        State, WebSocketUpgrade,
+        Query, State, WebSocketUpgrade,
     },
     http::{header, StatusCode},
     response::IntoResponse,
 };
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time;
 
+use crate::api::jwt;
 use crate::state::SharedState;
 
 /// Maximum simultaneous WebSocket connections (global cap).
 const MAX_WS_CONNECTIONS: usize = 20;
 
+#[derive(Deserialize, Default)]
+pub struct WsQuery {
+    token: Option<String>,
+}
+
 /// Handles a new WebSocket connection.
+/// - A-05: Validates JWT token if api_keys are configured (token via ?token= or Authorization header)
 /// - Validates Origin header against allowed_origins config
 /// - Enforces global connection limit (20 max)
 /// - Sends a full state snapshot on connect
@@ -25,8 +33,23 @@ const MAX_WS_CONNECTIONS: usize = 20;
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<SharedState>,
+    Query(query): Query<WsQuery>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    // A-05: JWT auth for WebSocket connections when api_keys are configured.
+    if !state.config.api_keys.is_empty() {
+        // Accept token from ?token= query param or Authorization: Bearer header
+        let token = query.token.as_deref().or_else(|| {
+            headers.get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+        });
+        match token {
+            Some(t) if jwt::validate(t, &state.jwt_secret).is_ok() => { /* ok */ }
+            _ => return (StatusCode::UNAUTHORIZED, "WebSocket auth required").into_response(),
+        }
+    }
+
     // S-06: Origin validation — if allowed_origins configured, only allow listed origins.
     if !state.config.allowed_origins.is_empty() {
         let origin_ok = headers

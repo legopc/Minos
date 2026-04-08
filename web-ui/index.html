@@ -257,6 +257,27 @@
     </div>
   </div>
 
+  <!-- A-01: Login modal (shown when API keys are configured) -->
+  <div id="login-overlay" class="login-overlay" style="display:none">
+    <div class="login-box">
+      <div class="login-logo">DANTE PATCHBOX</div>
+      <form id="login-form" autocomplete="on">
+        <div class="login-field">
+          <label for="login-username">Username</label>
+          <input id="login-username" type="text" name="username" autocomplete="username"
+                 placeholder="your username" required>
+        </div>
+        <div class="login-field">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" name="password" autocomplete="current-password"
+                 placeholder="••••••••" required>
+        </div>
+        <div id="login-error" class="login-error" style="display:none"></div>
+        <button id="login-submit" type="submit" class="btn-primary login-btn">SIGN IN</button>
+      </form>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -60,6 +60,12 @@ tokio-rustls    = { version = "0.26", optional = true }
 # Systemd watchdog / service notification (Linux only)
 sd-notify = { version = "0.4", optional = true }
 tower = "0.5.3"
+# A-01: JWT authentication
+jsonwebtoken = "9"
+# A-01: PAM authentication — raw FFI, linked via build.rs (no dev headers needed)
+libc = "0.2"
+# A-01: bcrypt for password hashing (fallback / service accounts)
+bcrypt = "0.15"
 
 [features]
 systemd = ["sd-notify"]

@@ -13,6 +13,8 @@ mod auth;
 mod routes;
 mod ws;
 mod assets;
+pub mod jwt;
+pub mod pam_auth;
 
 #[derive(Embed)]
 #[folder = "../../web-ui/"]
