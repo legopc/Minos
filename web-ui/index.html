@@ -20,6 +20,13 @@
       <span class="sep">·</span>
       <span id="api-status" class="badge badge--offline">OFFLINE</span>
       <span class="spacer"></span>
+      <!-- W-05: Clear all solos -->
+      <button id="btn-clear-solos" class="btn-header hidden" title="Clear all solos" style="color:var(--yellow);border-color:var(--yellow)">CLR SOLO</button>
+      <span id="solo-count" class="badge badge--solo hidden">0</span>
+      <!-- W-17: Fader lock -->
+      <button id="btn-fader-lock" class="btn-header" title="Lock faders (hold 200ms to toggle)">⌖ FADERS</button>
+      <!-- W-18: Kiosk screen lock -->
+      <button id="btn-kiosk-lock" class="btn-header" title="Screen lock">⎠ LOCK</button>
       <span id="ws-status" class="badge badge--offline">WS OFFLINE</span>
     </header>
 
@@ -184,6 +191,15 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- W-18: Kiosk / screen-lock overlay -->
+  <div id="kiosk-overlay" class="kiosk-overlay hidden">
+    <div class="kiosk-inner">
+      <div class="kiosk-icon">⎠</div>
+      <div class="kiosk-label">SCREEN LOCKED</div>
+      <button id="btn-kiosk-unlock" class="kiosk-unlock">TAP TO UNLOCK</button>
+    </div>
   </div>
 
   <script src="app.js"></script>

@@ -161,6 +161,81 @@ function getMeterWidth(canvas) {
   return meterWidthCache.get(canvas.id);
 }
 
+// ── W-21: Haptic feedback ──────────────────────────────────────────────────
+function haptic(ms = 30) {
+  if (navigator.vibrate) navigator.vibrate(ms);
+}
+
+// ── W-05: Solo count tracking ──────────────────────────────────────────────
+function updateSoloUI() {
+  const count = state.inputs.filter(inp => inp?.solo).length;
+  const badge = $('solo-count');
+  const btn   = $('btn-clear-solos');
+  if (badge) {
+    badge.textContent = count;
+    badge.classList.toggle('hidden', count === 0);
+  }
+  if (btn) btn.classList.toggle('hidden', count === 0);
+}
+
+// ── W-17: Fader lock ──────────────────────────────────────────────────────
+let faderLocked = false;
+
+function setFaderLock(locked) {
+  faderLocked = locked;
+  const btn = $('btn-fader-lock');
+  if (btn) btn.classList.toggle('fader-locked', locked);
+  // Update all strip faders
+  document.querySelectorAll('.strip-fader, .out-master-fader').forEach(el => {
+    el.disabled = locked;
+  });
+  toast(locked ? 'Faders locked' : 'Faders unlocked', locked ? 'err' : 'ok');
+}
+
+// Fader lock toggle button — 200ms press-and-hold to prevent accidents
+{
+  let lockTimer = null;
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = $('btn-fader-lock');
+    if (!btn) return;
+    const startHold = () => { lockTimer = setTimeout(() => { setFaderLock(!faderLocked); lockTimer = null; }, 200); };
+    const cancelHold = () => { if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; } };
+    btn.addEventListener('pointerdown', startHold);
+    btn.addEventListener('pointerup',   cancelHold);
+    btn.addEventListener('pointerleave', cancelHold);
+    // Regular click as fallback for desktop
+    btn.addEventListener('click', () => setFaderLock(!faderLocked));
+  });
+}
+
+// ── W-18: Kiosk / screen lock ─────────────────────────────────────────────
+function setKioskLock(locked) {
+  const overlay = $('kiosk-overlay');
+  if (overlay) overlay.classList.toggle('hidden', !locked);
+  haptic(locked ? 50 : 20);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnLock   = $('btn-kiosk-lock');
+  const btnUnlock = $('btn-kiosk-unlock');
+  if (btnLock)   btnLock.addEventListener('click',   () => setKioskLock(true));
+  if (btnUnlock) btnUnlock.addEventListener('click', () => setKioskLock(false));
+
+  // W-05: Clear all solos button
+  const btnClearSolos = $('btn-clear-solos');
+  if (btnClearSolos) btnClearSolos.addEventListener('click', async () => {
+    haptic();
+    for (let i = 0; i < state.nInputs; i++) {
+      if (state.inputs[i]?.solo) {
+        state.inputs[i].solo = false;
+        try { await apiFetch(`/channels/input/${i}/solo`, 'POST', { solo: false }); } catch (_) {}
+      }
+    }
+    buildUI();
+    updateSoloUI();
+  });
+});
+
 // ── Initialise UI from state snapshot ────────────────────────────────────
 
 function buildUI() {
@@ -235,6 +310,11 @@ function buildUI() {
 
   // Meters
   buildMeters();
+
+  // W-17: re-apply fader lock if active
+  if (faderLocked) {
+    document.querySelectorAll('.strip-fader, .out-master-fader').forEach(el => { el.disabled = true; });
+  }
 }
 
 function buildInputRow(i, rank) {
@@ -482,6 +562,7 @@ function showGainTooltip(i, o, cellEl) {
 // ── Channel controls ─────────────────────────────────────────────────────
 
 async function toggleInputMute(i) {
+  haptic(); // W-21
   const was = state.inputs[i]?.mute ?? false;
   state.inputs[i] = state.inputs[i] || {};
   state.inputs[i].mute = !was;
@@ -497,16 +578,19 @@ async function toggleInputMute(i) {
 }
 
 async function toggleInputSolo(i) {
+  haptic(); // W-21
   const was = state.inputs[i]?.solo ?? false;
   state.inputs[i] = state.inputs[i] || {};
   state.inputs[i].solo = !was;
   updateStripButtons(i);
+  updateSoloUI(); // W-05
 
   try {
     await apiFetch(`/channels/input/${i}/solo`, 'POST');
   } catch (err) {
     state.inputs[i].solo = was;
     updateStripButtons(i);
+    updateSoloUI();
     toast(`Error: ${err.message}`, 'err');
   }
 }
@@ -520,6 +604,7 @@ function updateStripButtons(i) {
 }
 
 async function toggleOutputMute(o) {
+  haptic(); // W-21
   const was = state.outputs[o]?.mute ?? false;
   state.outputs[o] = state.outputs[o] || {};
   state.outputs[o].mute = !was;
@@ -779,9 +864,8 @@ function applySnapshot(snap) {
   state.meters.outputs = new Array(state.nOutputs).fill(-60);
 
   buildUI();
+  updateSoloUI(); // W-05
 }
-
-// ── Scene management ──────────────────────────────────────────────────────
 
 async function loadSceneList(selectName = null) {
   try {

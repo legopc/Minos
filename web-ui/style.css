@@ -688,3 +688,118 @@ html, body {
   vertical-align: middle;
 }
 .dante-dot.active { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }
+
+/* ── W-05: Solo count badge ────────────────────────────────────────── */
+.badge--solo {
+  background: #2a1a00;
+  color: var(--yellow);
+  border: 1px solid #5a3a00;
+}
+
+/* ── W-16/W-17/W-18: Header action buttons ─────────────────────────── */
+.btn-header {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-cond);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  cursor: pointer;
+  border-radius: 2px;
+  text-transform: uppercase;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+  /* W-16: Minimum 44px touch target height */
+  min-height: 28px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.btn-header:hover { border-color: var(--accent); color: var(--accent); }
+.btn-header.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.btn-header.fader-locked { background: #1a0a00; border-color: var(--orange); color: var(--orange); }
+.btn-header.hidden { display: none; }
+
+/* ── W-16: 44px+ touch targets for mute/solo on mobile ─────────────── */
+@media (pointer: coarse) {
+  .btn-mute, .btn-solo {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 10px !important;
+  }
+  .btn-icon { min-width: 44px; min-height: 44px; font-size: 18px; padding: 8px; }
+  .matrix-cell {
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+  }
+  :root { --cell-size: 48px; }
+  .btn-header { min-height: 36px; font-size: 13px; padding: 6px 12px; }
+}
+
+/* ── W-17: Fader lock visual state ─────────────────────────────────── */
+.fader-locked-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: not-allowed;
+  background: transparent;
+}
+.strip-fader[disabled], .out-master-fader[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── W-18: Kiosk / screen-lock overlay ─────────────────────────────── */
+.kiosk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.kiosk-overlay.hidden { display: none; }
+.kiosk-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.kiosk-icon {
+  font-size: 64px;
+  color: var(--text-dim);
+  line-height: 1;
+}
+.kiosk-label {
+  font-family: var(--font-cond);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.kiosk-unlock {
+  font-family: var(--font-cond);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: var(--bg-3);
+  border: 2px solid var(--border-hi);
+  color: var(--text);
+  padding: 14px 36px;
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: border-color 0.15s, color 0.15s;
+  min-height: 52px;
+}
+.kiosk-unlock:hover, .kiosk-unlock:active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
