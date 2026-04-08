@@ -12,16 +12,21 @@ pub struct Config {
     pub device_name: String,
     /// Directory for TOML scene files.
     pub scenes_dir: String,
+    /// CORS allowed origins. Empty list means same-origin only (production default).
+    /// Add `"http://localhost:<port>"` for local development.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            port:        8080,
-            n_inputs:    8,
-            n_outputs:   8,
-            device_name: "dante-patchbox".to_owned(),
-            scenes_dir:  dirs_next().unwrap_or_else(|| "/var/lib/patchbox/scenes".to_owned()),
+            port:            8080,
+            n_inputs:        8,
+            n_outputs:       8,
+            device_name:     "dante-patchbox".to_owned(),
+            scenes_dir:      dirs_next().unwrap_or_else(|| "/var/lib/patchbox/scenes".to_owned()),
+            allowed_origins: vec![],
         }
     }
 }

@@ -170,6 +170,7 @@ async fn save_scene(
 ) -> impl IntoResponse {
     match state.save_scene(&body.name).await {
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
+        Err(scene::SceneError::InvalidName(msg)) => (StatusCode::BAD_REQUEST, msg).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -180,7 +181,8 @@ async fn load_scene(
 ) -> impl IntoResponse {
     match state.load_scene(&name).await {
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
-        Err(scene::SceneError::NotFound(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
+        Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -191,7 +193,8 @@ async fn delete_scene(
 ) -> impl IntoResponse {
     match scene::delete(&state.scenes_dir(), &name) {
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
-        Err(scene::SceneError::NotFound(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
+        Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }

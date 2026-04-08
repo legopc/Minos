@@ -276,3 +276,32 @@ async fn input_gain_trim_clamped() {
     let trim = state["inputs"][0]["gain_trim"].as_f64().unwrap();
     assert!(trim <= 4.0);
 }
+
+#[tokio::test]
+async fn path_traversal_rejected() {
+    let (srv, _tmp) = make_server();
+
+    // Attempt path traversal via scene name
+    srv.post("/api/v1/scenes")
+        .json(&json!({ "name": "../../etc/cron.d/evil" }))
+        .await
+        .assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // Dots-only name
+    srv.post("/api/v1/scenes")
+        .json(&json!({ "name": ".." }))
+        .await
+        .assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // Null byte
+    srv.post("/api/v1/scenes")
+        .json(&json!({ "name": "foo\0bar" }))
+        .await
+        .assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+    // Empty name
+    srv.post("/api/v1/scenes")
+        .json(&json!({ "name": "" }))
+        .await
+        .assert_status(axum::http::StatusCode::BAD_REQUEST);
+}

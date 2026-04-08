@@ -8,7 +8,7 @@ After=statime.service ptp4l.service
 Wants=statime.service
 
 [Service]
-Type=simple
+Type=notify
 User=patchbox
 Group=patchbox
 
@@ -19,6 +19,9 @@ ExecStart=/usr/local/bin/patchbox --config /etc/patchbox/config.toml
 Restart=on-failure
 RestartSec=5s
 TimeoutStartSec=30s
+
+# Systemd watchdog — restart if process doesn't send WATCHDOG=1 within 10s
+WatchdogSec=10s
 
 # Environment
 Environment=RUST_LOG=patchbox=info,tower_http=warn

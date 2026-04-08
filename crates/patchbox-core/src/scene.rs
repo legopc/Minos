@@ -15,6 +15,27 @@ pub enum SceneError {
     Serialize(#[from] toml::ser::Error),
     #[error("Scene not found: {0}")]
     NotFound(String),
+    #[error("Invalid scene name: {0}")]
+    InvalidName(String),
+}
+
+/// Validate a scene name. Returns `Err(InvalidName)` if the name contains
+/// path-traversal characters, is empty, or exceeds 128 characters.
+pub fn sanitise_name(name: &str) -> Result<(), SceneError> {
+    if name.is_empty() {
+        return Err(SceneError::InvalidName("name must not be empty".into()));
+    }
+    if name.len() > 128 {
+        return Err(SceneError::InvalidName("name exceeds 128 characters".into()));
+    }
+    // Reject anything that could escape the scenes directory
+    let bad = ['/', '\\', '\0', ':'];
+    if name.chars().any(|c| bad.contains(&c)) || name.contains("..") || name.starts_with('.') {
+        return Err(SceneError::InvalidName(format!(
+            "name contains forbidden characters or patterns: {}", name
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +46,7 @@ pub struct Scene {
 
 /// Save a scene to `{dir}/{name}.toml`.
 pub fn save(dir: &Path, scene: &Scene) -> Result<(), SceneError> {
+    sanitise_name(&scene.name)?;
     std::fs::create_dir_all(dir)?;
     let path = scene_path(dir, &scene.name);
     let toml = toml::to_string_pretty(scene)?;
@@ -34,6 +56,7 @@ pub fn save(dir: &Path, scene: &Scene) -> Result<(), SceneError> {
 
 /// Load a scene from `{dir}/{name}.toml`.
 pub fn load(dir: &Path, name: &str) -> Result<Scene, SceneError> {
+    sanitise_name(name)?;
     let path = scene_path(dir, name);
     if !path.exists() {
         return Err(SceneError::NotFound(name.to_owned()));
@@ -61,6 +84,7 @@ pub fn list(dir: &Path) -> Vec<String> {
 
 /// Delete a scene file `{dir}/{name}.toml`.
 pub fn delete(dir: &Path, name: &str) -> Result<(), SceneError> {
+    sanitise_name(name)?;
     let path = scene_path(dir, name);
     if !path.exists() {
         return Err(SceneError::NotFound(name.to_owned()));

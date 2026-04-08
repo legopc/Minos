@@ -44,6 +44,11 @@ chrono    = { version = "0.4", features = ["serde"] }
 uuid      = { version = "1", features = ["v4", "serde"] }
 dirs      = "5"
 futures-util = "0.3"
+# Systemd watchdog / service notification (Linux only)
+sd-notify = { version = "0.4", optional = true }
+
+[features]
+systemd = ["sd-notify"]
 
 [dev-dependencies]
 axum-test = "14"
