@@ -237,3 +237,42 @@ async fn delete_nonexistent_scene_is_404() {
         .await
         .assert_status(axum::http::StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn set_input_gain_trim() {
+    let (srv, _tmp) = make_server();
+    srv.post("/api/v1/channels/input/0/gain_trim")
+        .json(&json!({ "gain": 0.5 }))
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+
+    let state: serde_json::Value = srv.get("/api/v1/state").await.json();
+    let trim = state["inputs"][0]["gain_trim"].as_f64().unwrap();
+    assert!((trim - 0.5).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn set_output_master_gain() {
+    let (srv, _tmp) = make_server();
+    srv.post("/api/v1/channels/output/0/master_gain")
+        .json(&json!({ "gain": 0.75 }))
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+
+    let state: serde_json::Value = srv.get("/api/v1/state").await.json();
+    let gain = state["outputs"][0]["master_gain"].as_f64().unwrap();
+    assert!((gain - 0.75).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn input_gain_trim_clamped() {
+    let (srv, _tmp) = make_server();
+    // Above max (4.0)
+    srv.post("/api/v1/channels/input/0/gain_trim")
+        .json(&json!({ "gain": 99.0 }))
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+    let state: serde_json::Value = srv.get("/api/v1/state").await.json();
+    let trim = state["inputs"][0]["gain_trim"].as_f64().unwrap();
+    assert!(trim <= 4.0);
+}

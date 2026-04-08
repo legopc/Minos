@@ -113,10 +113,12 @@ html, body {
 .output-label {
   width: var(--cell-size);
   min-width: var(--cell-size);
-  height: var(--cell-size);
+  min-height: var(--cell-size);
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
   padding-bottom: 4px;
   font-family: var(--font-cond);
   font-size: 10px;
@@ -124,7 +126,7 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
-  cursor: default;
+  cursor: pointer;
 }
 .output-label:hover { color: var(--text-bright); }
 .output-label.muted { color: var(--red); text-decoration: line-through; }
@@ -185,7 +187,59 @@ html, body {
 .btn-mute.active { background: var(--red);    color: #000; border-color: var(--red); }
 .btn-solo.active { background: var(--yellow); color: #000; border-color: var(--yellow); }
 
-/* Matrix cell */
+/* Strip gain trim fader */
+.strip-fader {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.strip-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px; height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.strip-fader::-moz-range-thumb {
+  width: 8px; height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* Output master gain fader (inside output-label column) */
+.out-master-fader {
+  -webkit-appearance: none;
+  writing-mode: horizontal-tb;
+  width: 90%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.out-master-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px; height: 14px;
+  background: var(--green);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.out-master-fader::-moz-range-thumb {
+  width: 8px; height: 14px;
+  background: var(--green);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+
 .matrix-cell {
   width: var(--cell-size);
   min-width: var(--cell-size);

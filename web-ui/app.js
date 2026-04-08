@@ -93,9 +93,32 @@ function buildUI() {
     el.className = 'output-label';
     el.id = `out-label-${o}`;
     if (outputs[o]?.mute) el.classList.add('muted');
-    el.textContent = outputs[o]?.label || `O${o + 1}`;
-    el.title = 'Click to mute output';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = outputs[o]?.label || `O${o + 1}`;
+    nameSpan.title = 'Left-click mute · Right-click master gain · Dbl-click rename';
     el.addEventListener('click', () => toggleOutputMute(o));
+    el.addEventListener('dblclick', e => { e.stopPropagation(); renameChannel('output', o); });
+    el.addEventListener('contextmenu', e => { e.preventDefault(); showMasterGainTooltip(o, el); });
+
+    const fader = document.createElement('input');
+    fader.type = 'range';
+    fader.className = 'out-master-fader';
+    fader.id = `out-gain-${o}`;
+    fader.min = '0'; fader.max = '1'; fader.step = '0.01';
+    fader.value = outputs[o]?.master_gain ?? 1.0;
+    fader.title = `Master: ${gainLabel(outputs[o]?.master_gain ?? 1.0)} dB`;
+    fader.addEventListener('click', e => e.stopPropagation());
+    fader.addEventListener('input', e => {
+      const g = parseFloat(fader.value);
+      fader.title = `Master: ${gainLabel(g)} dB`;
+      state.outputs[o] = state.outputs[o] || {};
+      state.outputs[o].master_gain = g;
+      sendOutputMasterGain(o, g);
+    });
+
+    el.appendChild(nameSpan);
+    el.appendChild(fader);
     elOutputLabels.appendChild(el);
   }
 
@@ -140,9 +163,24 @@ function buildInputRow(i) {
   btnS.id = `in-solo-${i}`;
   btnS.addEventListener('click', () => toggleInputSolo(i));
 
+  // Gain trim fader (linear 0–1, displayed as dB)
+  const fader = document.createElement('input');
+  fader.type = 'range';
+  fader.className = 'strip-fader';
+  fader.id = `in-trim-${i}`;
+  fader.min = '0'; fader.max = '1'; fader.step = '0.01';
+  fader.value = inp.gain_trim ?? 1.0;
+  fader.title = `Trim: ${gainLabel(inp.gain_trim ?? 1.0)} dB`;
+  fader.addEventListener('input', () => {
+    const g = parseFloat(fader.value);
+    fader.title = `Trim: ${gainLabel(g)} dB`;
+    sendInputGainTrim(i, g);
+  });
+
   strip.appendChild(nameEl);
   strip.appendChild(btnM);
   strip.appendChild(btnS);
+  strip.appendChild(fader);
   row.appendChild(strip);
 
   // Matrix cells
@@ -217,6 +255,11 @@ const sendGain = debounce(async (i, o, gain) => {
     toast(`Gain error: ${err.message}`, 'err');
   }
 });
+
+function showMasterGainTooltip(o, el) {
+  const fader = $(`out-gain-${o}`);
+  if (fader) fader.focus();
+}
 
 function showGainTooltip(i, o, cellEl) {
   if (!gainTooltip) {
@@ -313,6 +356,22 @@ async function toggleOutputMute(o) {
     toast(`Error: ${err.message}`, 'err');
   }
 }
+
+const sendInputGainTrim = debounce(async (i, gain) => {
+  try {
+    await apiFetch(`/channels/input/${i}/gain_trim`, 'POST', { gain });
+  } catch (err) {
+    toast(`Trim error: ${err.message}`, 'err');
+  }
+});
+
+const sendOutputMasterGain = debounce(async (o, gain) => {
+  try {
+    await apiFetch(`/channels/output/${o}/master_gain`, 'POST', { gain });
+  } catch (err) {
+    toast(`Master gain error: ${err.message}`, 'err');
+  }
+});
 
 // ── Channel rename ────────────────────────────────────────────────────────
 

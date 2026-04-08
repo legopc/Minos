@@ -15,11 +15,13 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/health",           get(health))
         .route("/state",            get(get_state))
         .route("/matrix/:in/:out",  patch(patch_matrix_cell))
-        .route("/channels/input/:id/name",  post(set_input_name))
-        .route("/channels/input/:id/mute",  post(toggle_input_mute))
-        .route("/channels/input/:id/solo",  post(toggle_input_solo))
-        .route("/channels/output/:id/name", post(set_output_name))
-        .route("/channels/output/:id/mute", post(toggle_output_mute))
+        .route("/channels/input/:id/name",      post(set_input_name))
+        .route("/channels/input/:id/mute",      post(toggle_input_mute))
+        .route("/channels/input/:id/solo",      post(toggle_input_solo))
+        .route("/channels/input/:id/gain_trim", post(set_input_gain_trim))
+        .route("/channels/output/:id/name",     post(set_output_name))
+        .route("/channels/output/:id/mute",     post(toggle_output_mute))
+        .route("/channels/output/:id/master_gain", post(set_output_master_gain))
         .route("/scenes",           get(list_scenes).post(save_scene))
         .route("/scenes/:name",     get(load_scene).delete(delete_scene))
         .with_state(state)
@@ -127,6 +129,28 @@ async fn toggle_output_mute(
     let mut p = state.params.write().await;
     if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.outputs[id].mute = !p.outputs[id].mute;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn set_input_gain_trim(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(body): Json<GainBody>,
+) -> impl IntoResponse {
+    let mut p = state.params.write().await;
+    if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
+    p.inputs[id].gain_trim = body.gain.clamp(0.0, 4.0);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn set_output_master_gain(
+    State(state): State<SharedState>,
+    Path(id): Path<usize>,
+    Json(body): Json<GainBody>,
+) -> impl IntoResponse {
+    let mut p = state.params.write().await;
+    if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
+    p.outputs[id].master_gain = body.gain.clamp(0.0, 4.0);
     StatusCode::NO_CONTENT.into_response()
 }
 
