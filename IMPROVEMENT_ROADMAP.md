@@ -2,9 +2,47 @@
 
 > **Document type:** Engineering review and improvement backlog  
 > **Scope:** Full-stack Rust AoIP matrix mixer — Dante I/O, DSP core, axum REST/WS API, vanilla web UI, TUI, Docker/systemd  
-> **Total items:** 58 (4 bug fixes + 54 improvements) — 0 resolved, 58 open  
-> **Generated:** July 2025  
+> **Total items:** 58 (4 bug fixes + 54 improvements) — 28 resolved (Sprints 1–6), 30 open  
+> **Generated:** July 2025; updated after Sprint 6 (April 2026)  
 > **Basis:** Research branches A–F (codebase structure, code quality, security, ops/reliability, web research, build hygiene) against commit `e30cba6`
+
+---
+
+## Resolved Items (28) — Sprints 1–6
+
+| ID | Title | Sprint |
+|----|-------|--------|
+| BUG-01 | Scene path traversal fix | Sprint 1 |
+| BUG-02 | WebSocket message size limit | Sprint 1 |
+| S-02 | Restrict CORS origins | Sprint 1 |
+| R-01 | Systemd watchdog | Sprint 1 |
+| R-03 | PID lock file | Sprint 1 |
+| BUG-03 | Clamp matrix cell gain at API layer | Sprint 2 |
+| BUG-04 | Channel name max length 64 chars | Sprint 2 |
+| S-07 | Scrub error messages from 500 responses | Sprint 2 |
+| R-06 | Atomic scene writes | Sprint 2 |
+| O-07 | Pin inferno_aoip git dep to commit hash | Sprint 2 |
+| S-06 | WebSocket origin validation | Sprint 3 |
+| S-08 | WebSocket connection limit | Sprint 3 |
+| R-07 | WS backpressure — timeout + drop slow clients | Sprint 3 |
+| R-05 | Config validation at startup | Sprint 3 |
+| U-07 | JS WebSocket reconnect with exponential backoff | Sprint 3 |
+| O-03 | LTO + strip in release profile | Sprint 3 |
+| R-08 | Structured JSON logging | Sprint 4 |
+| R-02 | Deep health check | Sprint 4 |
+| R-09 | Prometheus /metrics exporter | Sprint 4 |
+| R-10 | Graceful Dante unsubscribe on SIGTERM | Sprint 4 |
+| U-03 | Matrix cell gain tooltip (dB) | Sprint 4 |
+| U-04 | Mobile/tablet responsive layout | Sprint 5 |
+| U-08 | Canvas VU peak-hold indicator | Sprint 5 |
+| U-02 | Keyboard shortcuts (arrow nav, m=mute, s=solo) | Sprint 5 |
+| T-01 | WebSocket integration test | Sprint 5 |
+| T-03 | Scene roundtrip test | Sprint 5 |
+| T-05 | Scene schema_version field | Sprint 5 |
+| S-01 | API key authentication middleware | Sprint 6 |
+| U-01 | Zone/bar-scoped view + zone API | Sprint 6 |
+| D-09 | mDNS/DNS-SD registration | Sprint 6 |
+| D-03 | Dante device name + channel TXT records | Sprint 6 |
 
 ---
 

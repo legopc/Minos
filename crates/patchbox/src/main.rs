@@ -128,7 +128,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let router = api::build_router(app_state.clone(), cfg.clone());
+    // S-03: Rate limiting requires ConnectInfo<SocketAddr> — use make_service.
+    let service = api::make_service(app_state.clone(), cfg.clone());
     let addr   = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
@@ -145,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
         let tui_handle = tokio::task::spawn_blocking(move || tui::run(tui_state, port));
 
         tokio::select! {
-            result = axum::serve(listener, router).with_graceful_shutdown(shutdown_signal()) => {
+            result = axum::serve(listener, service).with_graceful_shutdown(shutdown_signal()) => {
                 result?;
             }
             result = tui_handle => {
@@ -153,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        axum::serve(listener, router)
+        axum::serve(listener, service)
             .with_graceful_shutdown(shutdown_signal())
             .await?;
     }

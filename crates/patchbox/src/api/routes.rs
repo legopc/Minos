@@ -42,6 +42,10 @@ struct HealthResponse {
     uptime_secs:     u64,
     ws_connections:  usize,
     scenes_dir_ok:   bool,
+    /// D-02: PTP daemon health — `true` if statime is running (detected via process).
+    ptp_ok:          bool,
+    /// Statime lock status (offset from grandmaster in ns) if readable; None if unavailable.
+    ptp_offset_ns:   Option<i64>,
 }
 
 async fn health(State(state): State<SharedState>) -> impl IntoResponse {
@@ -53,9 +57,14 @@ async fn health(State(state): State<SharedState>) -> impl IntoResponse {
     let uptime_secs = state.started_at.elapsed().as_secs();
     let ws_connections = state.ws_connections.load(Ordering::Relaxed);
 
+    // D-02: Check statime PTP daemon health via /run/statime/offset or process presence.
+    let (ptp_ok, ptp_offset_ns) = check_ptp_health();
+
     // R-09: Prometheus metrics counters
     metrics::gauge!("patchbox_ws_connections").set(ws_connections as f64);
     metrics::gauge!("patchbox_uptime_seconds").set(uptime_secs as f64);
+    if ptp_ok { metrics::gauge!("patchbox_ptp_ok").set(1.0); }
+    else       { metrics::gauge!("patchbox_ptp_ok").set(0.0); }
 
     let body = HealthResponse {
         status:         "ok",
@@ -65,8 +74,46 @@ async fn health(State(state): State<SharedState>) -> impl IntoResponse {
         uptime_secs,
         ws_connections,
         scenes_dir_ok,
+        ptp_ok,
+        ptp_offset_ns,
     };
     Json(body)
+}
+
+/// D-02: Check if the statime PTP daemon is healthy.
+///
+/// Detection strategy (cheapest first):
+/// 1. Try to read `/run/statime/offset` (written by statime when synced).
+/// 2. Fall back to checking if a `statime` process is running via /proc.
+fn check_ptp_health() -> (bool, Option<i64>) {
+    // Attempt to read the offset file statime writes on each sync step.
+    if let Ok(content) = std::fs::read_to_string("/run/statime/offset") {
+        if let Ok(ns) = content.trim().parse::<i64>() {
+            return (true, Some(ns));
+        }
+        // File exists but content is not a number — daemon running but no offset yet.
+        return (true, None);
+    }
+
+    // Fallback: scan /proc for a process named "statime".
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                // Only look at numeric PIDs.
+                if name.to_string_lossy().parse::<u32>().is_err() { continue; }
+                let comm_path = entry.path().join("comm");
+                if let Ok(comm) = std::fs::read_to_string(comm_path) {
+                    if comm.trim() == "statime" {
+                        return (true, None);
+                    }
+                }
+            }
+        }
+    }
+
+    (false, None)
 }
 
 // ── Full state snapshot ───────────────────────────────────────────────────

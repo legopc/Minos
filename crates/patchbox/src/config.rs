@@ -1,6 +1,32 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// S-05: Role for an API key. Controls which endpoints are accessible.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    /// Full system access — config, scenes, matrix, all zones.
+    Admin,
+    /// Can change matrix routing and scenes. Cannot modify config.
+    Operator,
+    /// Can adjust gain/mute within their assigned zone only.
+    BarStaff,
+    /// Can read state but cannot modify anything.
+    ReadOnly,
+}
+
+impl Default for Role {
+    fn default() -> Self { Role::ReadOnly }
+}
+
+/// Entry in the api_keys map: a human label + role.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyEntry {
+    pub label: String,
+    #[serde(default)]
+    pub role:  Role,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// HTTP port for the web UI and API.
@@ -17,11 +43,11 @@ pub struct Config {
     /// Add `"http://localhost:<port>"` for local development.
     #[serde(default)]
     pub allowed_origins: Vec<String>,
-    /// S-01: API keys. Map of token → label (e.g. "bar-1" → "abc123...").
+    /// S-01 + S-05: API keys. Map of token → {label, role}.
     /// Empty = auth disabled (development default). When non-empty, every API
     /// request must include `X-Api-Key: <token>` or `Authorization: Bearer <token>`.
     #[serde(default)]
-    pub api_keys: HashMap<String, String>,
+    pub api_keys: HashMap<String, ApiKeyEntry>,
     /// Zone definitions for the bar view (U-01).
     /// Map of zone-id → list of output indices that belong to that zone.
     /// e.g. `{ "bar-1": [0, 1], "bar-2": [2, 3] }`
