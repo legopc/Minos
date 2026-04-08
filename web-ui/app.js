@@ -475,6 +475,7 @@ function paintMeters() {
 
 let ws = null;
 let wsRetryMs = 1000;
+let wsReconnectTimer = null;
 
 function connectWS() {
   ws = new WebSocket(WS_URL);
@@ -482,12 +483,15 @@ function connectWS() {
 
   ws.onopen = () => {
     wsRetryMs = 1000;
-    setWsStatus(true);
+    setWsStatus('online');
+    showToast('Connected', 1500);
   };
 
   ws.onclose = () => {
-    setWsStatus(false);
-    setTimeout(connectWS, wsRetryMs);
+    setWsStatus('reconnecting');
+    // Exponential backoff with ±20% jitter to avoid thundering herd from many tablets.
+    const jitter = wsRetryMs * 0.2 * (Math.random() * 2 - 1);
+    wsReconnectTimer = setTimeout(connectWS, wsRetryMs + jitter);
     wsRetryMs = Math.min(wsRetryMs * 2, 30000);
   };
 
@@ -513,9 +517,11 @@ function connectWS() {
   };
 }
 
-function setWsStatus(online) {
-  elWsStatus.textContent = online ? 'WS ONLINE' : 'WS OFFLINE';
-  elWsStatus.className   = 'badge ' + (online ? 'badge--online' : 'badge--offline');
+function setWsStatus(mode) {
+  const labels = { online: 'WS ONLINE', offline: 'WS OFFLINE', reconnecting: 'WS RECONNECTING…' };
+  const cls    = { online: 'badge--online', offline: 'badge--offline', reconnecting: 'badge--warn' };
+  elWsStatus.textContent = labels[mode] ?? 'WS OFFLINE';
+  elWsStatus.className   = 'badge ' + (cls[mode] ?? 'badge--offline');
 }
 
 // ── Snapshot application ──────────────────────────────────────────────────

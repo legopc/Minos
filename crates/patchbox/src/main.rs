@@ -55,6 +55,12 @@ async fn main() -> anyhow::Result<()> {
         cfg.port = port;
     }
 
+    // R-05: Validate config immediately after loading — fail fast with clear error.
+    if let Err(msg) = cfg.validate() {
+        eprintln!("patchbox: invalid config: {}", msg);
+        std::process::exit(1);
+    }
+
     tracing::info!(
         "patchbox v{} starting — {}×{} matrix — port {}",
         env!("CARGO_PKG_VERSION"),

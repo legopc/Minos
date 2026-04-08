@@ -29,3 +29,11 @@ tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
+
+[profile.release]
+# O-03: LTO + strip for minimal binary (~60% smaller) and best runtime performance.
+lto            = true
+strip          = true
+codegen-units  = 1
+opt-level      = 3
+panic          = "abort"

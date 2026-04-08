@@ -82,6 +82,7 @@ html, body {
 }
 .badge--online  { background: #0a2a10; color: var(--green); border: 1px solid #1a4a20; }
 .badge--offline { background: #2a0a0a; color: var(--red);   border: 1px solid #4a1a1a; }
+.badge--warn    { background: #2a200a; color: #e8b040;      border: 1px solid #4a3a1a; }
 
 /* ── Matrix ──────────────────────────────────────────────────────────── */
 #matrix-area {

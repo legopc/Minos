@@ -36,6 +36,29 @@ impl Config {
         let src = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&src)?)
     }
+
+    /// Validate config values. Returns an error string describing the first problem found.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.port < 1024 {
+            return Err(format!("port {} is < 1024 (reserved)", self.port));
+        }
+        if self.n_inputs == 0 || self.n_inputs > 64 {
+            return Err(format!("n_inputs {} must be 1–64", self.n_inputs));
+        }
+        if self.n_outputs == 0 || self.n_outputs > 64 {
+            return Err(format!("n_outputs {} must be 1–64", self.n_outputs));
+        }
+        if self.device_name.trim().is_empty() {
+            return Err("device_name must not be empty".into());
+        }
+        if self.device_name.len() > 64 {
+            return Err(format!("device_name exceeds 64 characters: {}", self.device_name));
+        }
+        if self.scenes_dir.trim().is_empty() {
+            return Err("scenes_dir must not be empty".into());
+        }
+        Ok(())
+    }
 }
 
 fn dirs_next() -> Option<String> {
