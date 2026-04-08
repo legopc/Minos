@@ -467,13 +467,13 @@ function applySnapshot(snap) {
   state.nInputs  = snap.matrix?.inputs  ?? state.nInputs;
   state.nOutputs = snap.matrix?.outputs ?? state.nOutputs;
 
-  // Rebuild flat gains matrix
+  // API sends gains as Vec<Vec<f32>> (2D nested array, row-major)
   state.matrix = [];
-  const cells = snap.matrix?.cells ?? [];
+  const gains = snap.matrix?.gains ?? [];
   for (let i = 0; i < state.nInputs; i++) {
     state.matrix[i] = [];
     for (let o = 0; o < state.nOutputs; o++) {
-      state.matrix[i][o] = cells[i * state.nOutputs + o] ?? 0;
+      state.matrix[i][o] = (gains[i] ?? [])[o] ?? 0;
     }
   }
 
@@ -487,39 +487,65 @@ function applySnapshot(snap) {
 
 // ── Scene management ──────────────────────────────────────────────────────
 
-async function loadSceneList() {
+async function loadSceneList(selectName = null) {
   try {
     const names = await apiFetch('/scenes');
     if (!Array.isArray(names)) return;
+    const prev = selectName ?? elSceneSelect.value;
     elSceneSelect.innerHTML = '<option value="">— select —</option>' +
-      names.map(n => `<option value="${n}">${n}</option>`).join('');
+      names.map(n => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+    if (prev && names.includes(prev)) elSceneSelect.value = prev;
   } catch (_) {}
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 $('btn-load-scene').addEventListener('click', async () => {
   const name = elSceneSelect.value;
-  if (!name) return;
+  if (!name) { toast('Select a scene first', 'err'); return; }
   try {
     await apiFetch(`/scenes/${encodeURIComponent(name)}`);
-    toast(`Loaded scene "${name}"`, 'ok');
     const full = await apiFetch('/state');
     if (full) applySnapshot(full);
+    toast(`Loaded scene "${name}"`, 'ok');
   } catch (err) {
     toast(`Load failed: ${err.message}`, 'err');
   }
 });
 
-$('btn-save-scene').addEventListener('click', async () => {
+$('btn-delete-scene').addEventListener('click', async () => {
+  const name = elSceneSelect.value;
+  if (!name) { toast('Select a scene to delete', 'err'); return; }
+  if (!confirm(`Delete scene "${name}"?`)) return;
+  try {
+    await apiFetch(`/scenes/${encodeURIComponent(name)}`, 'DELETE');
+    toast(`Deleted scene "${name}"`, 'ok');
+    loadSceneList();
+  } catch (err) {
+    // Server may not yet support DELETE — show a graceful message
+    toast(`Delete not supported yet`, 'err');
+  }
+});
+
+async function saveScene() {
   const name = elSceneNameInput.value.trim();
   if (!name) { toast('Enter a scene name', 'err'); return; }
   try {
     await apiFetch('/scenes', 'POST', { name });
-    toast(`Saved scene "${name}"`, 'ok');
+    toast(`Saved "${name}"`, 'ok');
     elSceneNameInput.value = '';
-    loadSceneList();
+    loadSceneList(name);
   } catch (err) {
     toast(`Save failed: ${err.message}`, 'err');
   }
+}
+
+$('btn-save-scene').addEventListener('click', saveScene);
+
+elSceneNameInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveScene();
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────

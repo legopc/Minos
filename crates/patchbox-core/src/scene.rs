@@ -59,6 +59,16 @@ pub fn list(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// Delete a scene file `{dir}/{name}.toml`.
+pub fn delete(dir: &Path, name: &str) -> Result<(), SceneError> {
+    let path = scene_path(dir, name);
+    if !path.exists() {
+        return Err(SceneError::NotFound(name.to_owned()));
+    }
+    std::fs::remove_file(path)?;
+    Ok(())
+}
+
 fn scene_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{}.toml", name))
 }

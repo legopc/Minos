@@ -21,7 +21,7 @@ pub fn api_router(state: SharedState) -> Router<SharedState> {
         .route("/channels/output/:id/name", post(set_output_name))
         .route("/channels/output/:id/mute", post(toggle_output_mute))
         .route("/scenes",           get(list_scenes).post(save_scene))
-        .route("/scenes/:name",     get(load_scene))
+        .route("/scenes/:name",     get(load_scene).delete(delete_scene))
         .with_state(state)
 }
 
@@ -155,6 +155,17 @@ async fn load_scene(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     match state.load_scene(&name).await {
+        Ok(_)  => StatusCode::NO_CONTENT.into_response(),
+        Err(scene::SceneError::NotFound(_)) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn delete_scene(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match scene::delete(&state.scenes_dir(), &name) {
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
         Err(scene::SceneError::NotFound(_)) => StatusCode::NOT_FOUND.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),

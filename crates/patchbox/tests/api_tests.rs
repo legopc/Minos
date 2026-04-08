@@ -207,8 +207,33 @@ async fn save_and_load_scene() {
 }
 
 #[tokio::test]
-async fn load_nonexistent_scene_is_404() {
+async fn delete_scene() {
     let (srv, _tmp) = make_server();
-    let res = srv.get("/api/v1/scenes/does-not-exist").await;
-    res.assert_status(axum::http::StatusCode::NOT_FOUND);
+
+    // Save first
+    srv.post("/api/v1/scenes")
+        .json(&json!({ "name": "to-delete" }))
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+
+    // Should be in list
+    let names: Vec<String> = srv.get("/api/v1/scenes").await.json();
+    assert!(names.contains(&"to-delete".to_owned()));
+
+    // Delete
+    srv.delete("/api/v1/scenes/to-delete")
+        .await
+        .assert_status(axum::http::StatusCode::NO_CONTENT);
+
+    // Should be gone
+    let names: Vec<String> = srv.get("/api/v1/scenes").await.json();
+    assert!(!names.contains(&"to-delete".to_owned()));
+}
+
+#[tokio::test]
+async fn delete_nonexistent_scene_is_404() {
+    let (srv, _tmp) = make_server();
+    srv.delete("/api/v1/scenes/ghost")
+        .await
+        .assert_status(axum::http::StatusCode::NOT_FOUND);
 }

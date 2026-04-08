@@ -55,9 +55,11 @@
     <!-- ── Scene bar ─────────────────────────────────────────────── -->
     <footer id="scene-bar">
       <span class="label">SCENE</span>
-      <select id="scene-select"><option>—</option></select>
+      <select id="scene-select"><option value="">— select —</option></select>
       <button id="btn-load-scene">LOAD</button>
-      <input id="scene-name-input" type="text" placeholder="new-scene">
+      <button id="btn-delete-scene" class="btn-danger" title="Delete selected scene">✕</button>
+      <span class="scene-sep">│</span>
+      <input id="scene-name-input" type="text" placeholder="new-scene" maxlength="32">
       <button id="btn-save-scene">SAVE</button>
       <span class="spacer"></span>
       <span id="toast" class="toast"></span>
