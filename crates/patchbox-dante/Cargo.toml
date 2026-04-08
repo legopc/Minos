@@ -22,4 +22,5 @@ serde         = { workspace = true }
 atomic        = "0.6"
 
 # Real Dante I/O — feature-gated: requires PTP daemon at runtime, not safe for CI
-inferno_aoip = { git = "https://github.com/teodly/inferno", optional = true }
+# Pinned to commit 3f2bf142 — update with: git ls-remote https://github.com/teodly/inferno HEAD
+inferno_aoip = { git = "https://github.com/teodly/inferno", rev = "3f2bf142e15d", optional = true }

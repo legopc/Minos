@@ -44,13 +44,15 @@ pub struct Scene {
     pub params: AudioParams,
 }
 
-/// Save a scene to `{dir}/{name}.toml`.
+/// Save a scene to `{dir}/{name}.toml` atomically (write to .tmp, then rename).
 pub fn save(dir: &Path, scene: &Scene) -> Result<(), SceneError> {
     sanitise_name(&scene.name)?;
     std::fs::create_dir_all(dir)?;
     let path = scene_path(dir, &scene.name);
+    let tmp_path = path.with_extension("toml.tmp");
     let toml = toml::to_string_pretty(scene)?;
-    std::fs::write(path, toml)?;
+    std::fs::write(&tmp_path, toml)?;
+    std::fs::rename(&tmp_path, &path)?;
     Ok(())
 }
 

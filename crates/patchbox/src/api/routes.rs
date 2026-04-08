@@ -71,7 +71,7 @@ async fn patch_matrix_cell(
     if input >= n_in || output >= n_out {
         return StatusCode::UNPROCESSABLE_ENTITY.into_response();
     }
-    params.matrix.set(input, output, body.gain);
+    params.matrix.set(input, output, body.gain.clamp(0.0, 4.0));
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -80,11 +80,16 @@ async fn patch_matrix_cell(
 #[derive(Deserialize)]
 struct NameBody { name: String }
 
+const MAX_LABEL_LEN: usize = 64;
+
 async fn set_input_name(
     State(state): State<SharedState>,
     Path(id): Path<usize>,
     Json(body): Json<NameBody>,
 ) -> impl IntoResponse {
+    if body.name.len() > MAX_LABEL_LEN {
+        return (StatusCode::BAD_REQUEST, "name exceeds 64 characters").into_response();
+    }
     let mut p = state.params.write().await;
     if id >= p.inputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.inputs[id].label = body.name;
@@ -116,6 +121,9 @@ async fn set_output_name(
     Path(id): Path<usize>,
     Json(body): Json<NameBody>,
 ) -> impl IntoResponse {
+    if body.name.len() > MAX_LABEL_LEN {
+        return (StatusCode::BAD_REQUEST, "name exceeds 64 characters").into_response();
+    }
     let mut p = state.params.write().await;
     if id >= p.outputs.len() { return StatusCode::NOT_FOUND.into_response(); }
     p.outputs[id].label = body.name;
@@ -171,7 +179,10 @@ async fn save_scene(
     match state.save_scene(&body.name).await {
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
         Err(scene::SceneError::InvalidName(msg)) => (StatusCode::BAD_REQUEST, msg).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            tracing::error!("save_scene failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -183,7 +194,10 @@ async fn load_scene(
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
         Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
         Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            tracing::error!("load_scene failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -195,6 +209,9 @@ async fn delete_scene(
         Ok(_)  => StatusCode::NO_CONTENT.into_response(),
         Err(scene::SceneError::NotFound(_))    => StatusCode::NOT_FOUND.into_response(),
         Err(scene::SceneError::InvalidName(m)) => (StatusCode::BAD_REQUEST, m).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            tracing::error!("delete_scene failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }

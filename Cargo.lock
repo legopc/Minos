@@ -1653,7 +1653,7 @@ dependencies = [
 [[package]]
 name = "inferno_aoip"
 version = "0.5.0"
-source = "git+https://github.com/teodly/inferno#3f2bf142e15d01436562e09678763cde89baca9a"
+source = "git+https://github.com/teodly/inferno?rev=3f2bf142e15d#3f2bf142e15d01436562e09678763cde89baca9a"
 dependencies = [
  "arrayvec",
  "atomic",
@@ -2695,7 +2695,7 @@ dependencies = [
 [[package]]
 name = "searchfire"
 version = "0.1.0"
-source = "git+https://github.com/teodly/inferno#3f2bf142e15d01436562e09678763cde89baca9a"
+source = "git+https://github.com/teodly/inferno?rev=3f2bf142e15d#3f2bf142e15d01436562e09678763cde89baca9a"
 dependencies = [
  "if-addrs",
  "libc",
@@ -3746,7 +3746,7 @@ dependencies = [
 [[package]]
 name = "usrvclock"
 version = "0.2.0"
-source = "git+https://github.com/teodly/inferno#3f2bf142e15d01436562e09678763cde89baca9a"
+source = "git+https://github.com/teodly/inferno?rev=3f2bf142e15d#3f2bf142e15d01436562e09678763cde89baca9a"
 dependencies = [
  "custom_error",
  "nix",
