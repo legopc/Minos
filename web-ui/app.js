@@ -2061,3 +2061,448 @@ function signalPulse(dir, idx, db) {
     }
   }
 }
+
+// ── W-23: Zone overview dashboard ────────────────────────────────────────
+// Shows a compact card for each zone with live meter summary + active routing count
+
+(function buildZoneOverview() {
+  // Inject the overview panel into the page after DOMContentLoaded
+  document.addEventListener('DOMContentLoaded', () => {
+    // Create a toggle button in the toolbar
+    const toolbar = document.getElementById('matrix-toolbar');
+    if (!toolbar) return;
+
+    const btnOverview = document.createElement('button');
+    btnOverview.id = 'btn-zone-overview';
+    btnOverview.className = 'btn-icon';
+    btnOverview.textContent = '▦';
+    btnOverview.title = 'Zone overview dashboard';
+    toolbar.appendChild(btnOverview);
+
+    // Panel
+    const panel = document.createElement('div');
+    panel.id = 'zone-overview-panel';
+    panel.style.cssText = 'display:none;position:fixed;top:60px;right:12px;width:220px;background:var(--bg-mid);border:1px solid var(--border);border-radius:6px;z-index:100;padding:10px 12px;box-shadow:0 4px 16px #000a;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:10px;letter-spacing:.15em;opacity:.5;margin-bottom:8px;';
+    title.textContent = 'ZONE OVERVIEW';
+    panel.appendChild(title);
+
+    const body = document.createElement('div');
+    body.id = 'zone-overview-body';
+    panel.appendChild(body);
+
+    document.body.appendChild(panel);
+
+    btnOverview.addEventListener('click', () => {
+      const show = panel.style.display === 'none';
+      panel.style.display = show ? 'block' : 'none';
+      if (show) renderZoneOverview();
+    });
+
+    // Refresh every 500ms while open
+    setInterval(() => {
+      if (panel.style.display !== 'none') renderZoneOverview();
+    }, 500);
+  });
+})();
+
+function renderZoneOverview() {
+  const body = document.getElementById('zone-overview-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  if (zones.length === 0) {
+    body.innerHTML = '<p style="font-size:10px;opacity:.5;">No zones. Create one to see overview.</p>';
+    return;
+  }
+
+  zones.forEach((z, zIdx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'margin-bottom:8px;padding:6px 8px;background:var(--bg-low);border-radius:4px;cursor:pointer;';
+    card.title = `Switch to zone: ${z.name}`;
+    card.addEventListener('click', () => {
+      const sel = document.getElementById('zone-select');
+      if (sel) { sel.value = String(zIdx); applyZoneFilter(); }
+      document.getElementById('zone-overview-panel').style.display = 'none';
+      toast(`Zone: ${z.name}`, 'ok');
+    });
+
+    // Zone name + route count
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'font-size:11px;font-weight:600;';
+    nameSpan.textContent = z.name;
+
+    // Count active routes for this zone
+    let routeCount = 0;
+    for (let i = 0; i < state.nInputs; i++) {
+      for (const o of z.outputs) {
+        if ((state.matrix[i]?.[o] ?? 0) > 0) routeCount++;
+      }
+    }
+    const routeSpan = document.createElement('span');
+    routeSpan.style.cssText = 'font-size:9px;opacity:.5;';
+    routeSpan.textContent = `${routeCount} route${routeCount !== 1 ? 's' : ''}`;
+
+    header.appendChild(nameSpan);
+    header.appendChild(routeSpan);
+    card.appendChild(header);
+
+    // Mini meter bar (average of zone outputs)
+    const outDbValues = z.outputs.map(o => state.meters.outputs[o] ?? -60);
+    const avgDb = outDbValues.length > 0
+      ? outDbValues.reduce((a, b) => a + b, 0) / outDbValues.length
+      : -60;
+    const pct = Math.max(0, Math.min(100, (avgDb + 60) / 60 * 100));
+
+    const meterBar = document.createElement('div');
+    meterBar.style.cssText = 'height:4px;background:#222;border-radius:2px;overflow:hidden;';
+    const fill = document.createElement('div');
+    fill.style.cssText = `height:100%;width:${pct.toFixed(1)}%;background:${avgDb > -6 ? '#ff3a3a' : avgDb > -18 ? '#ff9a3a' : '#3aff6a'};border-radius:2px;transition:width 0.1s;`;
+    meterBar.appendChild(fill);
+    card.appendChild(meterBar);
+
+    // W-25: Zone group indicator
+    const groupId = zoneGroups.find(g => g.includes(zIdx));
+    if (groupId) {
+      const gSpan = document.createElement('div');
+      gSpan.style.cssText = 'font-size:9px;opacity:.4;margin-top:3px;';
+      gSpan.textContent = `Grouped with: ${groupId.filter(gi => gi !== zIdx).map(gi => zones[gi]?.name || `Zone ${gi + 1}`).join(', ')}`;
+      card.appendChild(gSpan);
+    }
+
+    body.appendChild(card);
+  });
+
+  // Group management
+  const groupBtn = document.createElement('button');
+  groupBtn.className = 'btn-icon';
+  groupBtn.style.cssText = 'width:100%;margin-top:6px;font-size:9px;';
+  groupBtn.textContent = '⊕ Manage zone groups';
+  groupBtn.addEventListener('click', openZoneGroupModal);
+  body.appendChild(groupBtn);
+}
+
+// ── W-25: Zone grouping with linked faders ────────────────────────────────
+// When two zones are grouped, adjusting a zone-wide output level affects both.
+// Stored as array of arrays: [[zoneIdx, zoneIdx], ...]
+
+let zoneGroups = [];
+
+function loadZoneGroups() {
+  try {
+    const raw = localStorage.getItem('patchbox-zone-groups');
+    zoneGroups = raw ? JSON.parse(raw) : [];
+  } catch (_) { zoneGroups = []; }
+}
+
+function saveZoneGroups() {
+  localStorage.setItem('patchbox-zone-groups', JSON.stringify(zoneGroups));
+}
+
+loadZoneGroups();
+
+function openZoneGroupModal() {
+  // Reuse zone modal or create inline
+  const modal = document.getElementById('zone-group-modal');
+  if (modal) {
+    renderZoneGroupEditor();
+    modal.style.display = 'flex';
+    return;
+  }
+
+  const m = document.createElement('div');
+  m.id = 'zone-group-modal';
+  m.style.cssText = 'position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:200;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-mid);border:1px solid var(--border);border-radius:8px;padding:20px;min-width:280px;max-width:90vw;';
+
+  const title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 12px;font-size:12px;letter-spacing:.15em;opacity:.7;';
+  title.textContent = 'ZONE GROUPS';
+
+  const body = document.createElement('div');
+  body.id = 'zone-group-body';
+
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;gap:8px;margin-top:12px;justify-content:flex-end;';
+
+  const btnAdd = document.createElement('button');
+  btnAdd.className = 'btn-icon';
+  btnAdd.textContent = '+ Group';
+  btnAdd.addEventListener('click', () => {
+    zoneGroups.push([]);
+    renderZoneGroupEditor();
+  });
+
+  const btnClose = document.createElement('button');
+  btnClose.className = 'btn-primary';
+  btnClose.textContent = 'Done';
+  btnClose.addEventListener('click', () => {
+    saveZoneGroups();
+    m.style.display = 'none';
+    toast('Zone groups saved', 'ok');
+  });
+
+  footer.appendChild(btnAdd);
+  footer.appendChild(btnClose);
+  box.appendChild(title);
+  box.appendChild(body);
+  box.appendChild(footer);
+  m.appendChild(box);
+  document.body.appendChild(m);
+  renderZoneGroupEditor();
+}
+
+function renderZoneGroupEditor() {
+  const body = document.getElementById('zone-group-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  if (zoneGroups.length === 0) {
+    body.innerHTML = '<p style="font-size:10px;opacity:.5;">No groups. Click + Group to create one.</p>';
+    return;
+  }
+
+  zoneGroups.forEach((group, gIdx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px;';
+
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:10px;opacity:.6;min-width:50px;';
+    label.textContent = `Group ${gIdx + 1}:`;
+
+    const sel = document.createElement('select');
+    sel.multiple = true;
+    sel.style.cssText = 'flex:1;font-size:10px;';
+    zones.forEach((z, zIdx) => {
+      const opt = document.createElement('option');
+      opt.value = String(zIdx);
+      opt.textContent = z.name;
+      if (group.includes(zIdx)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => {
+      zoneGroups[gIdx] = Array.from(sel.selectedOptions).map(o => parseInt(o.value, 10));
+    });
+
+    const del = document.createElement('button');
+    del.className = 'btn-icon';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      zoneGroups.splice(gIdx, 1);
+      saveZoneGroups();
+      renderZoneGroupEditor();
+    });
+
+    row.appendChild(label);
+    row.appendChild(sel);
+    row.appendChild(del);
+    body.appendChild(row);
+  });
+}
+
+// ── W-26: Time-based zone preset scheduler ────────────────────────────────
+// Stores schedule entries: [{time: "HH:MM", scene: "sceneName", days: [0-6], zone: zoneIdx|null}]
+// Runs a periodic check every minute to load the right scene at the right time.
+
+let scheduleEntries = [];
+
+function loadSchedule() {
+  try {
+    const raw = localStorage.getItem('patchbox-schedule');
+    scheduleEntries = raw ? JSON.parse(raw) : [];
+  } catch (_) { scheduleEntries = []; }
+}
+
+function saveSchedule() {
+  localStorage.setItem('patchbox-schedule', JSON.stringify(scheduleEntries));
+}
+
+loadSchedule();
+
+// Schedule check runs every 30 seconds
+let lastScheduleMinute = -1;
+
+setInterval(async () => {
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const dayOfWeek = now.getDay(); // 0=Sun
+
+  if (now.getMinutes() === lastScheduleMinute) return;
+  lastScheduleMinute = now.getMinutes();
+
+  for (const entry of scheduleEntries) {
+    if (entry.time !== hhmm) continue;
+    if (entry.days && entry.days.length > 0 && !entry.days.includes(dayOfWeek)) continue;
+
+    // Load the scene
+    try {
+      await apiFetch(`/scenes/${encodeURIComponent(entry.scene)}/load`, 'POST');
+      toast(`Scheduled: loaded scene "${entry.scene}"`, 'ok');
+    } catch (err) {
+      toast(`Schedule error: ${err.message}`, 'err');
+    }
+  }
+}, 30000);
+
+// Schedule management UI
+function openScheduleModal() {
+  let modal = document.getElementById('schedule-modal');
+  if (modal) {
+    renderScheduleEditor();
+    modal.style.display = 'flex';
+    return;
+  }
+
+  modal = document.createElement('div');
+  modal.id = 'schedule-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:200;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-mid);border:1px solid var(--border);border-radius:8px;padding:20px;min-width:320px;max-width:95vw;';
+
+  const title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 8px;font-size:12px;letter-spacing:.15em;';
+  title.textContent = 'ZONE SCHEDULER';
+
+  const sub = document.createElement('p');
+  sub.style.cssText = 'font-size:9px;opacity:.5;margin:0 0 12px;';
+  sub.textContent = 'Automatically load scenes at scheduled times';
+
+  const body = document.createElement('div');
+  body.id = 'schedule-body';
+  body.style.cssText = 'max-height:60vh;overflow-y:auto;';
+
+  const footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;gap:8px;margin-top:12px;justify-content:space-between;';
+
+  const btnAdd = document.createElement('button');
+  btnAdd.className = 'btn-icon';
+  btnAdd.textContent = '+ Entry';
+  btnAdd.addEventListener('click', () => {
+    scheduleEntries.push({ time: '08:00', scene: '', days: [1,2,3,4,5], zone: null });
+    renderScheduleEditor();
+  });
+
+  const btnDone = document.createElement('button');
+  btnDone.className = 'btn-primary';
+  btnDone.textContent = 'Save & Close';
+  btnDone.addEventListener('click', () => {
+    saveSchedule();
+    modal.style.display = 'none';
+    toast('Schedule saved', 'ok');
+  });
+
+  footer.appendChild(btnAdd);
+  footer.appendChild(btnDone);
+  box.appendChild(title);
+  box.appendChild(sub);
+  box.appendChild(body);
+  box.appendChild(footer);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+  renderScheduleEditor();
+}
+
+const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+function renderScheduleEditor() {
+  const body = document.getElementById('schedule-body');
+  if (!body) return;
+  body.innerHTML = '';
+
+  if (scheduleEntries.length === 0) {
+    body.innerHTML = '<p style="font-size:10px;opacity:.5;">No schedule entries. Click + Entry to add one.</p>';
+    return;
+  }
+
+  // Get available scene names from state
+  const sceneNames = state.scenes ? Object.keys(state.scenes) : [];
+
+  scheduleEntries.forEach((entry, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:70px 1fr auto;gap:6px;align-items:start;margin-bottom:8px;padding:8px;background:var(--bg-low);border-radius:4px;';
+
+    // Time input
+    const timeInput = document.createElement('input');
+    timeInput.type = 'time';
+    timeInput.value = entry.time;
+    timeInput.style.cssText = 'font-size:11px;background:var(--bg-low);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 4px;';
+    timeInput.addEventListener('change', () => { scheduleEntries[idx].time = timeInput.value; });
+
+    // Scene select
+    const sceneCol = document.createElement('div');
+    sceneCol.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+
+    const sceneSel = document.createElement('select');
+    sceneSel.style.cssText = 'font-size:10px;background:var(--bg-low);color:var(--text);border:1px solid var(--border);border-radius:3px;';
+    sceneSel.innerHTML = '<option value="">-- Select scene --</option>';
+    sceneNames.forEach(sn => {
+      const opt = document.createElement('option');
+      opt.value = sn;
+      opt.textContent = sn;
+      if (entry.scene === sn) opt.selected = true;
+      sceneSel.appendChild(opt);
+    });
+    sceneSel.addEventListener('change', () => { scheduleEntries[idx].scene = sceneSel.value; });
+
+    // Day checkboxes
+    const daysRow = document.createElement('div');
+    daysRow.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;';
+    DAY_NAMES.forEach((d, di) => {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:9px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (entry.days || []).includes(di);
+      cb.style.cssText = 'width:12px;height:12px;';
+      cb.addEventListener('change', () => {
+        if (!scheduleEntries[idx].days) scheduleEntries[idx].days = [];
+        if (cb.checked) {
+          if (!scheduleEntries[idx].days.includes(di)) scheduleEntries[idx].days.push(di);
+        } else {
+          scheduleEntries[idx].days = scheduleEntries[idx].days.filter(v => v !== di);
+        }
+      });
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(d));
+      daysRow.appendChild(lbl);
+    });
+
+    sceneCol.appendChild(sceneSel);
+    sceneCol.appendChild(daysRow);
+
+    // Delete button
+    const del = document.createElement('button');
+    del.className = 'btn-icon';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      scheduleEntries.splice(idx, 1);
+      saveSchedule();
+      renderScheduleEditor();
+    });
+
+    row.appendChild(timeInput);
+    row.appendChild(sceneCol);
+    row.appendChild(del);
+    body.appendChild(row);
+  });
+}
+
+// Add scheduler button to toolbar
+document.addEventListener('DOMContentLoaded', () => {
+  const toolbar = document.getElementById('matrix-toolbar');
+  if (!toolbar) return;
+  const btnSched = document.createElement('button');
+  btnSched.className = 'btn-icon';
+  btnSched.textContent = '⏰';
+  btnSched.title = 'Zone scheduler';
+  btnSched.addEventListener('click', openScheduleModal);
+  toolbar.appendChild(btnSched);
+});
