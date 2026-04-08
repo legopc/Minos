@@ -426,6 +426,10 @@ function buildMeters() {
   }
 }
 
+// U-08: Peak-hold state — decays 0.5 dB/frame (~30 dB/sec at 60fps)
+const peakHold = { inputs: [], outputs: [] };
+const PEAK_DECAY = 0.5;
+
 function buildMeterRow(dir, idx, label) {
   const row  = document.createElement('div');
   row.className = 'meter-row';
@@ -435,16 +439,14 @@ function buildMeterRow(dir, idx, label) {
   lbl.id = `meter-${dir}-label-${idx}`;
   lbl.textContent = (label || `${dir.toUpperCase()}${idx + 1}`).slice(0, 5).toUpperCase();
 
-  const wrap = document.createElement('div');
-  wrap.className = 'meter-bar-wrap';
+  // U-08: canvas replaces CSS bar
+  const canvas = document.createElement('canvas');
+  canvas.className = 'meter-canvas';
+  canvas.id = `meter-${dir}-canvas-${idx}`;
+  canvas.height = 10;
 
-  const bar = document.createElement('div');
-  bar.className = 'meter-bar';
-  bar.id = `meter-${dir}-bar-${idx}`;
-
-  wrap.appendChild(bar);
   row.appendChild(lbl);
-  row.appendChild(wrap);
+  row.appendChild(canvas);
   return row;
 }
 
@@ -455,22 +457,64 @@ function dbToPercent(db) {
   return Math.max(0, Math.min(100, (db + 60) / 60 * 100));
 }
 
+function drawMeterCanvas(canvas, db, peak) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext('2d');
+  const pct = Math.max(0, Math.min(1, (db + 60) / 60));
+  const peakPct = Math.max(0, Math.min(1, (peak + 60) / 60));
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = '#12121a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Bar gradient: green → orange → red
+  const barW = Math.round(pct * w);
+  if (barW > 0) {
+    const grad = ctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0,    '#3aff6a');
+    grad.addColorStop(0.75, '#ff9a3a');
+    grad.addColorStop(1,    '#ff3a3a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, barW, h);
+  }
+
+  // Peak-hold line (white dot)
+  const peakX = Math.round(peakPct * w);
+  if (peakX > 1) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(peakX - 1, 0, 2, h);
+  }
+}
+
 function paintMeters() {
   const { inputs, outputs } = state.meters;
 
+  // Ensure peak arrays are sized
+  if (peakHold.inputs.length  !== inputs.length)  peakHold.inputs  = new Array(inputs.length).fill(-60);
+  if (peakHold.outputs.length !== outputs.length) peakHold.outputs = new Array(outputs.length).fill(-60);
+
   for (let i = 0; i < inputs.length; i++) {
-    const bar = $(`meter-in-bar-${i}`);
-    if (!bar) continue;
-    const pct = dbToPercent(inputs[i] ?? -60);
-    bar.style.width = pct + '%';
-    bar.className = 'meter-bar' + (pct > 95 ? ' clip' : pct > 75 ? ' warn' : '');
+    const db = inputs[i] ?? -60;
+    if (db > peakHold.inputs[i]) peakHold.inputs[i] = db;
+    else peakHold.inputs[i] = Math.max(-60, peakHold.inputs[i] - PEAK_DECAY);
+    const canvas = $(`meter-in-canvas-${i}`);
+    if (canvas) {
+      canvas.width = canvas.parentElement?.offsetWidth - 48 || 100;
+      drawMeterCanvas(canvas, db, peakHold.inputs[i]);
+    }
   }
   for (let o = 0; o < outputs.length; o++) {
-    const bar = $(`meter-out-bar-${o}`);
-    if (!bar) continue;
-    const pct = dbToPercent(outputs[o] ?? -60);
-    bar.style.width = pct + '%';
-    bar.className = 'meter-bar' + (pct > 95 ? ' clip' : pct > 75 ? ' warn' : '');
+    const db = outputs[o] ?? -60;
+    if (db > peakHold.outputs[o]) peakHold.outputs[o] = db;
+    else peakHold.outputs[o] = Math.max(-60, peakHold.outputs[o] - PEAK_DECAY);
+    const canvas = $(`meter-out-canvas-${o}`);
+    if (canvas) {
+      canvas.width = canvas.parentElement?.offsetWidth - 48 || 100;
+      drawMeterCanvas(canvas, db, peakHold.outputs[o]);
+    }
   }
 
   requestAnimationFrame(paintMeters);
@@ -658,3 +702,43 @@ async function boot() {
 }
 
 boot();
+
+// ── U-02: Keyboard navigation ─────────────────────────────────────────────
+
+const focus = { row: 0, col: 0 };
+
+function focusCell(r, c) {
+  // Remove old focus ring
+  document.querySelectorAll('.matrix-cell.kb-focus').forEach(el => el.classList.remove('kb-focus'));
+  focus.row = Math.max(0, Math.min(state.nInputs  - 1, r));
+  focus.col = Math.max(0, Math.min(state.nOutputs - 1, c));
+  const cell = $(`cell-${focus.row}-${focus.col}`);
+  if (cell) { cell.classList.add('kb-focus'); cell.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+}
+
+document.addEventListener('keydown', async e => {
+  // Ignore when typing in input fields
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+  switch (e.key) {
+    case 'ArrowUp':    e.preventDefault(); focusCell(focus.row - 1, focus.col); break;
+    case 'ArrowDown':  e.preventDefault(); focusCell(focus.row + 1, focus.col); break;
+    case 'ArrowLeft':  e.preventDefault(); focusCell(focus.row, focus.col - 1); break;
+    case 'ArrowRight': e.preventDefault(); focusCell(focus.row, focus.col + 1); break;
+    case 'Enter':
+    case ' ':
+      e.preventDefault();
+      await toggleCell(focus.row, focus.col);
+      break;
+    case 'm':
+    case 'M':
+      e.preventDefault();
+      await toggleInputMute(focus.row);
+      break;
+    case 's':
+    case 'S':
+      e.preventDefault();
+      await toggleInputSolo(focus.row);
+      break;
+  }
+});

@@ -41,7 +41,7 @@ impl AppState {
     /// Persist the current params as a named scene.
     pub async fn save_scene(&self, name: &str) -> Result<(), scene::SceneError> {
         let params = self.params.read().await.clone();
-        let s = scene::Scene { name: name.to_owned(), params };
+        let s = scene::Scene { schema_version: 1, name: name.to_owned(), params };
         scene::save(&self.scenes_dir(), &s)
     }
 

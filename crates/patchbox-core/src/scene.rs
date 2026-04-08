@@ -40,8 +40,15 @@ pub fn sanitise_name(name: &str) -> Result<(), SceneError> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
+    /// T-05: schema version — increment when the format changes incompatibly.
+    #[serde(default = "Scene::default_schema_version")]
+    pub schema_version: u32,
     pub name:   String,
     pub params: AudioParams,
+}
+
+impl Scene {
+    fn default_schema_version() -> u32 { 1 }
 }
 
 /// Save a scene to `{dir}/{name}.toml` atomically (write to .tmp, then rename).

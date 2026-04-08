@@ -440,3 +440,71 @@ html, body {
 ::-webkit-scrollbar-track      { background: var(--bg-2); }
 ::-webkit-scrollbar-thumb      { background: var(--border-hi); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+/* ── U-08: Canvas VU meter ───────────────────────────────────────────────── */
+.meter-canvas {
+  flex: 1;
+  height: 10px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 1px;
+  image-rendering: pixelated;
+}
+
+/* ── U-02: Keyboard focus ring ───────────────────────────────────────────── */
+.matrix-cell.kb-focus {
+  outline: 2px solid var(--yellow);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+/* ── U-04: Mobile/tablet responsive layout ───────────────────────────────── */
+@media (max-width: 900px) {
+  :root {
+    --cell-size: 48px;
+    --strip-w:   96px;
+  }
+
+  #app {
+    grid-template-rows: 36px 1fr auto 32px;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "matrix"
+      "meters"
+      "scenes";
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  html, body { overflow: auto; }
+  #matrix-area { overflow-x: auto; overflow-y: visible; }
+
+  #meter-panel {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: none;
+  }
+
+  #meters-inputs, #meters-outputs { flex: 1; min-width: 140px; }
+
+  #scene-bar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 6px 14px;
+    gap: 6px;
+  }
+
+  #scene-bar button,
+  #scene-select,
+  #scene-name-input {
+    min-height: 36px;
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  .strip-btn { min-width: 36px; min-height: 36px; font-size: 11px; }
+}

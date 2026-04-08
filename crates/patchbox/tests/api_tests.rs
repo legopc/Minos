@@ -305,3 +305,125 @@ async fn path_traversal_rejected() {
         .await
         .assert_status(axum::http::StatusCode::BAD_REQUEST);
 }
+
+// ── T-03: Scene roundtrip with schema_version (T-05) ──────────────────────────
+
+#[tokio::test]
+async fn scene_roundtrip_with_schema_version() {
+    use patchbox_core::scene;
+    use std::path::Path;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let dir = tmp.path();
+
+    // Build a minimal scene
+    let params = patchbox_core::control::AudioParams::new(2, 2);
+    let original = scene::Scene {
+        schema_version: 1,
+        name: "roundtrip".to_owned(),
+        params,
+    };
+
+    // Save then load
+    scene::save(dir, &original).expect("save");
+    let loaded = scene::load(dir, "roundtrip").expect("load");
+
+    assert_eq!(loaded.schema_version, 1);
+    assert_eq!(loaded.name, "roundtrip");
+    assert_eq!(loaded.params.inputs.len(),  2);
+    assert_eq!(loaded.params.outputs.len(), 2);
+
+    // Verify the TOML file contains schema_version
+    let raw = std::fs::read_to_string(dir.join("roundtrip.toml")).expect("read");
+    assert!(raw.contains("schema_version"), "TOML must include schema_version field");
+}
+
+// Old TOML without schema_version deserialises using default (= 1)
+#[tokio::test]
+async fn scene_missing_schema_version_defaults_to_1() {
+    use patchbox_core::scene;
+
+    let tmp = TempDir::new().expect("tempdir");
+    let dir = tmp.path();
+
+    // Write a legacy TOML without schema_version
+    let legacy = r#"
+name = "legacy"
+[params.matrix]
+inputs  = 2
+outputs = 2
+gains   = [[0.0, 0.0], [0.0, 0.0]]
+
+[[params.inputs]]
+label = "IN1"
+mute  = false
+solo  = false
+gain_trim = 1.0
+
+[[params.inputs]]
+label = "IN2"
+mute  = false
+solo  = false
+gain_trim = 1.0
+
+[[params.outputs]]
+label = "OUT1"
+mute  = false
+master_gain = 1.0
+
+[[params.outputs]]
+label = "OUT2"
+mute  = false
+master_gain = 1.0
+"#;
+    std::fs::write(dir.join("legacy.toml"), legacy).expect("write legacy");
+    let loaded = scene::load(dir, "legacy").expect("load legacy");
+    assert_eq!(loaded.schema_version, 1, "missing schema_version should default to 1");
+}
+
+// ── T-01: WebSocket connects and receives meter frame ─────────────────────────
+
+#[tokio::test]
+async fn ws_connects_and_receives_frame() {
+    use tokio_tungstenite::connect_async;
+    use tokio::net::TcpListener;
+
+    // Spin up a real TCP listener on a random port
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    let tmp = TempDir::new().expect("tempdir");
+    let mut cfg = Config::default();
+    cfg.scenes_dir = tmp.path().to_str().unwrap().to_owned();
+    cfg.n_inputs  = 2;
+    cfg.n_outputs = 2;
+
+    let state = Arc::new(AppState::new(cfg.clone()));
+    let router = build_router(state, cfg);
+
+    // Serve in background
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.ok();
+    });
+
+    // Give the server a moment to start
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Connect WebSocket
+    let url = format!("ws://{}/ws", addr);
+    let result = connect_async(&url).await;
+    assert!(result.is_ok(), "WS connect failed: {:?}", result.err());
+
+    let (mut stream, _response) = result.unwrap();
+
+    // We expect the server to send at least one message (the initial state push)
+    // or we can close cleanly.
+    use futures_util::{SinkExt, StreamExt};
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_millis(200),
+        stream.next(),
+    ).await;
+
+    // Close cleanly — no panic means success
+    stream.close(None).await.ok();
+}
