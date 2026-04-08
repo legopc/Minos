@@ -173,6 +173,43 @@ HTTP PATCH /api/v1/matrix/3/5 { "gain": 0.75 }
   → unlock — RT callback picks up on next block
 ```
 
+## Authentication
+
+### Login flow
+
+1. Browser loads `index.html` — login overlay is shown immediately (CSS `display: flex`)
+2. `initAuth()` IIFE runs: calls `validateStoredToken()` → `GET /api/v1/auth/whoami` with stored JWT
+3. If valid token: `hideLoginOverlay()` → `boot()` (full UI load)
+4. If invalid/no token: overlay stays visible, user fills in login form
+5. Form submit → `POST /api/v1/auth/login` with `{username, password}` (JSON body, never query params)
+6. On success: `storeAuth(token, role, zone)` → `hideLoginOverlay()` → `boot()`
+
+### patchFetch monkey-patch
+
+`patchFetch` replaces `window.fetch` at startup. All fetch calls are automatically intercepted:
+- Adds `Authorization: Bearer <token>` header for all `/api/` requests
+- Skips the header injection for `/auth/login` (to avoid sending stale tokens)
+- On 401 response: clears stored token and shows login overlay
+
+This means all existing code (built before auth was added) automatically uses auth without changes.
+
+### PAM + JWT backend
+
+- PAM authentication via `pam_auth::authenticate()` — raw FFI, no dev headers required
+- Falls back through: `/etc/pam.d/patchbox` → `/etc/pam.d/sshd` → `/etc/pam.d/su`
+- Role determined by Linux group membership: `patchbox-admin`, `patchbox-operator`, `patchbox-bar-<zone>`
+- JWT secret: 32 random bytes from `/dev/urandom` generated at startup, stored in `AppState`
+- **Secret is NOT persisted** — every server restart invalidates all tokens
+- `whoami` handler validates JWT directly from `Authorization: Bearer` header (not via middleware)
+- `api_keys` empty → middleware grants Admin role, BUT `whoami` still requires a valid JWT
+
+### WebSocket auth
+
+WS upgrade URL: `ws://<host>:9191/ws?token=<jwt>`
+Token validated during the HTTP upgrade handshake. Unauthenticated connections are rejected when `api_keys` is non-empty.
+
+---
+
 ## inferno_aoip integration notes
 
 - `Sample = i32` — 24-bit PCM packed in the lower 24 bits of a signed 32-bit int

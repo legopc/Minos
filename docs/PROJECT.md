@@ -138,7 +138,19 @@ Each bar control point:
 | Sprint 19 | W-23, W-25, W-26 (zone overview, groups, scheduler) | ✅ Done | 9d8b243 |
 | Sprint 20 | W-45, W-46, W-49, W-50 (perf fingerprint, GPU faders, PWA) | ✅ Done | bdf6ad5 |
 | Sprint 21 | W-36–40, W-57–58 (ARIA, focus trap, HC theme, onboarding) | ✅ Done | 962ef86 |
-| **Next** | Generate new improvement roadmap (v3) — evaluate current state | 🔜 Planned | — |
+| Sprint 22 | M-01, M-07, M-12, M-06 — vertical strips, AFL/PFL solo, gain staging, strip meters | ✅ Done | — |
+| Sprint 23 | P-01, P-03, P-04, P-08 — Dante status overlay, search filter, broken indicator | ✅ Done | — |
+| Sprint 24 | M-02, M-10, M-08, M-09 — pan knob, HPF toggle, EQ curve canvas, compressor GR graph | ✅ Done | — |
+| Sprint 25 | Z-01, Z-02, Z-03, Z-04 — URL zone routing, zone master fader, source selector, zone presets | ✅ Done | — |
+| Sprint 26 | A-01, A-02, A-05 — PAM auth (raw FFI), JWT HS256 login, WS token auth | ✅ Done | — |
+| Sprint 27 | P-02, P-05, P-06, P-09 — device tree browser, batch connect, routing templates, spider view | ✅ Done | — |
+| Sprint 28 | M-03, M-04, M-11, M-13 — aux sends (4/strip), VCA group faders, noise gate, insert bypass | ✅ Done | — |
+| Sprint 29 | T-01, T-02, T-03, T-04 — virtual scroll (>32ch), binary WS meters, debounced faders, resize observer | ✅ Done | — |
+| Sprint 30 | U-01, U-02, U-03, U-04, U-07 — undo history, keyboard shortcuts (?), WS banner, toasts, compact mode | ✅ Done | — |
+| **Post-sprint** | Auth refactor (login overlay, patchFetch, whoami validation) | ✅ Done | c0919ec |
+| **Post-sprint** | Shortcuts modal close fix + modal z-index layout | ✅ Done | b7f74a5 |
+| **Post-sprint** | Compressor/EQ NaN channel guard + matrix flex layout fix | ✅ Done | 83357db |
+| **Post-sprint** | deploy.sh — watchdog-aware hot-restart script | ✅ Done | a1f4a20 |
 
 ## Reference Projects (in this ecosystem)
 
