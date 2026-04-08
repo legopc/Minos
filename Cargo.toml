@@ -10,6 +10,8 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+# O-04: Minimum Supported Rust Version — keep in sync with CI toolchain pin.
+rust-version = "1.80"
 
 [workspace.dependencies]
 patchbox-core  = { path = "crates/patchbox-core" }

@@ -37,21 +37,61 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+  # O-04: MSRV check — ensure the code compiles on the declared minimum Rust version.
+  msrv:
+    name: MSRV check (1.80)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - name: Check MSRV
+        run: cargo check --workspace
+
   build:
-    name: Build release binary
+    name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
     needs: check
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            artifact: patchbox-linux-x86_64
+          # O-01: aarch64 cross-compile — for EliteDesk ARM and Raspberry Pi bar control points
+          - target: aarch64-unknown-linux-gnu
+            artifact: patchbox-linux-aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross-compile toolchain (aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Configure linker (aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml << 'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
 
       - name: Build
-        run: cargo build --release -p patchbox
+        run: cargo build --release -p patchbox --target ${{ matrix.target }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: patchbox-linux-x86_64
-          path: target/release/patchbox
-          retention-days: 7
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/patchbox
+          retention-days: 14
