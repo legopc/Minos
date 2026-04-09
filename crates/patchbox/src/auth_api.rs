@@ -30,7 +30,7 @@ pub async fn login(
     Json(req): Json<LoginRequest>,
 ) -> impl IntoResponse {
     // Authenticate via PAM
-    let pam_result = pam_auth::authenticate("login", &req.username, &req.password).await;
+    let pam_result = pam_auth::authenticate("patchbox", &req.username, &req.password).await;
     if let Err(e) = pam_result {
         tracing::warn!("login failed for {}: {}", req.username, e);
         return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "invalid credentials"}))).into_response();
