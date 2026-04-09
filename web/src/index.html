@@ -82,6 +82,12 @@
   .btn-unmute-all:hover { background: #001a0a; }
   .zone-mute-btn { padding: 2px 8px; font-family: inherit; font-size: 10px; cursor: pointer; border-radius: 2px; background: transparent; border: 1px solid #2a2a2a; color: #555; margin-left: 6px; }
   .zone-mute-btn.muted { border-color: #e05252; color: #e05252; background: #1a0000; }
+
+  .editable { cursor: pointer; }
+  .editable:hover { color: var(--amber); }
+  .editable:hover::after { content: ' \2712'; font-size: 10px; opacity: 0.5; }
+  .edit-input { background: var(--bg); border: 1px solid var(--amber); color: var(--text);
+    font-family: inherit; font-size: 12px; padding: 2px 6px; border-radius: 2px; width: 120px; }
 </style>
 </head>
 <body>
@@ -183,7 +189,14 @@ function buildMatrix() {
   const th0 = document.createElement('th'); th0.className = 'row-header'; th0.textContent = 'Zone \\ Source'; hr.appendChild(th0);
   cfg.sources.forEach((s, rx) => {
     const th = document.createElement('th');
-    th.innerHTML = s + '<div class="meter"><div class="meter-fill" id="rxm-' + rx + '"></div></div>';
+    const thSpan = document.createElement('span');
+    thSpan.textContent = s;
+    makeEditable(thSpan, name => api('PUT', '/api/v1/sources/' + rx + '/name', {name}));
+    th.appendChild(thSpan);
+    const thMeter = document.createElement('div');
+    thMeter.className = 'meter';
+    thMeter.innerHTML = '<div class="meter-fill" id="rxm-' + rx + '"></div>';
+    th.appendChild(thMeter);
     hr.appendChild(th);
     meters.rx[rx] = document.getElementById('rxm-' + rx);
   });
@@ -265,6 +278,29 @@ async function loadScene(name) {
 async function deleteScene(name) {
   await api('DELETE', '/api/v1/scenes/' + encodeURIComponent(name));
   await buildScenes();
+}
+
+
+function makeEditable(el, onSave) {
+  el.classList.add('editable');
+  el.title = 'Double-click to rename';
+  el.ondblclick = () => {
+    const orig = el.innerText || el.textContent;
+    const inp = document.createElement('input');
+    inp.className = 'edit-input';
+    inp.value = orig;
+    while(el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(inp);
+    inp.focus(); inp.select();
+    const finish = async (save) => {
+      const val = inp.value.trim() || orig;
+      while(el.firstChild) el.removeChild(el.firstChild);
+      el.textContent = save ? val : orig;
+      if (save && val !== orig) { await onSave(val); await load(); }
+    };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') finish(false); e.stopPropagation(); };
+    inp.onblur = () => finish(true);
+  };
 }
 
 async function load() {

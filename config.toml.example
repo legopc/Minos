@@ -12,7 +12,7 @@ sources = [
     "Spare",
 ]
 input_gain_db = [
-    0.0,
+    -6.5,
     0.0,
     0.0,
     0.0,

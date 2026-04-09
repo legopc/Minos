@@ -198,6 +198,36 @@ async fn whoami(
     }
 }
 
+
+#[derive(Deserialize)]
+pub struct NameUpdate { pub name: String }
+
+async fn put_source_name(
+    State(s): State<AppState>,
+    Path(idx): Path<usize>,
+    Json(u): Json<NameUpdate>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if idx >= cfg.rx_channels { return (StatusCode::BAD_REQUEST, "out of range").into_response(); }
+    cfg.sources[idx] = u.name;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
+async fn put_zone_name(
+    State(s): State<AppState>,
+    Path(idx): Path<usize>,
+    Json(u): Json<NameUpdate>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if idx >= cfg.tx_channels { return (StatusCode::BAD_REQUEST, "out of range").into_response(); }
+    cfg.zones[idx] = u.name;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
 pub fn router(state: AppState) -> Router {
     // Protected routes — require valid JWT
     let protected = Router::new()
@@ -212,6 +242,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/scenes", get(list_scenes).post(save_scene))
         .route("/api/v1/scenes/{name}/load", post(load_scene))
         .route("/api/v1/scenes/{name}", delete(delete_scene))
+        .route("/api/v1/sources/{idx}/name", put(put_source_name))
+        .route("/api/v1/zones/{idx}/name", put(put_zone_name))
         .layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required

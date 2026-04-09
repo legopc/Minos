@@ -82,7 +82,7 @@ impl DanteDevice {
         let mut settings = Settings::new(
             &self.device_name,
             short,
-            None,
+            None,  // clock path set below after initial_cfg
             &Default::default(),
         );
         settings.make_rx_channels(self.n_rx);
@@ -95,6 +95,14 @@ impl DanteDevice {
             "Starting inferno_aoip DeviceServer (waiting for PTP clock…)"
         );
 
+        // Wire PTP clock path — must be set before DeviceServer::start consumes settings
+        {
+            let cfg_snapshot = config.read().await;
+            if !cfg_snapshot.dante_clock_path.is_empty() {
+                settings.clock_path = Some(std::path::PathBuf::from(&cfg_snapshot.dante_clock_path));
+                tracing::info!(clock = %cfg_snapshot.dante_clock_path, "using PTP clock");
+            }
+        }
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 

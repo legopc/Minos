@@ -25,6 +25,9 @@ pub struct PatchboxConfig {
     pub dante_name: String,
     /// Network interface for Dante
     pub dante_nic: String,
+    /// Path to statime PTP clock socket (default: /tmp/ptp-usrvclock)
+    #[serde(default = "default_clock_path")]
+    pub dante_clock_path: String,
     /// HTTP server port for web UI + API
     pub port: u16,
 }
@@ -44,6 +47,7 @@ impl Default for PatchboxConfig {
             output_muted: vec![false; tx],
             dante_name: "patchbox".to_string(),
             dante_nic: "eth0".to_string(),
+            dante_clock_path: default_clock_path(),
             port: 9191,
         }
     }
@@ -61,4 +65,8 @@ impl PatchboxConfig {
             row.resize(self.rx_channels, false);
         }
     }
+}
+
+fn default_clock_path() -> String {
+    "/tmp/ptp-usrvclock".to_string()
 }
