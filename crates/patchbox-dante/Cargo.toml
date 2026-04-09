@@ -18,5 +18,5 @@ atomic = "0.6"
 triple_buffer = "9"
 
 [target.'cfg(feature = "inferno")'.dependencies]
-inferno_aoip = { git = "https://github.com/legopc/inferno", rev = "8e8f901c186be16315c1ae3ee0dbbdfaf8b78e88", optional = true }
+inferno_aoip = { git = "https://github.com/legopc/inferno", branch = "dev", optional = true }
 libc = "0.2"
