@@ -54,7 +54,7 @@ Eventually may have a touchscreen attached serving the web UI locally.
 
 ## Feature Requirements
 
-### Phase 0 — Core routing (build this first, validate on real hardware)
+### Phase 0 — Core routing ✅ Complete
 
 - [x] Appear on Dante network via Inferno as a single virtual device (stub — real Inferno wiring in Phase 1)
 - [x] Configurable RX channel count (sources in)
@@ -64,6 +64,21 @@ Eventually may have a touchscreen attached serving the web UI locally.
 - [x] Per-output volume control (master level per zone)
 - [x] Single binary, browser UI served from same port
 - [x] Config persisted to TOML
+
+
+### Phase 0.5 — Hardware Integration (next)
+
+- [x] Inferno audio integration ported, feature-gated ()
+- [x] RT-safe RX callback: , no allocations, no blocking
+- [x] RT thread priority: SCHED_FIFO 90
+- [x] Linear RMS meters updated from audio callback
+- [ ] **Triple buffer for config hot path** — replace RwLock in audio callback with lock-free triple buffer
+- [ ] **Atomic config writes** — write to .tmp then rename, never corrupt on crash
+- [ ] **CAP_NET_RAW in systemd unit** — required for Inferno raw socket
+- [ ] **Hardware test** — run against Shure MXWANI8 on home network with PTP master
+- [ ] **Latency tuning** — measure and tune Dante buffer sizes
+- [ ] **statime integration** — PTP sync daemon config for patchbox node
+- [ ] **Graceful degradation** — on process death, existing Dante subscriptions stay active
 
 ### Phase 1 — DSP per output
 
