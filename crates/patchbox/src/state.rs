@@ -2,22 +2,17 @@ use patchbox_core::config::PatchboxConfig;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::scenes::SceneStore;
 
-/// Live meter state — updated by the audio processing task
 #[derive(Default, Clone)]
 pub struct MeterState {
-    /// RMS per TX output (linear)
     pub tx_rms: Vec<f32>,
-    /// RMS per RX input (linear)  
     pub rx_rms: Vec<f32>,
 }
 
 impl MeterState {
     pub fn new(rx: usize, tx: usize) -> Self {
-        Self {
-            tx_rms: vec![0.0; tx],
-            rx_rms: vec![0.0; rx],
-        }
+        Self { tx_rms: vec![0.0; tx], rx_rms: vec![0.0; rx] }
     }
 }
 
@@ -26,25 +21,33 @@ pub struct AppState {
     pub config: Arc<RwLock<PatchboxConfig>>,
     pub config_path: PathBuf,
     pub meters: Arc<RwLock<MeterState>>,
+    pub scenes: Arc<RwLock<SceneStore>>,
+    pub scenes_path: PathBuf,
 }
 
 impl AppState {
     pub fn new(config: PatchboxConfig, config_path: PathBuf) -> Self {
+        let scenes_path = config_path.with_extension("scenes.toml");
+        let scenes = SceneStore::load(&scenes_path);
         let meters = MeterState::new(config.rx_channels, config.tx_channels);
         Self {
             config: Arc::new(RwLock::new(config)),
             config_path,
             meters: Arc::new(RwLock::new(meters)),
+            scenes: Arc::new(RwLock::new(scenes)),
+            scenes_path,
         }
     }
 
-    /// Persist config to disk
     pub async fn persist(&self) -> Result<(), String> {
         let cfg = self.config.read().await;
-        let toml_str = toml::to_string_pretty(&*cfg)
-            .map_err(|e| format!("serialize: {}", e))?;
-        std::fs::write(&self.config_path, toml_str)
-            .map_err(|e| format!("write: {}", e))?;
+        let s = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
+        std::fs::write(&self.config_path, s).map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    pub async fn persist_scenes(&self) -> Result<(), String> {
+        let store = self.scenes.read().await;
+        store.save(&self.scenes_path)
     }
 }

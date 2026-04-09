@@ -11,34 +11,21 @@
   :root {
     --bg: #0d0d0d; --surface: #161616; --surface2: #1e1e1e;
     --border: #2a2a2a; --text: #e0e0e0; --dim: #555;
-    --amber: #f5a623; --green: #52e08a; --red: #e05252; --blue: #52aaff;
+    --amber: #f5a623; --green: #52e08a; --red: #e05252;
   }
-  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 13px; min-height: 100vh; }
-
-  header {
-    padding: 14px 24px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; background: var(--bg); z-index: 100;
-  }
-  header h1 { color: var(--amber); font-size: 16px; font-weight: 600; letter-spacing: 0.05em; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+  header { padding: 14px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg); z-index: 100; }
+  header h1 { color: var(--amber); font-size: 16px; font-weight: 600; }
   .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 6px; transition: background 0.3s; }
   .ws-dot.connected { background: var(--green); }
   .header-right { display: flex; align-items: center; gap: 16px; color: var(--dim); font-size: 11px; }
-
   .container { padding: 24px; display: flex; flex-direction: column; gap: 32px; max-width: 1200px; }
-
-  section h2 {
-    color: var(--amber); font-size: 11px; font-weight: 600;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
-  }
+  section h2 { color: var(--amber); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
   section h2::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-
-  /* Matrix */
   .matrix-wrap { overflow-x: auto; }
   table { border-collapse: collapse; }
   th { color: var(--dim); font-weight: 400; font-size: 11px; padding: 6px 14px; white-space: nowrap; text-align: center; }
-  th.row-header { text-align: left; min-width: 120px; color: var(--text); }
+  th.row-header { text-align: left; min-width: 130px; color: var(--text); }
   td { padding: 4px 14px; text-align: center; border: 1px solid var(--border); }
   td.zone-cell { text-align: left; background: var(--surface); padding: 6px 14px; }
   td.zone-cell a { color: var(--amber); text-decoration: none; font-size: 12px; }
@@ -46,25 +33,29 @@
   .cb-cell { background: var(--surface); }
   .cb-cell:has(input:checked) { background: #1a1500; }
   input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--amber); cursor: pointer; }
-
-  /* Meter bar */
-  .meter { width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .meter { width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 3px; }
   .meter-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.05s; width: 0%; }
   .meter-fill.hot { background: var(--amber); }
   .meter-fill.clip { background: var(--red); }
-
-  /* Gain rows */
   .gains { display: flex; flex-direction: column; gap: 12px; }
   .gain-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 12px; }
   .gain-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
   .gain-right { display: flex; flex-direction: column; gap: 3px; }
   input[type=range] { width: 100%; accent-color: var(--amber); cursor: pointer; height: 3px; }
   .gain-value { text-align: right; color: var(--amber); font-size: 11px; }
-
-  /* Toast */
-  .toast { position: fixed; bottom: 20px; right: 20px; padding: 8px 16px;
-    background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
-    font-size: 11px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  /* Scenes */
+  .scenes-panel { display: flex; flex-direction: column; gap: 12px; }
+  .scene-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); padding: 10px 14px; border-radius: 4px; }
+  .scene-row.active { border-color: var(--amber); background: #1a1500; }
+  .scene-name { flex: 1; font-size: 13px; }
+  .scene-desc { color: var(--dim); font-size: 11px; flex: 2; }
+  .btn { padding: 5px 12px; background: transparent; border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; transition: border-color 0.15s; }
+  .btn:hover { border-color: var(--amber); color: var(--amber); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+  .save-form { display: flex; gap: 8px; }
+  .save-form input { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 12px; padding: 6px 10px; border-radius: 3px; }
+  .save-form input:focus { outline: none; border-color: var(--amber); }
+  .toast { position: fixed; bottom: 20px; right: 20px; padding: 8px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
   .toast.show { opacity: 1; }
   .toast.ok { color: var(--green); border-color: var(--green); }
   .toast.err { color: var(--red); border-color: var(--red); }
@@ -91,11 +82,22 @@
     <h2>Output Gains — Zones</h2>
     <div class="gains" id="output-gains"></div>
   </section>
+  <section>
+    <h2>Scenes</h2>
+    <div class="scenes-panel">
+      <div class="save-form">
+        <input type="text" id="scene-name" placeholder="Scene name (e.g. Thursday Night)">
+        <input type="text" id="scene-desc" placeholder="Description (optional)">
+        <button class="btn" onclick="saveScene()">Save Current</button>
+      </div>
+      <div id="scene-list"></div>
+    </div>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
-let cfg = null;
+let cfg = null, activeScene = null;
 const meters = { rx: [], tx: [] };
 
 function toast(msg, ok) {
@@ -106,62 +108,50 @@ function toast(msg, ok) {
 
 async function api(method, path, body) {
   try {
-    const r = await fetch(path, {
-      method, headers: {'Content-Type': 'application/json'},
-      body: body ? JSON.stringify(body) : undefined
-    });
+    const r = await fetch(path, { method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined });
     if (!r.ok) throw new Error(await r.text());
     toast('saved', true);
-  } catch(e) { toast('error: ' + e.message, false); }
+    return r;
+  } catch(e) { toast('error: ' + e.message, false); return null; }
 }
 
-// WebSocket metering
 function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
-  const dot = document.getElementById('ws-dot');
-  const status = document.getElementById('ws-status');
-
+  const dot = document.getElementById('ws-dot'), status = document.getElementById('ws-status');
   ws.onopen = () => { dot.className = 'ws-dot connected'; status.textContent = 'live'; };
-  ws.onclose = () => {
-    dot.className = 'ws-dot'; status.textContent = 'reconnecting';
-    setTimeout(connectWS, 2000);
-  };
+  ws.onclose = () => { dot.className = 'ws-dot'; status.textContent = 'reconnecting'; setTimeout(connectWS, 2000); };
   ws.onmessage = e => {
-    const frame = JSON.parse(e.data);
-    frame.rx_rms.forEach((v, i) => { if (meters.rx[i]) updateMeter(meters.rx[i], v); });
-    frame.tx_rms.forEach((v, i) => { if (meters.tx[i]) updateMeter(meters.tx[i], v); });
+    const f = JSON.parse(e.data);
+    f.rx_rms.forEach((v, i) => { if (meters.rx[i]) updateMeter(meters.rx[i], v); });
+    f.tx_rms.forEach((v, i) => { if (meters.tx[i]) updateMeter(meters.tx[i], v); });
   };
 }
 
 function updateMeter(el, rms) {
-  const pct = Math.min(rms * 100 * 2.5, 100);
+  const pct = Math.min(rms * 250, 100);
   el.style.width = pct + '%';
   el.className = 'meter-fill' + (pct > 90 ? ' clip' : pct > 70 ? ' hot' : '');
 }
 
 function buildMatrix() {
-  const t = document.getElementById('matrix-table');
-  t.innerHTML = '';
+  const t = document.getElementById('matrix-table'); t.innerHTML = '';
+  meters.rx = []; meters.tx = [];
   const hr = t.insertRow();
-  const th0 = document.createElement('th'); th0.className = 'row-header';
-  th0.textContent = 'Zone \\ Source'; hr.appendChild(th0);
+  const th0 = document.createElement('th'); th0.className = 'row-header'; th0.textContent = 'Zone \\ Source'; hr.appendChild(th0);
   cfg.sources.forEach((s, rx) => {
     const th = document.createElement('th');
-    // Source name + meter
-    th.innerHTML = s + '<div class="meter"><div class="meter-fill" id="rx-m-' + rx + '"></div></div>';
+    th.innerHTML = s + '<div class="meter"><div class="meter-fill" id="rxm-' + rx + '"></div></div>';
     hr.appendChild(th);
-    meters.rx[rx] = document.getElementById('rx-m-' + rx);
+    meters.rx[rx] = document.getElementById('rxm-' + rx);
   });
   cfg.zones.forEach((zone, tx) => {
     const tr = t.insertRow();
     const td0 = tr.insertCell(); td0.className = 'zone-cell';
-    td0.innerHTML = '<a href="/zone/' + encodeURIComponent(zone) + '" target="_blank">' + zone + '</a>' +
-      '<div class="meter"><div class="meter-fill" id="tx-m-' + tx + '"></div></div>';
-    meters.tx[tx] = document.getElementById('tx-m-' + tx);
+    td0.innerHTML = '<a href="/zone/' + encodeURIComponent(zone) + '" target="_blank">' + zone + '</a><div class="meter"><div class="meter-fill" id="txm-' + tx + '"></div></div>';
+    meters.tx[tx] = document.getElementById('txm-' + tx);
     cfg.sources.forEach((_, rx) => {
       const td = tr.insertCell(); td.className = 'cb-cell';
-      const cb = document.createElement('input'); cb.type = 'checkbox';
-      cb.checked = cfg.matrix[tx][rx];
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cfg.matrix[tx][rx];
       cb.onchange = () => api('PUT', '/api/v1/matrix', {tx, rx, enabled: cb.checked});
       td.appendChild(cb);
     });
@@ -169,50 +159,74 @@ function buildMatrix() {
 }
 
 function buildGains() {
-  function slider(container, label, val, min, max, step, onchange, meterId) {
+  function slider(container, label, val, min, max, onchange) {
     const row = document.createElement('div'); row.className = 'gain-row';
     const lbl = document.createElement('span'); lbl.className = 'gain-label'; lbl.textContent = label;
     const right = document.createElement('div'); right.className = 'gain-right';
-    const sl = document.createElement('input'); sl.type = 'range';
-    sl.min = min; sl.max = max; sl.step = step; sl.value = val;
+    const sl = document.createElement('input'); sl.type = 'range'; sl.min = min; sl.max = max; sl.step = 0.5; sl.value = val;
     const m = document.createElement('div'); m.className = 'meter';
     const mf = document.createElement('div'); mf.className = 'meter-fill';
-    if (meterId) { mf.id = meterId; }
     m.appendChild(mf); right.appendChild(sl); right.appendChild(m);
-    const valEl = document.createElement('span'); valEl.className = 'gain-value';
-    valEl.textContent = parseFloat(val).toFixed(1) + ' dB';
-    sl.oninput = () => valEl.textContent = parseFloat(sl.value).toFixed(1) + ' dB';
+    const ve = document.createElement('span'); ve.className = 'gain-value'; ve.textContent = parseFloat(val).toFixed(1) + ' dB';
+    sl.oninput = () => ve.textContent = parseFloat(sl.value).toFixed(1) + ' dB';
     sl.onchange = () => onchange(parseFloat(sl.value));
-    row.appendChild(lbl); row.appendChild(right); row.appendChild(valEl);
+    row.appendChild(lbl); row.appendChild(right); row.appendChild(ve);
     container.appendChild(row);
     return mf;
   }
   const ig = document.getElementById('input-gains'); ig.innerHTML = '';
-  cfg.sources.forEach((s, i) => {
-    const mf = slider(ig, s, cfg.input_gain_db[i], -20, 6, 0.5,
-      db => api('PUT', '/api/v1/gain/input', {channel: i, db}));
-    // also register as rx meter in the gain section
-    if (!meters.rx[i]) meters.rx[i] = mf;
-  });
+  cfg.sources.forEach((s, i) => { meters.rx[i] = slider(ig, s, cfg.input_gain_db[i], -20, 6, db => api('PUT', '/api/v1/gain/input', {channel: i, db})); });
   const og = document.getElementById('output-gains'); og.innerHTML = '';
-  cfg.zones.forEach((z, i) => {
-    const mf = slider(og, z, cfg.output_gain_db[i], -60, 0, 0.5,
-      db => api('PUT', '/api/v1/gain/output', {channel: i, db}));
-    if (!meters.tx[i]) meters.tx[i] = mf;
+  cfg.zones.forEach((z, i) => { meters.tx[i] = slider(og, z, cfg.output_gain_db[i], -60, 0, db => api('PUT', '/api/v1/gain/output', {channel: i, db})); });
+}
+
+async function buildScenes() {
+  const r = await fetch('/api/v1/scenes');
+  const data = await r.json();
+  activeScene = data.active;
+  const list = document.getElementById('scene-list'); list.innerHTML = '';
+  if (!data.scenes || data.scenes.length === 0) {
+    list.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:8px 0">No scenes saved yet.</div>';
+    return;
+  }
+  data.scenes.forEach(sc => {
+    const row = document.createElement('div');
+    row.className = 'scene-row' + (sc.name === activeScene ? ' active' : '');
+    row.innerHTML = '<span class="scene-name">' + sc.name + '</span>' +
+      '<span class="scene-desc">' + (sc.description || '') + '</span>' +
+      '<button class="btn" onclick="loadScene(\'' + sc.name.replace(/'/g, "\\'") + '\')">Load</button>' +
+      '<button class="btn danger" onclick="deleteScene(\'' + sc.name.replace(/'/g, "\\'") + '\')">×</button>';
+    list.appendChild(row);
   });
+}
+
+async function saveScene() {
+  const name = document.getElementById('scene-name').value.trim();
+  if (!name) { toast('enter a scene name', false); return; }
+  const desc = document.getElementById('scene-desc').value.trim();
+  await api('POST', '/api/v1/scenes', {name, description: desc || null});
+  document.getElementById('scene-name').value = '';
+  document.getElementById('scene-desc').value = '';
+  await buildScenes();
+}
+
+async function loadScene(name) {
+  await api('POST', '/api/v1/scenes/' + encodeURIComponent(name) + '/load');
+  await load();
+}
+
+async function deleteScene(name) {
+  await api('DELETE', '/api/v1/scenes/' + encodeURIComponent(name));
+  await buildScenes();
 }
 
 async function load() {
-  const r = await fetch('/api/v1/config');
-  cfg = await r.json();
-  document.getElementById('header-meta').textContent =
-    cfg.rx_channels + ' sources → ' + cfg.tx_channels + ' zones';
-  buildMatrix();
-  buildGains();
+  const r = await fetch('/api/v1/config'); cfg = await r.json();
+  document.getElementById('header-meta').textContent = cfg.rx_channels + ' sources → ' + cfg.tx_channels + ' zones';
+  buildMatrix(); buildGains(); await buildScenes();
 }
 
-load();
-connectWS();
+load(); connectWS();
 </script>
 </body>
 </html>

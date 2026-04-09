@@ -6,10 +6,11 @@ use crate::state::AppState;
 use crate::api::router;
 
 mod api;
+mod scenes;
 mod state;
 
 #[derive(Parser)]
-#[command(name = "patchbox", about = "dante-patchbox v2 — Dante AoIP patchbay")]
+#[command(name = "patchbox", about = "dante-patchbox v2")]
 struct Args {
     #[arg(long, default_value = "config.toml")]
     config: PathBuf,
@@ -33,33 +34,30 @@ async fn main() {
     };
 
     let port = args.port.unwrap_or(config.port);
-
     tracing::info!("dante-patchbox v2 — {} RX → {} TX zones", config.rx_channels, config.tx_channels);
     tracing::info!("zones:   {:?}", config.zones);
     tracing::info!("sources: {:?}", config.sources);
 
     let state = AppState::new(config, args.config);
 
-    // Spawn simulated meter updates (until real Dante audio connected)
+    // Simulated meter task
     let meter_state = state.meters.clone();
-    let cfg_state = state.config.clone();
+    let cfg_ref = state.config.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
         let mut t: f32 = 0.0;
         loop {
             tick.tick().await;
             t += 0.05;
-            let cfg = cfg_state.read().await;
-            let mut meters = meter_state.write().await;
-            // Simulate gentle sine-wave meters so the UI shows something
-            meters.rx_rms = (0..cfg.rx_channels)
+            let cfg = cfg_ref.read().await;
+            let mut m = meter_state.write().await;
+            m.rx_rms = (0..cfg.rx_channels)
                 .map(|i| ((t + i as f32 * 0.7).sin().abs() * 0.4).max(0.0))
                 .collect();
-            meters.tx_rms = (0..cfg.tx_channels)
+            m.tx_rms = (0..cfg.tx_channels)
                 .map(|i| {
-                    // TX meter = sum of routed inputs
-                    let has_input = cfg.matrix[i].iter().any(|&r| r);
-                    if has_input { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
+                    let routed = cfg.matrix[i].iter().any(|&r| r);
+                    if routed { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
                 })
                 .collect();
         }
@@ -68,8 +66,6 @@ async fn main() {
     let app = router(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on http://{}", addr);
-    tracing::info!("web UI:  http://{}:{}/", "0.0.0.0", port);
-    tracing::info!("health:  http://{}:{}/api/v1/health", "0.0.0.0", port);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

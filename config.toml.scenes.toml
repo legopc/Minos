@@ -1,0 +1,34 @@
+[scenes."Thursday Night"]
+name = "Thursday Night"
+description = "Main bar + stage open"
+matrix = [
+    [
+    true,
+    false,
+    false,
+    false,
+],
+    [
+    true,
+    true,
+    false,
+    false,
+],
+    [
+    false,
+    false,
+    true,
+    false,
+],
+]
+input_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+output_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+]
