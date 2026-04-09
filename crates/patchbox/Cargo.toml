@@ -17,3 +17,8 @@ serde_json = "1"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+rust-embed = { version = "8" }
+clap = { version = "4", features = ["derive"] }
+[lib]
+name = "patchbox"
+path = "src/lib.rs"
