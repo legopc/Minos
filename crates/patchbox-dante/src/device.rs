@@ -70,6 +70,8 @@ impl DanteDevice {
         use inferno_aoip::device_server::Clock;
         use std::sync::atomic::Ordering as AOrdering;
         use std::sync::atomic::AtomicUsize;
+        use std::time::Duration;
+        use triple_buffer::triple_buffer;
 
         let short = if self.device_name.len() > 14 {
             &self.device_name[..14]
@@ -135,6 +137,23 @@ impl DanteDevice {
 
         tracing::info!("TX transmitter armed, waiting for first RX block");
 
+        // Triple buffer for RT-safe config delivery to audio callback
+        // The audio callback NEVER touches the RwLock — zero contention.
+        let initial_cfg = config.read().await.clone();
+        let (mut tb_input, mut tb_output) = triple_buffer(&initial_cfg);
+
+        // Background task: push config updates into triple buffer every 10ms
+        let config_ref = config.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(10));
+            loop {
+                interval.tick().await;
+                if let Ok(cfg) = config_ref.try_read() {
+                    tb_input.write(cfg.clone());
+                }
+            }
+        });
+
         let tx_bufs_cb    = tx_bufs.clone();
         let current_ts_cb = Arc::clone(&current_timestamp);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
@@ -146,11 +165,8 @@ impl DanteDevice {
             #[cfg(target_os = "linux")]
             try_set_rt_priority_once();
 
-            // Non-blocking config read — skip block if lock is contended
-            let guard = match config.try_read() {
-                Ok(g)  => g,
-                Err(_) => return,
-            };
+            // Lock-free config read from triple buffer — always has a valid snapshot
+            let cfg = tb_output.read();
 
             let actual_rx = channels.len().min(n_rx);
             let block     = samples_count;
@@ -168,8 +184,7 @@ impl DanteDevice {
             let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
             // Run DSP matrix
-            patchbox_core::matrix::process(&inputs_ref, &mut outputs_ref, &guard);
-            drop(guard);
+            patchbox_core::matrix::process(&inputs_ref, &mut outputs_ref, cfg);
 
             // Update meters with linear RMS (best-effort, non-blocking)
             if let Ok(mut m) = meters.try_write() {

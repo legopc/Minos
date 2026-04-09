@@ -37,11 +37,32 @@ async fn main() {
     };
 
     let port = args.port.unwrap_or(config.port);
-    tracing::info!("dante-patchbox v2 — {} RX → {} TX zones", config.rx_channels, config.tx_channels);
-    tracing::info!("zones:   {:?}", config.zones);
-    tracing::info!("sources: {:?}", config.sources);
+
+    // Startup banner
+    tracing::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    tracing::info!("  dante-patchbox v2 starting");
+    tracing::info!("  device:   {}", config.dante_name);
+    tracing::info!("  port:     {}", port);
+    tracing::info!("  rx/tx:    {} RX → {} TX", config.rx_channels, config.tx_channels);
+    tracing::info!("  zones:    {:?}", config.zones);
+    tracing::info!("  sources:  {:?}", config.sources);
+    tracing::info!("  config:   {:?}", args.config);
+    tracing::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let state = AppState::new(config.clone(), args.config);
+
+    // Startup validation: verify config is writable
+    state.persist().await.expect("startup config write check failed — check permissions on config file");
+    tracing::info!("config writability check passed");
+
+    // Graceful shutdown: flush config on SIGINT/SIGTERM
+    let state_for_shutdown = state.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("shutting down — persisting config");
+        let _ = state_for_shutdown.persist().await;
+        std::process::exit(0);
+    });
 
     // Start Dante device integration (real with --features inferno, stub otherwise)
     let dante = patchbox_dante::device::DanteDevice::new(

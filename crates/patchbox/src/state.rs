@@ -36,7 +36,9 @@ impl AppState {
     pub async fn persist(&self) -> Result<(), String> {
         let cfg = self.config.read().await;
         let s = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
-        std::fs::write(&self.config_path, s).map_err(|e| e.to_string())?;
+        let tmp_path = self.config_path.with_extension("toml.tmp");
+        std::fs::write(&tmp_path, &s).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp_path, &self.config_path).map_err(|e| e.to_string())?;
         Ok(())
     }
 

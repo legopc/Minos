@@ -15,6 +15,7 @@ thiserror = "2"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
 atomic = "0.6"
+triple_buffer = "9"
 
 [target.'cfg(feature = "inferno")'.dependencies]
 inferno_aoip = { git = "https://github.com/teodly/inferno", rev = "3f2bf142e15d", optional = true }
