@@ -143,9 +143,24 @@ async fn handle_ws(mut socket: WebSocket, s: AppState) {
 async fn serve_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/index.html")) }
 async fn serve_zone_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/zone.html")) }
 
+
+// GET /api/v1/whoami — validate token and return user info
+async fn whoami(
+    State(_s): State<AppState>,
+    req: axum::extract::Request,
+) -> impl IntoResponse {
+    use axum::Extension;
+    let claims = req.extensions().get::<crate::jwt::Claims>().cloned();
+    match claims {
+        Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone})).into_response(),
+        None => (StatusCode::UNAUTHORIZED, "not authenticated").into_response(),
+    }
+}
+
 pub fn router(state: AppState) -> Router {
     // Protected routes — require valid JWT
     let protected = Router::new()
+        .route("/api/v1/whoami", get(whoami))
         .route("/api/v1/matrix", put(put_matrix))
         .route("/api/v1/gain/input", put(put_gain_input))
         .route("/api/v1/gain/output", put(put_gain_output))

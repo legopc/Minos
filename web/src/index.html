@@ -84,6 +84,21 @@
     <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none">logout</button> <span><span class="ws-dot" id="ws-dot"></span><span id="ws-status">connecting</span></span>
   </div>
 </header>
+<div class="login-overlay hidden" id="login-overlay">
+  <div class="login-box">
+    <h2>🦞 dante-patchbox — login</h2>
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="login-user" autocomplete="username" autofocus>
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-pass" autocomplete="current-password">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Login</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
 <div class="container">
   <section>
     <h2>Routing Matrix</h2>
@@ -241,15 +256,17 @@ async function load() {
   buildMatrix(); buildGains(); await buildScenes();
 }
 
-load(); connectWS();
+// Startup sequence
+connectWS();
 
 // ── Auth ──────────────────────────────────────────────────────────────────
+// ── Auth ─────────────────────────────────────────────────────────────────
 let authToken = localStorage.getItem('patchbox_token');
 
 function showLogin(msg) {
   document.getElementById('login-overlay').classList.remove('hidden');
   document.getElementById('login-error').textContent = msg || '';
-  document.getElementById('login-user').focus();
+  setTimeout(() => document.getElementById('login-user').focus(), 50);
 }
 function hideLogin() {
   document.getElementById('login-overlay').classList.add('hidden');
@@ -278,9 +295,8 @@ async function doLogin() {
     load();
   } catch(e) { document.getElementById('login-error').textContent = 'connection error'; }
 }
-document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+// login-pass keydown wired in initAuth
 
-// Override api() to include Bearer token and handle 401
 async function api(method, path, body) {
   try {
     const r = await fetch(path, {
@@ -294,24 +310,22 @@ async function api(method, path, body) {
   } catch(e) { toast('error: ' + e.message, false); return null; }
 }
 
-// Check auth on load
-if (!authToken) { showLogin(); } else { hideLogin(); }
+// Validate existing token or show login
+function initAuth() {
+  document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  if (!authToken) {
+    showLogin();
+    return;
+  }
+  fetch('/api/v1/whoami', {headers: {'Authorization': 'Bearer ' + authToken}})
+    .then(r => {
+      if (r.ok) { hideLogin(); load(); }
+      else { localStorage.removeItem('patchbox_token'); authToken = null; showLogin(); }
+    })
+    .catch(() => { authToken = null; showLogin(); });
+}
+document.addEventListener("DOMContentLoaded", initAuth);
 </script>
 
-<div class="login-overlay hidden" id="login-overlay">
-  <div class="login-box">
-    <h2>🦞 dante-patchbox — login</h2>
-    <div class="login-field">
-      <label>Username</label>
-      <input type="text" id="login-user" autocomplete="username" autofocus>
-    </div>
-    <div class="login-field">
-      <label>Password</label>
-      <input type="password" id="login-pass" autocomplete="current-password">
-    </div>
-    <button class="login-btn" onclick="doLogin()">Login</button>
-    <div class="login-error" id="login-error"></div>
-  </div>
-</div>
 </body>
 </html>
