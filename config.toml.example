@@ -1,10 +1,47 @@
 rx_channels = 4
 tx_channels = 3
-zones = ["Bar 1", "Bar 2", "Stage"]
-sources = ["Main Bar", "DVS PC", "Podium", "Spare"]
-input_gain_db = [0.0, 0.0, 0.0, 0.0]
-output_gain_db = [0.0, 0.0, 0.0]
-matrix = [[true, false, false, false], [false, true, false, false], [false, false, true, false]]
+zones = [
+    "Bar 1",
+    "Bar 2",
+    "Stage",
+]
+sources = [
+    "Main Bar",
+    "DVS PC",
+    "Podium",
+    "Spare",
+]
+input_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+output_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+]
+matrix = [
+    [
+    true,
+    false,
+    false,
+    false,
+],
+    [
+    true,
+    true,
+    false,
+    false,
+],
+    [
+    false,
+    false,
+    true,
+    false,
+],
+]
 dante_name = "patchbox"
 dante_nic = "eth0"
 port = 9191

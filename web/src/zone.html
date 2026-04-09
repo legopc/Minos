@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>patchbox — zone</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg: #0d0d0d; --surface: #161616; --border: #2a2a2a; --text: #e0e0e0; --dim: #555; --amber: #f5a623; --green: #52e08a; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 14px; display: flex; flex-direction: column; min-height: 100vh; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  header h1 { color: var(--amber); font-size: 14px; }
+  .zone-name { font-size: 22px; font-weight: 600; color: var(--text); }
+  .container { padding: 32px 24px; flex: 1; display: flex; flex-direction: column; gap: 32px; max-width: 600px; }
+
+  .source-list { display: flex; flex-direction: column; gap: 10px; }
+  .source-btn {
+    padding: 14px 20px; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer;
+    text-align: left; border-radius: 4px; transition: border-color 0.15s, background 0.15s;
+  }
+  .source-btn:hover { border-color: var(--amber); }
+  .source-btn.active { border-color: var(--amber); background: #1a1500; color: var(--amber); }
+
+  .vol-wrap { display: flex; flex-direction: column; gap: 12px; }
+  .vol-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+  .vol-row { display: flex; align-items: center; gap: 16px; }
+  input[type=range] { flex: 1; accent-color: var(--amber); }
+  .vol-val { color: var(--amber); font-size: 13px; min-width: 60px; text-align: right; }
+
+  .meter { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .meter-fill { height: 100%; background: var(--green); transition: width 0.05s; width: 0%; }
+
+  .back { color: var(--dim); font-size: 11px; text-decoration: none; }
+  .back:hover { color: var(--amber); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:4px">🦞 dante-patchbox</div>
+    <div class="zone-name" id="zone-title">Zone</div>
+  </div>
+  <a href="/" class="back">← admin</a>
+</header>
+<div class="container">
+  <section>
+    <div class="vol-label" style="margin-bottom:12px">Source</div>
+    <div class="source-list" id="source-list"></div>
+  </section>
+  <section>
+    <div class="vol-label">Volume</div>
+    <div class="vol-wrap" style="margin-top:12px">
+      <div class="vol-row">
+        <input type="range" id="vol-slider" min="-60" max="0" step="0.5" value="0">
+        <span class="vol-val" id="vol-val">0.0 dB</span>
+      </div>
+      <div class="meter"><div class="meter-fill" id="zone-meter"></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const zoneName = decodeURIComponent(location.pathname.replace('/zone/', ''));
+document.getElementById('zone-title').textContent = zoneName;
+document.title = 'patchbox — ' + zoneName;
+
+let cfg = null;
+let txIdx = -1;
+
+async function api(method, path, body) {
+  await fetch(path, {
+    method, headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+}
+
+function buildSources() {
+  const list = document.getElementById('source-list');
+  list.innerHTML = '';
+  if (txIdx === -1) return;
+  cfg.sources.forEach((s, rx) => {
+    const btn = document.createElement('button');
+    btn.className = 'source-btn' + (cfg.matrix[txIdx][rx] ? ' active' : '');
+    btn.textContent = s;
+    btn.onclick = async () => {
+      // Toggle: if already active, deactivate; else activate exclusively
+      const wasActive = cfg.matrix[txIdx][rx];
+      // For simplicity: make this the only active source for this zone
+      for (let i = 0; i < cfg.rx_channels; i++) {
+        if (cfg.matrix[txIdx][i] !== (i === rx && !wasActive)) {
+          cfg.matrix[txIdx][i] = (i === rx && !wasActive);
+          await api('PUT', '/api/v1/matrix', {tx: txIdx, rx: i, enabled: cfg.matrix[txIdx][i]});
+        }
+      }
+      buildSources();
+    };
+    list.appendChild(btn);
+  });
+}
+
+// Volume slider
+const slider = document.getElementById('vol-slider');
+const volVal = document.getElementById('vol-val');
+slider.oninput = () => volVal.textContent = parseFloat(slider.value).toFixed(1) + ' dB';
+slider.onchange = () => api('PUT', '/api/v1/gain/output', {channel: txIdx, db: parseFloat(slider.value)});
+
+// WebSocket meters
+function connectWS() {
+  const ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.onmessage = e => {
+    const f = JSON.parse(e.data);
+    if (txIdx >= 0 && f.tx_rms[txIdx] !== undefined) {
+      const pct = Math.min(f.tx_rms[txIdx] * 250, 100);
+      document.getElementById('zone-meter').style.width = pct + '%';
+    }
+  };
+  ws.onclose = () => setTimeout(connectWS, 2000);
+}
+
+async function load() {
+  const r = await fetch('/api/v1/config');
+  cfg = await r.json();
+  txIdx = cfg.zones.indexOf(zoneName);
+  if (txIdx >= 0) {
+    slider.value = cfg.output_gain_db[txIdx];
+    volVal.textContent = parseFloat(cfg.output_gain_db[txIdx]).toFixed(1) + ' dB';
+  }
+  buildSources();
+}
+
+load();
+connectWS();
+</script>
+</body>
+</html>

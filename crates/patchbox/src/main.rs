@@ -11,10 +11,8 @@ mod state;
 #[derive(Parser)]
 #[command(name = "patchbox", about = "dante-patchbox v2 — Dante AoIP patchbay")]
 struct Args {
-    /// Path to config file
     #[arg(long, default_value = "config.toml")]
     config: PathBuf,
-    /// Override listen port
     #[arg(long)]
     port: Option<u16>,
 }
@@ -24,35 +22,55 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    // Load or create default config
-    let config = if args.config.exists() {
-        let content = std::fs::read_to_string(&args.config)
-            .expect("failed to read config file");
-        toml::from_str(&content).expect("failed to parse config file")
+    let config: PatchboxConfig = if args.config.exists() {
+        let s = std::fs::read_to_string(&args.config).expect("read config");
+        toml::from_str(&s).expect("parse config")
     } else {
-        tracing::info!("no config file found, creating default at {:?}", args.config);
-        let default = PatchboxConfig::default();
-        let toml_str = toml::to_string_pretty(&default).expect("serialize failed");
-        std::fs::write(&args.config, &toml_str).expect("failed to write default config");
-        default
+        tracing::info!("creating default config at {:?}", args.config);
+        let d = PatchboxConfig::default();
+        std::fs::write(&args.config, toml::to_string_pretty(&d).unwrap()).unwrap();
+        d
     };
 
     let port = args.port.unwrap_or(config.port);
 
-    tracing::info!(
-        "dante-patchbox v2 — {} RX sources → {} TX zones",
-        config.rx_channels,
-        config.tx_channels
-    );
-    tracing::info!("zones: {:?}", config.zones);
+    tracing::info!("dante-patchbox v2 — {} RX → {} TX zones", config.rx_channels, config.tx_channels);
+    tracing::info!("zones:   {:?}", config.zones);
     tracing::info!("sources: {:?}", config.sources);
 
     let state = AppState::new(config, args.config);
-    let app = router(state);
 
+    // Spawn simulated meter updates (until real Dante audio connected)
+    let meter_state = state.meters.clone();
+    let cfg_state = state.config.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
+        let mut t: f32 = 0.0;
+        loop {
+            tick.tick().await;
+            t += 0.05;
+            let cfg = cfg_state.read().await;
+            let mut meters = meter_state.write().await;
+            // Simulate gentle sine-wave meters so the UI shows something
+            meters.rx_rms = (0..cfg.rx_channels)
+                .map(|i| ((t + i as f32 * 0.7).sin().abs() * 0.4).max(0.0))
+                .collect();
+            meters.tx_rms = (0..cfg.tx_channels)
+                .map(|i| {
+                    // TX meter = sum of routed inputs
+                    let has_input = cfg.matrix[i].iter().any(|&r| r);
+                    if has_input { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
+                })
+                .collect();
+        }
+    });
+
+    let app = router(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on http://{}", addr);
+    tracing::info!("web UI:  http://{}:{}/", "0.0.0.0", port);
+    tracing::info!("health:  http://{}:{}/api/v1/health", "0.0.0.0", port);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind");
-    axum::serve(listener, app).await.expect("server error");
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
