@@ -74,6 +74,14 @@
   .login-error { color: var(--red); font-size: 11px; margin-top: 8px; min-height: 16px; }
   .logout-btn { background: none; border: 1px solid var(--border); color: var(--dim); font-family: inherit; font-size: 11px; padding: 4px 10px; cursor: pointer; border-radius: 3px; }
   .logout-btn:hover { border-color: var(--red); color: var(--red); }
+  /* Panic / mute buttons */
+  .panic-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #1a0000; border: 1px solid #e05252; border-radius: 4px; margin-bottom: 16px; }
+  .btn-panic { padding: 10px 28px; background: #e05252; color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; border: none; border-radius: 3px; cursor: pointer; letter-spacing: 0.05em; }
+  .btn-panic:hover { background: #c03c3c; }
+  .btn-unmute-all { padding: 10px 20px; background: transparent; border: 1px solid #52e08a; color: #52e08a; font-family: inherit; font-size: 13px; cursor: pointer; border-radius: 3px; }
+  .btn-unmute-all:hover { background: #001a0a; }
+  .zone-mute-btn { padding: 2px 8px; font-family: inherit; font-size: 10px; cursor: pointer; border-radius: 2px; background: transparent; border: 1px solid #2a2a2a; color: #555; margin-left: 6px; }
+  .zone-mute-btn.muted { border-color: #e05252; color: #e05252; background: #1a0000; }
 </style>
 </head>
 <body>
@@ -100,6 +108,11 @@
   </div>
 </div>
 <div class="container">
+  <div class="panic-bar" id="panic-bar">
+    <button class="btn-panic" onclick="muteAll()">&#9888; MUTE ALL</button>
+    <button class="btn-unmute-all" onclick="unmuteAll()">Unmute All</button>
+    <span id="mute-all-status" style="color:#555;font-size:11px"></span>
+  </div>
   <section>
     <h2>Routing Matrix</h2>
     <div class="matrix-wrap"><table id="matrix-table"></table></div>
@@ -177,7 +190,11 @@ function buildMatrix() {
   cfg.zones.forEach((zone, tx) => {
     const tr = t.insertRow();
     const td0 = tr.insertCell(); td0.className = 'zone-cell';
-    td0.innerHTML = '<a href="/zone/' + encodeURIComponent(zone) + '" target="_blank">' + zone + '</a><div class="meter"><div class="meter-fill" id="txm-' + tx + '"></div></div>';
+    const muteState = cfg.output_muted && cfg.output_muted[tx];
+    td0.innerHTML = '<a href="/zone/' + encodeURIComponent(zone) + '" target="_blank">' + zone + '</a>'
+      + '<button id="zone-mute-' + tx + '" class="zone-mute-btn' + (muteState ? ' muted' : '') + '" onclick="toggleZoneMute(' + tx + ');">'
+      + (muteState ? 'MUTED' : 'MUTE') + '</button>'
+      + '<div class="meter"><div class="meter-fill" id="txm-' + tx + '"></div></div>';
     meters.tx[tx] = document.getElementById('txm-' + tx);
     cfg.sources.forEach((_, rx) => {
       const td = tr.insertCell(); td.className = 'cb-cell';

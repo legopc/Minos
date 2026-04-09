@@ -26,9 +26,11 @@ async fn main() {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    let config: PatchboxConfig = if args.config.exists() {
+    let mut config: PatchboxConfig = if args.config.exists() {
         let s = std::fs::read_to_string(&args.config).expect("read config");
-        toml::from_str(&s).expect("parse config")
+        let mut c: PatchboxConfig = toml::from_str(&s).expect("parse config");
+        c.normalize();
+        c
     } else {
         tracing::info!("creating default config at {:?}", args.config);
         let d = PatchboxConfig::default();

@@ -69,6 +69,48 @@ async fn put_gain_output(State(s): State<AppState>, Json(u): Json<GainUpdate>) -
     StatusCode::OK.into_response()
 }
 
+// POST /api/v1/zones/:tx/mute
+async fn mute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if tx >= cfg.tx_channels {
+        return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
+    }
+    cfg.output_muted[tx] = true;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
+// POST /api/v1/zones/:tx/unmute
+async fn unmute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if tx >= cfg.tx_channels {
+        return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
+    }
+    cfg.output_muted[tx] = false;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
+// POST /api/v1/mute-all — panic button: silence all zones
+async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    for m in cfg.output_muted.iter_mut() { *m = true; }
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
+// POST /api/v1/unmute-all — restore all zones
+async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    for m in cfg.output_muted.iter_mut() { *m = false; }
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
 // GET /api/v1/health
 async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
@@ -163,6 +205,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/matrix", put(put_matrix))
         .route("/api/v1/gain/input", put(put_gain_input))
         .route("/api/v1/gain/output", put(put_gain_output))
+        .route("/api/v1/zones/{tx}/mute", post(mute_zone))
+        .route("/api/v1/zones/{tx}/unmute", post(unmute_zone))
+        .route("/api/v1/mute-all", post(mute_all))
+        .route("/api/v1/unmute-all", post(unmute_all))
         .route("/api/v1/scenes", get(list_scenes).post(save_scene))
         .route("/api/v1/scenes/{name}/load", post(load_scene))
         .route("/api/v1/scenes/{name}", delete(delete_scene))

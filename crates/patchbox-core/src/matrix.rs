@@ -8,6 +8,18 @@ pub fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
 
+/// Simple soft-clip limiter — protects amps from digital overs.
+/// Passes signals below ±0.9 unaltered; smoothly compresses above that.
+#[inline]
+fn soft_clip(x: f32) -> f32 {
+    if x.abs() <= 0.9 {
+        x
+    } else {
+        let sign = x.signum();
+        sign * (0.9 + (x.abs() - 0.9) / (1.0 + ((x.abs() - 0.9) / 0.1).powi(2)))
+    }
+}
+
 /// Process one block of audio through the routing matrix.
 ///
 /// `inputs[ch][sample]`  — RX channel buffers
@@ -31,6 +43,11 @@ pub fn process(
             *s = 0.0;
         }
 
+        // If zone is muted, leave output silent and skip mixing
+        if config.output_muted.get(tx_idx).copied().unwrap_or(false) {
+            continue;
+        }
+
         // Mix all routed sources into this output
         for (rx_idx, input) in inputs.iter().enumerate() {
             let routed = config
@@ -45,9 +62,14 @@ pub fn process(
                     config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
                 );
                 for (s_out, s_in) in output[..nframes].iter_mut().zip(input[..nframes].iter()) {
-                    *s_out += s_in * in_gain * out_gain;
+                    *s_out += s_in * in_gain;
                 }
             }
+        }
+
+        // Apply output gain and soft-clip limiter per sample
+        for s in output[..nframes].iter_mut() {
+            *s = soft_clip(*s * out_gain);
         }
     }
 }
