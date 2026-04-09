@@ -20,6 +20,9 @@ pub struct MatrixUpdate { pub tx: usize, pub rx: usize, pub enabled: bool }
 pub struct GainUpdate { pub channel: usize, pub db: f32 }
 
 #[derive(Deserialize)]
+pub struct NameUpdate { pub name: String }
+
+#[derive(Deserialize)]
 pub struct SaveSceneRequest { pub name: String, pub description: Option<String> }
 
 #[derive(Serialize)]
@@ -164,6 +167,30 @@ async fn delete_scene(State(s): State<AppState>, Path(name): Path<String>) -> im
     StatusCode::OK.into_response()
 }
 
+// PUT /api/v1/sources/:idx/name
+async fn put_source_name(State(s): State<AppState>, Path(idx): Path<usize>, Json(u): Json<NameUpdate>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if idx >= cfg.sources.len() {
+        return (StatusCode::BAD_REQUEST, "index out of range").into_response();
+    }
+    cfg.sources[idx] = u.name;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
+// PUT /api/v1/zones/:idx/name
+async fn put_zone_name(State(s): State<AppState>, Path(idx): Path<usize>, Json(u): Json<NameUpdate>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if idx >= cfg.zones.len() {
+        return (StatusCode::BAD_REQUEST, "index out of range").into_response();
+    }
+    cfg.zones[idx] = u.name;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::OK.into_response()
+}
+
 // GET /ws
 async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, s))
@@ -196,36 +223,6 @@ async fn whoami(
         Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone})).into_response(),
         None => (StatusCode::UNAUTHORIZED, "not authenticated").into_response(),
     }
-}
-
-
-#[derive(Deserialize)]
-pub struct NameUpdate { pub name: String }
-
-async fn put_source_name(
-    State(s): State<AppState>,
-    Path(idx): Path<usize>,
-    Json(u): Json<NameUpdate>,
-) -> impl IntoResponse {
-    let mut cfg = s.config.write().await;
-    if idx >= cfg.rx_channels { return (StatusCode::BAD_REQUEST, "out of range").into_response(); }
-    cfg.sources[idx] = u.name;
-    drop(cfg);
-    let _ = s.persist().await;
-    StatusCode::OK.into_response()
-}
-
-async fn put_zone_name(
-    State(s): State<AppState>,
-    Path(idx): Path<usize>,
-    Json(u): Json<NameUpdate>,
-) -> impl IntoResponse {
-    let mut cfg = s.config.write().await;
-    if idx >= cfg.tx_channels { return (StatusCode::BAD_REQUEST, "out of range").into_response(); }
-    cfg.zones[idx] = u.name;
-    drop(cfg);
-    let _ = s.persist().await;
-    StatusCode::OK.into_response()
 }
 
 pub fn router(state: AppState) -> Router {

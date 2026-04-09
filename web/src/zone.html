@@ -74,12 +74,13 @@
 </div>
 
 <script>
-const zoneName = decodeURIComponent(location.pathname.replace('/zone/', ''));
-document.getElementById('zone-title').textContent = zoneName;
-document.title = 'patchbox — ' + zoneName;
+// Zone is identified by URL path (may be a legacy name or index).
+// After fetching config, we resolve by index (path segment) or by name match.
+const zonePathSegment = decodeURIComponent(location.pathname.replace('/zone/', ''));
 
-let cfg = null;
+// Try to parse as numeric index first, otherwise match by name
 let txIdx = -1;
+let cfg = null;
 
 async function api(method, path, body) {
   await fetch(path, {
@@ -97,9 +98,7 @@ function buildSources() {
     btn.className = 'source-btn' + (cfg.matrix[txIdx][rx] ? ' active' : '');
     btn.textContent = s;
     btn.onclick = async () => {
-      // Toggle: if already active, deactivate; else activate exclusively
       const wasActive = cfg.matrix[txIdx][rx];
-      // For simplicity: make this the only active source for this zone
       for (let i = 0; i < cfg.rx_channels; i++) {
         if (cfg.matrix[txIdx][i] !== (i === rx && !wasActive)) {
           cfg.matrix[txIdx][i] = (i === rx && !wasActive);
@@ -158,12 +157,25 @@ function updateMuteBtn() {
 async function load() {
   const r = await fetch('/api/v1/config');
   cfg = await r.json();
-  txIdx = cfg.zones.indexOf(zoneName);
+
+  // Resolve zone: try numeric index first, then name match
+  const asNum = parseInt(zonePathSegment, 10);
+  if (!isNaN(asNum) && asNum >= 0 && asNum < cfg.zones.length) {
+    txIdx = asNum;
+  } else {
+    txIdx = cfg.zones.indexOf(zonePathSegment);
+  }
+
+  // Display actual zone name from config (handles renames)
+  const displayName = txIdx >= 0 ? cfg.zones[txIdx] : zonePathSegment;
+  document.getElementById('zone-title').textContent = displayName;
+  document.title = 'patchbox — ' + displayName;
+
   if (txIdx >= 0) {
     slider.value = cfg.output_gain_db[txIdx];
     volVal.textContent = parseFloat(cfg.output_gain_db[txIdx]).toFixed(1) + ' dB';
+    if (cfg.output_muted) { zoneMuted = cfg.output_muted[txIdx] || false; }
   }
-  if (txIdx >= 0 && cfg.output_muted) { zoneMuted = cfg.output_muted[txIdx] || false; }
   updateMuteBtn();
   buildSources();
 }

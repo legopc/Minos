@@ -83,11 +83,16 @@
   .zone-mute-btn { padding: 2px 8px; font-family: inherit; font-size: 10px; cursor: pointer; border-radius: 2px; background: transparent; border: 1px solid #2a2a2a; color: #555; margin-left: 6px; }
   .zone-mute-btn.muted { border-color: #e05252; color: #e05252; background: #1a0000; }
 
-  .editable { cursor: pointer; }
-  .editable:hover { color: var(--amber); }
-  .editable:hover::after { content: ' \2712'; font-size: 10px; opacity: 0.5; }
-  .edit-input { background: var(--bg); border: 1px solid var(--amber); color: var(--text);
-    font-family: inherit; font-size: 12px; padding: 2px 6px; border-radius: 2px; width: 120px; }
+  /* Editable name styles */
+  .editable-name { cursor: default; position: relative; display: inline-block; }
+  .editable-name:hover { color: var(--amber); }
+  .editable-name:hover::after { content: ' ✎'; font-size: 9px; color: var(--dim); vertical-align: super; }
+  .editable-name.editing { outline: none; }
+  .name-input {
+    background: var(--bg); border: 1px solid var(--amber); color: var(--text);
+    font-family: inherit; font-size: inherit; padding: 1px 4px; border-radius: 2px;
+    width: 120px; outline: none;
+  }
 </style>
 </head>
 <body>
@@ -155,15 +160,6 @@ function toast(msg, ok) {
   clearTimeout(el._t); el._t = setTimeout(() => el.className = 'toast', 1800);
 }
 
-async function api(method, path, body) {
-  try {
-    const r = await fetch(path, { method, headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined });
-    if (!r.ok) throw new Error(await r.text());
-    toast('saved', true);
-    return r;
-  } catch(e) { toast('error: ' + e.message, false); return null; }
-}
-
 function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
   const dot = document.getElementById('ws-dot'), status = document.getElementById('ws-status');
@@ -182,33 +178,96 @@ function updateMeter(el, rms) {
   el.className = 'meter-fill' + (pct > 90 ? ' clip' : pct > 70 ? ' hot' : '');
 }
 
+// Inline name editing — returns a span that activates an input on double-click
+function makeEditableName(text, onSave) {
+  const span = document.createElement('span');
+  span.className = 'editable-name';
+  span.textContent = text;
+  span.title = 'Double-click to rename';
+
+  span.addEventListener('dblclick', () => {
+    const inp = document.createElement('input');
+    inp.className = 'name-input';
+    inp.value = span.textContent;
+    span.replaceWith(inp);
+    inp.focus();
+    inp.select();
+
+    const commit = async () => {
+      const val = inp.value.trim();
+      if (val && val !== text) {
+        const ok = await onSave(val);
+        if (ok) { text = val; }
+      }
+      const s2 = document.createElement('span');
+      s2.className = 'editable-name';
+      s2.textContent = text;
+      s2.title = 'Double-click to rename';
+      // re-attach same listener by recursion isn't needed — we do a full rebuild after save
+      inp.replaceWith(s2);
+    };
+
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { inp.value = text; inp.blur(); }
+    });
+    inp.addEventListener('blur', commit);
+  });
+
+  return span;
+}
+
 function buildMatrix() {
   const t = document.getElementById('matrix-table'); t.innerHTML = '';
   meters.rx = []; meters.tx = [];
   const hr = t.insertRow();
   const th0 = document.createElement('th'); th0.className = 'row-header'; th0.textContent = 'Zone \\ Source'; hr.appendChild(th0);
+
   cfg.sources.forEach((s, rx) => {
     const th = document.createElement('th');
-    const thSpan = document.createElement('span');
-    thSpan.textContent = s;
-    makeEditable(thSpan, name => api('PUT', '/api/v1/sources/' + rx + '/name', {name}));
-    th.appendChild(thSpan);
-    const thMeter = document.createElement('div');
-    thMeter.className = 'meter';
-    thMeter.innerHTML = '<div class="meter-fill" id="rxm-' + rx + '"></div>';
-    th.appendChild(thMeter);
+    const nameSpan = makeEditableName(s, async (newName) => {
+      const r = await api('PUT', '/api/v1/sources/' + rx + '/name', {name: newName});
+      if (r) { cfg.sources[rx] = newName; rebuildNames(); return true; }
+      return false;
+    });
+    th.appendChild(nameSpan);
+    const meterDiv = document.createElement('div'); meterDiv.className = 'meter';
+    const meterFill = document.createElement('div'); meterFill.className = 'meter-fill'; meterFill.id = 'rxm-' + rx;
+    meterDiv.appendChild(meterFill); th.appendChild(meterDiv);
     hr.appendChild(th);
     meters.rx[rx] = document.getElementById('rxm-' + rx);
   });
+
   cfg.zones.forEach((zone, tx) => {
     const tr = t.insertRow();
     const td0 = tr.insertCell(); td0.className = 'zone-cell';
     const muteState = cfg.output_muted && cfg.output_muted[tx];
-    td0.innerHTML = '<a href="/zone/' + encodeURIComponent(zone) + '" target="_blank">' + zone + '</a>'
-      + '<button id="zone-mute-' + tx + '" class="zone-mute-btn' + (muteState ? ' muted' : '') + '" onclick="toggleZoneMute(' + tx + ');">'
-      + (muteState ? 'MUTED' : 'MUTE') + '</button>'
-      + '<div class="meter"><div class="meter-fill" id="txm-' + tx + '"></div></div>';
+
+    const zoneLink = document.createElement('a');
+    zoneLink.href = '/zone/' + encodeURIComponent(zone);
+    zoneLink.target = '_blank';
+    zoneLink.id = 'zone-link-' + tx;
+
+    const nameSpan = makeEditableName(zone, async (newName) => {
+      const r = await api('PUT', '/api/v1/zones/' + tx + '/name', {name: newName});
+      if (r) { cfg.zones[tx] = newName; rebuildNames(); return true; }
+      return false;
+    });
+    zoneLink.appendChild(nameSpan);
+    td0.appendChild(zoneLink);
+
+    const muteBtn = document.createElement('button');
+    muteBtn.id = 'zone-mute-' + tx;
+    muteBtn.className = 'zone-mute-btn' + (muteState ? ' muted' : '');
+    muteBtn.textContent = muteState ? 'MUTED' : 'MUTE';
+    muteBtn.onclick = () => toggleZoneMute(tx);
+    td0.appendChild(muteBtn);
+
+    const meterDiv = document.createElement('div'); meterDiv.className = 'meter';
+    const meterFill = document.createElement('div'); meterFill.className = 'meter-fill'; meterFill.id = 'txm-' + tx;
+    meterDiv.appendChild(meterFill); td0.appendChild(meterDiv);
     meters.tx[tx] = document.getElementById('txm-' + tx);
+
     cfg.sources.forEach((_, rx) => {
       const td = tr.insertCell(); td.className = 'cb-cell';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cfg.matrix[tx][rx];
@@ -216,6 +275,13 @@ function buildMatrix() {
       td.appendChild(cb);
     });
   });
+}
+
+// Rebuild just the name text nodes in gains section without full rebuild
+function rebuildNames() {
+  buildGains();
+  // Update zone links in matrix (simpler to just rebuild matrix)
+  buildMatrix();
 }
 
 function buildGains() {
@@ -280,29 +346,6 @@ async function deleteScene(name) {
   await buildScenes();
 }
 
-
-function makeEditable(el, onSave) {
-  el.classList.add('editable');
-  el.title = 'Double-click to rename';
-  el.ondblclick = () => {
-    const orig = el.innerText || el.textContent;
-    const inp = document.createElement('input');
-    inp.className = 'edit-input';
-    inp.value = orig;
-    while(el.firstChild) el.removeChild(el.firstChild);
-    el.appendChild(inp);
-    inp.focus(); inp.select();
-    const finish = async (save) => {
-      const val = inp.value.trim() || orig;
-      while(el.firstChild) el.removeChild(el.firstChild);
-      el.textContent = save ? val : orig;
-      if (save && val !== orig) { await onSave(val); await load(); }
-    };
-    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') finish(false); e.stopPropagation(); };
-    inp.onblur = () => finish(true);
-  };
-}
-
 async function load() {
   const r = await fetch('/api/v1/config'); cfg = await r.json();
   document.getElementById('header-meta').textContent = cfg.rx_channels + ' sources → ' + cfg.tx_channels + ' zones';
@@ -312,7 +355,6 @@ async function load() {
 // Startup sequence
 connectWS();
 
-// ── Auth ──────────────────────────────────────────────────────────────────
 // ── Auth ─────────────────────────────────────────────────────────────────
 let authToken = localStorage.getItem('patchbox_token');
 
@@ -348,7 +390,6 @@ async function doLogin() {
     load();
   } catch(e) { document.getElementById('login-error').textContent = 'connection error'; }
 }
-// login-pass keydown wired in initAuth
 
 async function api(method, path, body) {
   try {
@@ -361,6 +402,35 @@ async function api(method, path, body) {
     toast('saved', true);
     return r;
   } catch(e) { toast('error: ' + e.message, false); return null; }
+}
+
+async function toggleZoneMute(tx) {
+  const muted = cfg.output_muted && cfg.output_muted[tx];
+  await api('POST', '/api/v1/zones/' + tx + '/' + (muted ? 'unmute' : 'mute'));
+  if (!cfg.output_muted) cfg.output_muted = [];
+  cfg.output_muted[tx] = !muted;
+  const btn = document.getElementById('zone-mute-' + tx);
+  if (btn) { btn.classList.toggle('muted', !muted); btn.textContent = !muted ? 'MUTED' : 'MUTE'; }
+}
+
+async function muteAll() {
+  await api('POST', '/api/v1/mute-all');
+  if (!cfg.output_muted) cfg.output_muted = [];
+  for (let i = 0; i < cfg.tx_channels; i++) {
+    cfg.output_muted[i] = true;
+    const btn = document.getElementById('zone-mute-' + i);
+    if (btn) { btn.classList.add('muted'); btn.textContent = 'MUTED'; }
+  }
+}
+
+async function unmuteAll() {
+  await api('POST', '/api/v1/unmute-all');
+  if (!cfg.output_muted) cfg.output_muted = [];
+  for (let i = 0; i < cfg.tx_channels; i++) {
+    cfg.output_muted[i] = false;
+    const btn = document.getElementById('zone-mute-' + i);
+    if (btn) { btn.classList.remove('muted'); btn.textContent = 'MUTE'; }
+  }
 }
 
 // Validate existing token or show login
