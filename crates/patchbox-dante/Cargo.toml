@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = []
-inferno = ["dep:inferno_aoip"]
+inferno = ["dep:inferno_aoip", "dep:libc"]
 
 [dependencies]
 patchbox-core = { path = "../patchbox-core" }
@@ -16,7 +16,5 @@ tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
 atomic = "0.6"
 triple_buffer = "9"
-
-[target.'cfg(feature = "inferno")'.dependencies]
 inferno_aoip = { git = "https://github.com/legopc/inferno", branch = "dev", optional = true }
-libc = "0.2"
+libc = { version = "0.2", optional = true }

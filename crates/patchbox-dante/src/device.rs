@@ -103,7 +103,7 @@ impl DanteDevice {
         let n_tx = self.n_tx;
         let n_rx = self.n_rx;
 
-        let valid = Arc::new(tokio::sync::RwLock::new(true));
+        let valid = Arc::new(std::sync::RwLock::new(true));
 
         let tx_bufs: Vec<Arc<Vec<AtomicSample>>> = (0..n_tx)
             .map(|_| Arc::new((0..RING_SIZE).map(|_| AtomicSample::new(0)).collect()))
