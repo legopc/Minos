@@ -56,14 +56,14 @@ Eventually may have a touchscreen attached serving the web UI locally.
 
 ### Phase 0 — Core routing (build this first, validate on real hardware)
 
-- [ ] Appear on Dante network via Inferno as a single virtual device
-- [ ] Configurable RX channel count (sources in)
-- [ ] Configurable TX channel count (zone outputs)
-- [ ] NxM routing matrix — any source to any output, many-to-many
-- [ ] Per-input gain control (level each source independently)
-- [ ] Per-output volume control (master level per zone)
-- [ ] Single binary, browser UI served from same port
-- [ ] Config persisted to TOML
+- [x] Appear on Dante network via Inferno as a single virtual device (stub — real Inferno wiring in Phase 1)
+- [x] Configurable RX channel count (sources in)
+- [x] Configurable TX channel count (zone outputs)
+- [x] NxM routing matrix — any source to any output, many-to-many
+- [x] Per-input gain control (level each source independently)
+- [x] Per-output volume control (master level per zone)
+- [x] Single binary, browser UI served from same port
+- [x] Config persisted to TOML
 
 ### Phase 1 — DSP per output
 
