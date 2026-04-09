@@ -92,6 +92,19 @@ Eventually may have a touchscreen attached serving the web UI locally.
 - [ ] mDNS registration
 - [ ] Integration tests against real Dante hardware
 
+
+## Non-Negotiable Engineering Principles
+
+This runs in a **live venue**. Audio dropping or routing breaking during an event is not acceptable.
+
+1. **RT-safe audio path** — DSP runs in the Inferno callback. No allocations, no locks, no blocking calls in the hot path. Ever.
+2. **Fault isolation** — web server crashing must not affect audio routing. HTTP and audio are separate concerns.
+3. **Atomic config writes** — write to temp file, rename. A crash mid-write must never leave a broken config.
+4. **Atomic scene transitions** — no partial state. Either the scene is loaded or it isn't.
+5. **Graceful degradation** — if the patchbox process dies, existing Dante subscriptions stay in place. Silence is better than noise.
+6. **Test on real hardware before production** — the PoC validates design. Real Dante hardware (Shure MXWANI8 at home) is the test bench before anything goes near the pub.
+7. **Repeatability** — every deployment must be reproducible. Config in TOML, scenes in TOML, nothing in-memory only.
+
 ## Design Principles
 
 1. **Routing first** — get the matrix working on real hardware before adding DSP or UI polish
