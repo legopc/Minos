@@ -59,6 +59,21 @@
   .toast.show { opacity: 1; }
   .toast.ok { color: var(--green); border-color: var(--green); }
   .toast.err { color: var(--red); border-color: var(--red); }
+
+  /* Login overlay */
+  .login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+  .login-overlay.hidden { display: none; }
+  .login-box { background: var(--surface); border: 1px solid var(--border); padding: 32px; min-width: 320px; border-radius: 6px; }
+  .login-box h2 { color: var(--amber); font-size: 14px; font-weight: 600; margin-bottom: 24px; letter-spacing: 0.08em; }
+  .login-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+  .login-field label { color: var(--dim); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .login-field input { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 3px; }
+  .login-field input:focus { outline: none; border-color: var(--amber); }
+  .login-btn { width: 100%; padding: 10px; background: var(--amber); color: #000; font-family: inherit; font-size: 13px; font-weight: 600; border: none; border-radius: 3px; cursor: pointer; margin-top: 8px; }
+  .login-btn:hover { opacity: 0.9; }
+  .login-error { color: var(--red); font-size: 11px; margin-top: 8px; min-height: 16px; }
+  .logout-btn { background: none; border: 1px solid var(--border); color: var(--dim); font-family: inherit; font-size: 11px; padding: 4px 10px; cursor: pointer; border-radius: 3px; }
+  .logout-btn:hover { border-color: var(--red); color: var(--red); }
 </style>
 </head>
 <body>
@@ -66,7 +81,7 @@
   <h1>🦞 dante-patchbox</h1>
   <div class="header-right">
     <span id="header-meta">—</span>
-    <span><span class="ws-dot" id="ws-dot"></span><span id="ws-status">connecting</span></span>
+    <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none">logout</button> <span><span class="ws-dot" id="ws-dot"></span><span id="ws-status">connecting</span></span>
   </div>
 </header>
 <div class="container">
@@ -227,6 +242,76 @@ async function load() {
 }
 
 load(); connectWS();
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+let authToken = localStorage.getItem('patchbox_token');
+
+function showLogin(msg) {
+  document.getElementById('login-overlay').classList.remove('hidden');
+  document.getElementById('login-error').textContent = msg || '';
+  document.getElementById('login-user').focus();
+}
+function hideLogin() {
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.getElementById('logout-btn').style.display = '';
+}
+function logout() {
+  localStorage.removeItem('patchbox_token');
+  authToken = null;
+  document.getElementById('logout-btn').style.display = 'none';
+  showLogin();
+}
+async function doLogin() {
+  const u = document.getElementById('login-user').value.trim();
+  const p = document.getElementById('login-pass').value;
+  if (!u || !p) { document.getElementById('login-error').textContent = 'enter username and password'; return; }
+  try {
+    const r = await fetch('/api/v1/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: u, password: p})
+    });
+    if (!r.ok) { document.getElementById('login-error').textContent = 'invalid credentials'; return; }
+    const data = await r.json();
+    authToken = data.token;
+    localStorage.setItem('patchbox_token', authToken);
+    hideLogin();
+    load();
+  } catch(e) { document.getElementById('login-error').textContent = 'connection error'; }
+}
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+// Override api() to include Bearer token and handle 401
+async function api(method, path, body) {
+  try {
+    const r = await fetch(path, {
+      method, headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (authToken || '')},
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (r.status === 401) { showLogin('session expired'); return null; }
+    if (!r.ok) throw new Error(await r.text());
+    toast('saved', true);
+    return r;
+  } catch(e) { toast('error: ' + e.message, false); return null; }
+}
+
+// Check auth on load
+if (!authToken) { showLogin(); } else { hideLogin(); }
 </script>
+
+<div class="login-overlay hidden" id="login-overlay">
+  <div class="login-box">
+    <h2>🦞 dante-patchbox — login</h2>
+    <div class="login-field">
+      <label>Username</label>
+      <input type="text" id="login-user" autocomplete="username" autofocus>
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-pass" autocomplete="current-password">
+    </div>
+    <button class="login-btn" onclick="doLogin()">Login</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
 </body>
 </html>

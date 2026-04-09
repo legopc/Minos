@@ -1,4 +1,5 @@
 use axum::{
+    middleware,
     extract::{Path, State, WebSocketUpgrade, ws::{WebSocket, Message}},
     http::StatusCode,
     response::{Html, IntoResponse},
@@ -143,18 +144,24 @@ async fn serve_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/i
 async fn serve_zone_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/zone.html")) }
 
 pub fn router(state: AppState) -> Router {
+    // Protected routes — require valid JWT
+    let protected = Router::new()
+        .route("/api/v1/matrix", put(put_matrix))
+        .route("/api/v1/gain/input", put(put_gain_input))
+        .route("/api/v1/gain/output", put(put_gain_output))
+        .route("/api/v1/scenes", get(list_scenes).post(save_scene))
+        .route("/api/v1/scenes/{name}/load", post(load_scene))
+        .route("/api/v1/scenes/{name}", delete(delete_scene))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
+
+    // Public routes — no auth required
     Router::new()
         .route("/", get(serve_ui))
         .route("/zone/{name}", get(serve_zone_ui))
         .route("/ws", get(ws_handler))
-        .route("/api/v1/config", get(get_config))
-        .route("/api/v1/matrix", put(put_matrix))
-        .route("/api/v1/gain/input", put(put_gain_input))
-        .route("/api/v1/gain/output", put(put_gain_output))
         .route("/api/v1/health", get(get_health))
-        .route("/api/v1/scenes", get(list_scenes).post(save_scene))
-        .route("/api/v1/scenes/{name}/load", post(load_scene))
-        .route("/api/v1/scenes/{name}", delete(delete_scene))
         .route("/api/v1/login", post(auth_api::login))
+        .route("/api/v1/config", get(get_config))
+        .merge(protected)
         .with_state(state)
 }
