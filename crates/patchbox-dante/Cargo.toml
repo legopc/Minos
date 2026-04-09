@@ -1,27 +1,7 @@
 [package]
-name        = "patchbox-dante"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-description = "inferno_aoip integration for dante-patchbox — Dante I/O layer"
-
-[features]
-# Enable real Dante audio I/O via inferno_aoip.
-# Requires: a running PTP/statime clock daemon, CAP_NET_RAW, Dante network.
-# Without this feature the crate compiles and runs with silence stubs.
-default = []
-inferno = ["dep:inferno_aoip"]
+name = "patchbox-dante"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
-patchbox-core = { workspace = true }
-tokio         = { workspace = true }
-anyhow        = { workspace = true }
-thiserror     = { workspace = true }
-tracing       = { workspace = true }
-serde         = { workspace = true }
-atomic        = "0.6"
-
-# Real Dante I/O — feature-gated: requires PTP daemon at runtime, not safe for CI
-# Pinned to commit 3f2bf142 — update with: git ls-remote https://github.com/teodly/inferno HEAD
-inferno_aoip = { git = "https://github.com/teodly/inferno", rev = "3f2bf142e15d", optional = true }
-libc = "0.2.184"
+patchbox-core = { path = "../patchbox-core" }

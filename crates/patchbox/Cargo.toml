@@ -1,77 +1,19 @@
 [package]
-name        = "patchbox"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-description = "Dante AoIP matrix mixer and DSP patchbay — main binary"
+name = "patchbox"
+version = "0.1.0"
+edition = "2021"
 
 [[bin]]
 name = "patchbox"
 path = "src/main.rs"
 
-[lib]
-name = "patchbox"
-path = "src/lib.rs"
-
 [dependencies]
-patchbox-core  = { workspace = true }
-patchbox-dante = { workspace = true }
-
-# HTTP server
-axum        = { version = "0.7", features = ["macros", "ws"] }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
-tower-http  = { version = "0.5", features = ["cors", "fs"] }
-tokio       = { workspace = true }
-# Asset embedding
-rust-embed  = { version = "8", features = ["compression"] }
-mime_guess  = "2"
-# Serialization
-serde       = { workspace = true }
-serde_json  = { workspace = true }
-toml        = { workspace = true }
-# CLI
-clap        = { workspace = true }
-# TUI
-ratatui     = "0.29"
-crossterm   = "0.28"
-# Error handling
-anyhow      = { workspace = true }
-thiserror   = { workspace = true }
-# Logging
-tracing            = { workspace = true }
-tracing-subscriber = { workspace = true }
-# Prometheus metrics
-metrics                    = "0.24"
-metrics-exporter-prometheus = "0.16"
-# Misc
-chrono    = { version = "0.4", features = ["serde"] }
-uuid      = { version = "1", features = ["v4", "serde"] }
-dirs      = "5"
-futures-util = "0.3"
-# D-09: mDNS/DNS-SD — advertise HTTP and Dante services on the local network
-mdns-sd   = "0.11"
-# S-03: Rate limiting — per-IP request throttling
-tower_governor = { version = "0.4", features = ["axum"] }
-governor       = "0.6"
-# S-04: TLS — rustls for HTTPS termination (optional, enabled by --tls-cert / --tls-key)
-rustls          = { version = "0.23", optional = true }
-rustls-pemfile  = { version = "2", optional = true }
-tokio-rustls    = { version = "0.26", optional = true }
-# Systemd watchdog / service notification (Linux only)
-sd-notify = { version = "0.4", optional = true }
-tower = "0.5.3"
-# A-01: JWT authentication
-jsonwebtoken = "9"
-# A-01: PAM authentication — raw FFI, linked via build.rs (no dev headers needed)
-libc = "0.2"
-# A-01: bcrypt for password hashing (fallback / service accounts)
-bcrypt = "0.15"
-
-[features]
-systemd = ["sd-notify"]
-tls     = ["rustls", "rustls-pemfile", "tokio-rustls", "axum-server/tls-rustls"]
-
-[dev-dependencies]
-axum-test          = "14"
-tempfile           = "3"
-tokio-tungstenite  = { version = "0.24", features = ["rustls-tls-native-roots"] }
+patchbox-core = { path = "../patchbox-core" }
+patchbox-dante = { path = "../patchbox-dante" }
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"
