@@ -6,6 +6,9 @@ use crate::state::AppState;
 use crate::api::router;
 
 mod api;
+mod auth_api;
+mod jwt;
+mod pam_auth;
 mod scenes;
 mod state;
 

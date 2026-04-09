@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::scenes::SceneStore;
+use crate::jwt;
 
 #[derive(Default, Clone)]
 pub struct MeterState {
@@ -23,6 +24,8 @@ pub struct AppState {
     pub meters: Arc<RwLock<MeterState>>,
     pub scenes: Arc<RwLock<SceneStore>>,
     pub scenes_path: PathBuf,
+    /// JWT secret — regenerated on every server restart
+    pub jwt_secret: Arc<RwLock<Vec<u8>>>,
 }
 
 impl AppState {
@@ -30,12 +33,14 @@ impl AppState {
         let scenes_path = config_path.with_extension("scenes.toml");
         let scenes = SceneStore::load(&scenes_path);
         let meters = MeterState::new(config.rx_channels, config.tx_channels);
+        let jwt_secret = jwt::generate_secret();
         Self {
             config: Arc::new(RwLock::new(config)),
             config_path,
             meters: Arc::new(RwLock::new(meters)),
             scenes: Arc::new(RwLock::new(scenes)),
             scenes_path,
+            jwt_secret: Arc::new(RwLock::new(jwt_secret)),
         }
     }
 

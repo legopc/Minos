@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use crate::state::AppState;
+use crate::auth_api;
 use crate::scenes::Scene;
 use std::time::Duration;
 use tokio::time::interval;
@@ -154,5 +155,6 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/scenes", get(list_scenes).post(save_scene))
         .route("/api/v1/scenes/{name}/load", post(load_scene))
         .route("/api/v1/scenes/{name}", delete(delete_scene))
+        .route("/api/v1/login", post(auth_api::login))
         .with_state(state)
 }
