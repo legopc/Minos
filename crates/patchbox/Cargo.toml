@@ -26,3 +26,7 @@ clap = { version = "4", features = ["derive"] }
 [lib]
 name = "patchbox"
 path = "src/lib.rs"
+
+[features]
+default = []
+inferno = ['patchbox-dante/inferno']

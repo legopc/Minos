@@ -149,7 +149,6 @@ async fn whoami(
     State(_s): State<AppState>,
     req: axum::extract::Request,
 ) -> impl IntoResponse {
-    use axum::Extension;
     let claims = req.extensions().get::<crate::jwt::Claims>().cloned();
     match claims {
         Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone})).into_response(),

@@ -1,21 +1,10 @@
 use patchbox_core::config::PatchboxConfig;
+pub use patchbox_core::meters::MeterState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::scenes::SceneStore;
 use crate::jwt;
-
-#[derive(Default, Clone)]
-pub struct MeterState {
-    pub tx_rms: Vec<f32>,
-    pub rx_rms: Vec<f32>,
-}
-
-impl MeterState {
-    pub fn new(rx: usize, tx: usize) -> Self {
-        Self { tx_rms: vec![0.0; tx], rx_rms: vec![0.0; rx] }
-    }
-}
 
 #[derive(Clone)]
 pub struct AppState {

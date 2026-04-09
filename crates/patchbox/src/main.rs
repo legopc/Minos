@@ -41,30 +41,44 @@ async fn main() {
     tracing::info!("zones:   {:?}", config.zones);
     tracing::info!("sources: {:?}", config.sources);
 
-    let state = AppState::new(config, args.config);
+    let state = AppState::new(config.clone(), args.config);
 
-    // Simulated meter task
-    let meter_state = state.meters.clone();
-    let cfg_ref = state.config.clone();
-    tokio::spawn(async move {
-        let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
-        let mut t: f32 = 0.0;
-        loop {
-            tick.tick().await;
-            t += 0.05;
-            let cfg = cfg_ref.read().await;
-            let mut m = meter_state.write().await;
-            m.rx_rms = (0..cfg.rx_channels)
-                .map(|i| ((t + i as f32 * 0.7).sin().abs() * 0.4).max(0.0))
-                .collect();
-            m.tx_rms = (0..cfg.tx_channels)
-                .map(|i| {
-                    let routed = cfg.matrix[i].iter().any(|&r| r);
-                    if routed { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
-                })
-                .collect();
-        }
-    });
+    // Start Dante device integration (real with --features inferno, stub otherwise)
+    let dante = patchbox_dante::device::DanteDevice::new(
+        config.dante_name.clone(),
+        config.rx_channels,
+        config.tx_channels,
+    );
+    dante
+        .start_with_state(state.config.clone(), state.meters.clone())
+        .await
+        .expect("Dante device init failed");
+
+    // Simulated meter task — only active when inferno feature is disabled
+    #[cfg(not(feature = "inferno"))]
+    {
+        let meter_state = state.meters.clone();
+        let cfg_ref = state.config.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
+            let mut t: f32 = 0.0;
+            loop {
+                tick.tick().await;
+                t += 0.05;
+                let cfg = cfg_ref.read().await;
+                let mut m = meter_state.write().await;
+                m.rx_rms = (0..cfg.rx_channels)
+                    .map(|i| ((t + i as f32 * 0.7).sin().abs() * 0.4).max(0.0))
+                    .collect();
+                m.tx_rms = (0..cfg.tx_channels)
+                    .map(|i| {
+                        let routed = cfg.matrix[i].iter().any(|&r| r);
+                        if routed { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
+                    })
+                    .collect();
+            }
+        });
+    }
 
     let app = router(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
