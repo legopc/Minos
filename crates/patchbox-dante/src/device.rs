@@ -106,8 +106,25 @@ impl DanteDevice {
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 
+        // Capture PTP time now — DeviceServer::start() already waited for clock sync
+        // This is used to align the TX ring buffer coordinate system
+        let ptp_start: Clock = {
+            use inferno_aoip::device_server::{MediaClock, RealTimeClockReceiver};
+            let mut clock_rx: RealTimeClockReceiver = server.get_realtime_clock_receiver();
+            clock_rx.update();
+            if let Some(overlay) = clock_rx.get() {
+                let mut mc = MediaClock::new(false);
+                mc.update_overlay(*overlay);
+                mc.wrapping_now_in_timebase(48000).unwrap_or(0)
+            } else {
+                tracing::warn!("PTP clock overlay not available after DeviceServer start — start_time = 0");
+                0
+            }
+        };
+        tracing::info!(ptp_start, "PTP start time captured");
+
         // TX ring buffer setup — non-interleaved, power-of-2 size
-        const RING_SIZE: usize = 65536;
+        const RING_SIZE: usize = 4096;
         let n_tx = self.n_tx;
         let n_rx = self.n_rx;
 
@@ -118,6 +135,7 @@ impl DanteDevice {
             .collect();
 
         let current_timestamp = Arc::new(AtomicUsize::new(0));
+        let write_pos_atomic = Arc::new(AtomicUsize::new(0));  // callback's exclusive write pointer
 
         let tx_params: Vec<ExternalBufferParameters<i32>> = tx_bufs
             .iter()
@@ -143,7 +161,12 @@ impl DanteDevice {
             )
             .await;
 
-        tracing::info!("TX transmitter armed, waiting for first RX block");
+        tracing::info!("TX transmitter armed with ptp_start={}", ptp_start);
+
+        // Send PTP start time NOW — no longer needs to happen inside the RX callback
+        if let Err(e) = start_tx.send(ptp_start) {
+            tracing::warn!("Failed to send TX start time: {:?}", e);
+        }
 
         // Triple buffer for RT-safe config delivery to audio callback
         // The audio callback NEVER touches the RwLock — zero contention.
@@ -162,9 +185,10 @@ impl DanteDevice {
             }
         });
 
-        let tx_bufs_cb    = tx_bufs.clone();
-        let current_ts_cb = Arc::clone(&current_timestamp);
-        let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
+        let tx_bufs_cb = tx_bufs.clone();
+        // current_ts_cb removed — callback must NOT touch current_timestamp
+        let write_pos_cb = Arc::clone(&write_pos_atomic);
+        // start_tx_opt removed — start_time is sent before the callback starts
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
@@ -209,7 +233,7 @@ impl DanteDevice {
             }
 
             // Write processed samples into TX ring buffers
-            let write_pos = current_ts_cb.load(AOrdering::Acquire);
+            let write_pos = write_pos_cb.load(AOrdering::Acquire);
             for (o, ch) in tx_f32.iter().enumerate() {
                 if o >= tx_bufs_cb.len() { break; }
                 let buf = &tx_bufs_cb[o];
@@ -218,17 +242,8 @@ impl DanteDevice {
                     buf[idx].store(f32_to_i32(s), AOrdering::Relaxed);
                 }
             }
-            let new_pos = write_pos.wrapping_add(block);
-            current_ts_cb.store(new_pos, AOrdering::Release);
-
-            // Signal TX transmitter with start position on first block
-            if let Some(tx) = start_tx_opt.take() {
-                if let Err(e) = tx.send(write_pos as Clock) {
-                    tracing::warn!("Failed to send TX start time: {e}");
-                } else {
-                    tracing::info!(pos = write_pos, "TX transmitter started");
-                }
-            }
+            write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
+            // current_timestamp is intentionally NOT touched here — it belongs to the TX transmitter
         })).await;
 
         Ok(())
