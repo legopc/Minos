@@ -152,38 +152,9 @@ impl DanteDevice {
         tracing::info!("TX transmitter armed — polling for PTP clock");
 
         // The legopc/inferno fork no longer blocks in DeviceServer::start() until
-        // the clock is ready (the wait loop in make_shared_media_clock is commented out).
-        // We must yield to the tokio runtime in a loop so the background clock-receiver
-        // task can deliver the first ClockOverlay before we send start_time.
-        let ptp_start: Clock = {
-            use inferno_aoip::device_server::{MediaClock, RealTimeClockReceiver};
-            let mut clock_rx: RealTimeClockReceiver = server.get_realtime_clock_receiver();
-            let mut result: Clock = 0;
-            for attempt in 0..200 {  // up to 2 seconds (200 × 10ms)
-                clock_rx.update();
-                if let Some(overlay) = clock_rx.get() {
-                    let mut mc = MediaClock::new(false);
-                    mc.update_overlay(*overlay);
-                    if let Some(ts) = mc.wrapping_now_in_timebase(48000) {
-                        tracing::info!(ptp_start = ts, attempt, "PTP clock ready");
-                        result = ts;
-                        break;
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            if result == 0 {
-                tracing::warn!("PTP clock still unavailable after 2s — start_time = 0");
-            }
-            result
-        };
-
-        // Send start_time immediately — callback's write_pos starts at 0,
-        // so ptp_start anchors ring coordinate 0 to the current PTP instant.
-        if let Err(e) = start_tx.send(ptp_start) {
-            tracing::warn!("Failed to send TX start time: {:?}", e);
-        }
-        tracing::info!(ptp_start, "TX start time sent");
+        // start_time is sent from inside the first RX callback (see below).
+        // This ensures write_pos and start_time are captured at the same PTP instant,
+        // so ring coordinate 0 exactly matches what the TX transmitter expects.
 
         // Triple buffer for RT-safe config delivery to audio callback
         // The audio callback NEVER touches the RwLock — zero contention.
@@ -203,9 +174,12 @@ impl DanteDevice {
         });
 
         let tx_bufs_cb = tx_bufs.clone();
-        // current_ts_cb removed — callback must NOT touch current_timestamp
+        // READ-ONLY reference to current_timestamp — lets us snap the TX transmitter's
+        // live PTP position on the very first callback to align write_pos with the ring.
+        // We never write back to it — the TX transmitter owns it.
+        let current_ts_cb = Arc::clone(&current_timestamp);
         let write_pos_cb = Arc::clone(&write_pos_atomic);
-        // start_tx_opt removed — start_time is sent before the callback starts
+        let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
@@ -249,7 +223,20 @@ impl DanteDevice {
                 }
             }
 
-            // Write processed samples into TX ring buffers
+            // Write processed samples into TX ring buffers.
+            // On the very first block: snap write_pos to the TX transmitter's live PTP
+            // position (stored in current_timestamp) so ring coordinates align.
+            // We only READ current_timestamp here — the TX transmitter owns writes to it.
+            if let Some(tx) = start_tx_opt.take() {
+                let ptp_now = current_ts_cb.load(AOrdering::Acquire);
+                let aligned = if ptp_now == 0 || ptp_now == usize::MAX { 0 } else { ptp_now };
+                write_pos_cb.store(aligned, AOrdering::Release);
+                if let Err(e) = tx.send(aligned as Clock) {
+                    tracing::warn!("Failed to send TX start time: {e}");
+                } else {
+                    tracing::info!(ptp_start = aligned, "TX transmitter started — ring aligned");
+                }
+            }
             let write_pos = write_pos_cb.load(AOrdering::Acquire);
             for (o, ch) in tx_f32.iter().enumerate() {
                 if o >= tx_bufs_cb.len() { break; }
