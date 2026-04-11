@@ -1,1096 +1,661 @@
 'use strict';
 
-// =============================================================================
-// DANTE-PATCHBOX v2 — AUTH LAYER
-// =============================================================================
+// ── Utilities ──────────────────────────────────────────────────────────────
 
-const TOKEN_KEY = 'pb_token';
+function _el(id) { return document.getElementById(id); }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-function _el(id) {
-  return document.getElementById(id);
+function toast(msg, type = 'ok') {
+  const container = _el('toast-container');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'toast ' + type;
+  div.textContent = msg;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
 }
 
-/**
- * Retrieve the stored token from sessionStorage.
- * @returns {string|null}
- */
-window.getToken = function getToken() {
-  return sessionStorage.getItem(TOKEN_KEY);
-};
+// ── patchFetch ─────────────────────────────────────────────────────────────
+// All authenticated API calls go through this.
+// Adds Bearer token from sessionStorage('pb_token').
+// On 401: shows login overlay, returns null.
+// Otherwise: returns the raw Response object.
 
-/**
- * Internal: call /api/v1/whoami with an optional token.
- * Returns the user object on success, null on any failure.
- * @param {string|null} token
- * @returns {Promise<{username: string, role: string, zone: string}|null>}
- */
-async function whoami(token) {
-  if (!token) return null;
+async function patchFetch(url, options = {}) {
+  const token = sessionStorage.getItem('pb_token');
+  const headers = Object.assign({}, options.headers || {});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  let res;
   try {
-    const res = await fetch('/api/v1/whoami', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+    res = await fetch(url, Object.assign({}, options, { headers }));
+  } catch (err) {
+    throw err;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Public globals
-// ---------------------------------------------------------------------------
-
-/**
- * Show the login overlay and clear any stored token.
- * Hides #app, empties password field and any previous error.
- */
-window.showLogin = function showLogin() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  window.currentUser = null;
-
-  const overlay = _el('login-overlay');
-  const app = _el('app');
-  const err = _el('login-error');
-  const pass = _el('login-pass');
-
-  if (overlay) overlay.style.display = '';
-  if (app) app.style.display = 'none';
-  if (err) err.textContent = '';
-  if (pass) pass.value = '';
-};
-
-/**
- * Hide the login overlay and reveal #app.
- */
-window.hideLogin = function hideLogin() {
-  const overlay = _el('login-overlay');
-  const app = _el('app');
-
-  if (overlay) overlay.style.display = 'none';
-  if (app) app.style.display = '';
-};
-
-/**
- * Fetch wrapper that injects the Bearer token header automatically.
- * On 401, calls showLogin() and throws an Error.
- * @param {string} url
- * @param {RequestInit} [opts]
- * @returns {Promise<Response>}
- */
-window.patchFetch = async function patchFetch(url, opts = {}) {
-  const token = window.getToken();
-  const headers = new Headers(opts.headers ?? {});
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-
-  const res = await fetch(url, { ...opts, headers });
 
   if (res.status === 401) {
-    window.showLogin();
-    throw new Error('Unauthorised — login required');
+    showLogin(() => patchFetch(url, options));
+    return null;
   }
 
   return res;
-};
+}
 
-/** @type {{username: string, role: string, zone: string}|null} */
-window.currentUser = null;
+// ── Login overlay ──────────────────────────────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// DOM wiring
-// ---------------------------------------------------------------------------
+let _loginOnSuccess = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // --- Logout ---
-  const logoutBtn = _el('logout-btn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem(TOKEN_KEY);
-      window.currentUser = null;
-      window.showLogin();
-    });
+function showLogin(onSuccess) {
+  _loginOnSuccess = onSuccess || null;
+  const overlay = _el('login-overlay');
+  if (overlay) overlay.hidden = false;
+  const errEl = _el('login-error');
+  if (errEl) errEl.textContent = '';
+  const passEl = _el('login-password');
+  if (passEl) passEl.value = '';
+  setTimeout(() => { const u = _el('login-username'); if (u) u.focus(); }, 50);
+}
+
+function hideLogin() {
+  const overlay = _el('login-overlay');
+  if (overlay) overlay.hidden = true;
+}
+
+async function doLogin() {
+  const usernameEl = _el('login-username');
+  const passwordEl = _el('login-password');
+  const errEl = _el('login-error');
+  const btn = _el('login-btn');
+  const username = usernameEl ? usernameEl.value.trim() : '';
+  const password = passwordEl ? passwordEl.value : '';
+
+  if (!username || !password) {
+    if (errEl) errEl.textContent = 'Enter username and password.';
+    return;
   }
 
-  // --- Login form submit ---
-  const loginBtn = _el('login-btn');
-  const loginUser = _el('login-user');
-  const loginPass = _el('login-pass');
-  const loginErr = _el('login-error');
+  if (btn) btn.disabled = true;
+  if (errEl) errEl.textContent = '';
 
-  async function submitLogin() {
-    const username = loginUser?.value.trim() ?? '';
-    const password = loginPass?.value ?? '';
+  try {
+    const res = await fetch('/api/v1/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
 
-    if (!username || !password) {
-      if (loginErr) loginErr.textContent = 'Username and password are required.';
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (errEl) errEl.textContent = body.error || ('Error ' + res.status);
       return;
     }
 
-    if (loginBtn) {
-      loginBtn.disabled = true;
-      loginBtn.textContent = '…';
+    const data = await res.json();
+    sessionStorage.setItem('pb_token', data.token);
+
+    const chipEl = _el('user-chip');
+    if (chipEl) chipEl.textContent = username;
+
+    hideLogin();
+
+    if (typeof _loginOnSuccess === 'function') {
+      const cb = _loginOnSuccess;
+      _loginOnSuccess = null;
+      cb();
     }
-    if (loginErr) loginErr.textContent = '';
-
-    try {
-      const res = await fetch('/api/v1/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message ?? `Login failed (${res.status})`);
-      }
-
-      const data = await res.json();
-      const token = data.token;
-
-      sessionStorage.setItem(TOKEN_KEY, token);
-      window.currentUser = { username: data.username ?? username, role: data.role, zone: data.zone };
-
-      const badge = _el('user-badge');
-      if (badge) badge.textContent = `${window.currentUser.username} (${window.currentUser.role})`;
-
-      window.hideLogin();
-
-      if (typeof window.onAppReady === 'function') window.onAppReady();
-
-    } catch (err) {
-      if (loginErr) loginErr.textContent = err.message ?? 'Login failed.';
-      console.error('[auth] login error:', err);
-    } finally {
-      if (loginBtn) {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Login';
-      }
-    }
+  } catch (err) {
+    if (errEl) errEl.textContent = 'Network error.';
+  } finally {
+    if (btn) btn.disabled = false;
   }
+}
 
-  if (loginBtn) loginBtn.addEventListener('click', submitLogin);
+// ── Bootstrap ──────────────────────────────────────────────────────────────
 
-  // Trigger submit on Enter in either field
-  [loginUser, loginPass].forEach(input => {
-    input?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') submitLogin();
-    });
+document.addEventListener('DOMContentLoaded', async () => {
+  const loginBtn = _el('login-btn');
+  if (loginBtn) loginBtn.addEventListener('click', doLogin);
+  const passEl = _el('login-password');
+  if (passEl) passEl.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  const userEl = _el('login-username');
+  if (userEl) userEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { const p = _el('login-password'); if (p) p.focus(); }
   });
 
-  // --- Bootstrap: check existing token ---
-  const storedToken = window.getToken();
-  const user = await whoami(storedToken);
+  const token = sessionStorage.getItem('pb_token');
+  let user = null;
+
+  if (token) {
+    try {
+      const res = await fetch('/api/v1/whoami', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (res.ok) user = await res.json();
+    } catch {}
+  }
 
   if (user) {
-    window.currentUser = user;
-    const badge = _el('user-badge');
-    if (badge) badge.textContent = `${user.username} (${user.role})`;
-    window.hideLogin();
-    if (typeof window.onAppReady === 'function') window.onAppReady();
+    const chipEl = _el('user-chip');
+    if (chipEl) chipEl.textContent = user.username;
+    await appStart();
   } else {
-    window.showLogin();
+    showLogin(async () => {
+      const t = sessionStorage.getItem('pb_token');
+      if (t) {
+        try {
+          const r = await fetch('/api/v1/whoami', { headers: { Authorization: 'Bearer ' + t } });
+          if (r.ok) {
+            const u = await r.json();
+            const chipEl = _el('user-chip');
+            if (chipEl) chipEl.textContent = u.username;
+          }
+        } catch {}
+      }
+      await appStart();
+    });
   }
 });
 
-// --- END AUTH LAYER — other modules appended below ---
+async function appStart() {
+  const cfg = await fetch('/api/v1/config').then(r => r.json());
+  buildConsole(cfg);
+  initWS();
+  initScenes();
+  initPanic();
 
-// =============================================================================
-// DANTE-PATCHBOX v2 — CONFIG LOADER + MATRIX TABLE BUILDER (js-03)
-// =============================================================================
-
-// ---------------------------------------------------------------------------
-// Internal: inline name editor
-// ---------------------------------------------------------------------------
-
-function _attachEditable(span) {
-  span.addEventListener('click', _startEdit);
-  span.addEventListener('focus', _startEdit);
+  const logoutBtn = _el('btn-logout');
+  if (logoutBtn) logoutBtn.addEventListener('click', () => {
+    sessionStorage.removeItem('pb_token');
+    showLogin(async () => {
+      const t = sessionStorage.getItem('pb_token');
+      if (t) {
+        try {
+          const r = await fetch('/api/v1/whoami', { headers: { Authorization: 'Bearer ' + t } });
+          if (r.ok) {
+            const u = await r.json();
+            const chipEl = _el('user-chip');
+            if (chipEl) chipEl.textContent = u.username;
+          }
+        } catch {}
+      }
+      const freshCfg = await fetch('/api/v1/config').then(r => r.json());
+      buildConsole(freshCfg);
+    });
+  });
 }
 
-function _startEdit(e) {
-  const span = e.currentTarget;
-  if (span.querySelector('input')) return; // already editing
+// ── buildConsole ───────────────────────────────────────────────────────────
 
-  const originalName = span.textContent.trim();
-  const input = document.createElement('input');
-  input.className = 'name-input';
-  input.value = originalName;
+let appCfg = null;
 
-  span.textContent = '';
-  span.appendChild(input);
-  input.focus();
-  input.select();
+function buildConsole(cfg) {
+  appCfg = cfg;
+  const table = _el('matrix-table');
+  table.innerHTML = '';
+  table.className = 'console-table';
 
-  async function _commitEdit() {
-    const newName = input.value.trim();
-    if (!newName) {
-      _cancelEdit();
-      return;
-    }
+  // ── THEAD: corner + zone column headers ──────────────────────────────────
+  const thead = table.createTHead();
+  const headerRow = thead.insertRow();
 
-    const idx = parseInt(span.dataset.idx, 10);
-    const isSrc = span.classList.contains('src-name');
-    const url = isSrc
-      ? `/api/v1/sources/${idx}/name`
-      : `/api/v1/zones/${idx}/name`;
+  const corner = document.createElement('th');
+  corner.className = 'corner';
+  corner.textContent = 'SOURCES / ZONES';
+  headerRow.appendChild(corner);
 
-    try {
-      const res = await window.patchFetch(url, {
+  cfg.zones.forEach((zoneName, zoneIdx) => {
+    const th = document.createElement('th');
+    th.className = 'zone-th';
+    th.dataset.zoneIdx = zoneIdx;
+
+    const inner = document.createElement('div');
+    inner.className = 'zone-th-inner';
+
+    // Zone name (editable span)
+    const nameEl = document.createElement('span');
+    nameEl.className = 'zone-name editable';
+    nameEl.textContent = zoneName;
+    nameEl.dataset.idx = zoneIdx;
+    makeEditable(nameEl, async (newName) => {
+      await patchFetch('/api/v1/zones/' + zoneIdx + '/name', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      span.textContent = newName;
-      if (typeof window.toast === 'function') window.toast('Name saved', 'ok');
-    } catch (err) {
-      console.error('[matrix] rename error:', err);
-      span.textContent = originalName;
-      if (typeof window.toast === 'function') window.toast('Rename failed', 'err');
-    }
-  }
-
-  function _cancelEdit() {
-    span.textContent = originalName;
-  }
-
-  input.addEventListener('blur', _commitEdit);
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.removeEventListener('blur', _commitEdit);
-      _commitEdit();
-    } else if (e.key === 'Escape') {
-      input.removeEventListener('blur', _commitEdit);
-      _cancelEdit();
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Internal: crosspoint toggle
-// ---------------------------------------------------------------------------
-
-async function toggleCrosspoint(tx, rx, enabled) {
-  try {
-    const res = await window.patchFetch('/api/v1/matrix', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tx, rx, enabled }),
+      appCfg.zones[zoneIdx] = newName;
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  } catch (err) {
-    console.error('[matrix] crosspoint toggle error:', err);
-    // Revert button active state
-    const table = document.getElementById('matrix-table');
-    if (table) {
-      const btn = table.querySelector(`.cross-btn[data-tx="${tx}"][data-rx="${rx}"]`);
-      if (btn) btn.classList.toggle('active', !enabled);
-    }
-    if (typeof window.toast === 'function') window.toast('Routing error', 'err');
-  }
-}
 
-// ---------------------------------------------------------------------------
-// Internal: matrix table builder
-// ---------------------------------------------------------------------------
+    // Output meter
+    const meterWrap = document.createElement('div');
+    meterWrap.className = 'zone-meter-wrap';
+    const meterFill = document.createElement('div');
+    meterFill.className = 'zone-meter-fill';
+    meterFill.id = 'zm-' + zoneIdx;
+    meterWrap.appendChild(meterFill);
 
-function buildMatrix(cfg) {
-  const table = document.getElementById('matrix-table');
-  if (!table) return;
+    // Output gain fader
+    const fader = document.createElement('input');
+    fader.type = 'range';
+    fader.className = 'zone-fader';
+    fader.min = '-30';
+    fader.max = '6';
+    fader.step = '0.5';
+    fader.value = cfg.output_gain_db[zoneIdx];
 
-  // Clear any existing content
-  table.innerHTML = '';
+    const dbEl = document.createElement('div');
+    dbEl.className = 'zone-db';
+    dbEl.id = 'zdb-' + zoneIdx;
+    dbEl.textContent = Number(cfg.output_gain_db[zoneIdx]).toFixed(1) + ' dB';
 
-  const { sources, zones, matrix } = cfg;
+    let gainTimer = null;
+    fader.addEventListener('input', () => {
+      const db = parseFloat(fader.value);
+      dbEl.textContent = db.toFixed(1) + ' dB';
+      clearTimeout(gainTimer);
+      gainTimer = setTimeout(async () => {
+        await patchFetch('/api/v1/gain/output', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: zoneIdx, db }),
+        });
+      }, 300);
+    });
 
-  // --- Header row ---
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
+    // Mute button
+    const muteBtn = document.createElement('button');
+    muteBtn.className = 'zone-mute-btn';
+    muteBtn.id = 'zmute-' + zoneIdx;
+    muteBtn.dataset.zoneIdx = zoneIdx;
+    muteBtn.textContent = cfg.output_muted[zoneIdx] ? 'MUTED' : 'LIVE';
+    if (cfg.output_muted[zoneIdx]) muteBtn.classList.add('muted');
+    muteBtn.addEventListener('click', () => toggleZoneMute(zoneIdx));
 
-  // Corner cell
-  const corner = document.createElement('th');
-  corner.className = 'input-header';
-  headerRow.appendChild(corner);
-
-  zones.forEach((zoneName, zoneIdx) => {
-    const th = document.createElement('th');
-    th.className = 'zone-head';
-
-    const wrap = document.createElement('div');
-    wrap.className = 'zone-label-wrap';
-
-    const span = document.createElement('span');
-    span.className = 'editable zone-name zone-head-name';
-    span.dataset.idx = zoneIdx;
-    span.textContent = zoneName;
-    _attachEditable(span);
-
-    wrap.appendChild(span);
-    th.appendChild(wrap);
+    inner.append(nameEl, meterWrap, fader, dbEl, muteBtn);
+    th.appendChild(inner);
     headerRow.appendChild(th);
   });
 
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
+  // ── TBODY: one row per source ─────────────────────────────────────────────
+  const tbody = table.createTBody();
 
-  // --- Body rows (one per source/rx channel) ---
-  const tbody = document.createElement('tbody');
+  cfg.sources.forEach((srcName, rxIdx) => {
+    const tr = tbody.insertRow();
 
-  sources.forEach((srcName, srcIdx) => {
-    const tr = document.createElement('tr');
+    const rowHead = document.createElement('td');
+    rowHead.className = 'row-head';
+    rowHead.dataset.rxIdx = rxIdx;
 
-    // Source name cell
-    const labelTd = document.createElement('td');
-    labelTd.className = 'input-header';
-    const srcSpan = document.createElement('span');
-    srcSpan.className = 'editable src-name';
-    srcSpan.dataset.idx = srcIdx;
-    srcSpan.textContent = srcName;
-    _attachEditable(srcSpan);
-    labelTd.appendChild(srcSpan);
-    tr.appendChild(labelTd);
+    const inner = document.createElement('div');
+    inner.className = 'row-head-inner';
 
-    // Crosspoint buttons — one per zone (tx channel)
-    zones.forEach((zoneName, zoneIdx) => {
+    // Source name (editable)
+    const nameEl = document.createElement('span');
+    nameEl.className = 'src-name editable';
+    nameEl.textContent = srcName;
+    makeEditable(nameEl, async (newName) => {
+      await patchFetch('/api/v1/sources/' + rxIdx + '/name', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      appCfg.sources[rxIdx] = newName;
+    });
+
+    // Input meter
+    const meterWrap = document.createElement('div');
+    meterWrap.className = 'src-meter-wrap';
+    const meterFill = document.createElement('div');
+    meterFill.className = 'src-meter-fill';
+    meterFill.id = 'rm-' + rxIdx;
+    meterWrap.appendChild(meterFill);
+
+    // Fader row: slider + dB
+    const faderRow = document.createElement('div');
+    faderRow.className = 'src-fader-row';
+
+    const fader = document.createElement('input');
+    fader.type = 'range';
+    fader.className = 'src-fader';
+    fader.min = '-60';
+    fader.max = '12';
+    fader.step = '0.5';
+    fader.value = cfg.input_gain_db[rxIdx];
+
+    const dbEl = document.createElement('span');
+    dbEl.className = 'src-db';
+    dbEl.id = 'rdb-' + rxIdx;
+    dbEl.textContent = Number(cfg.input_gain_db[rxIdx]).toFixed(1);
+
+    let gainTimer = null;
+    fader.addEventListener('input', () => {
+      const db = parseFloat(fader.value);
+      dbEl.textContent = db.toFixed(1);
+      clearTimeout(gainTimer);
+      gainTimer = setTimeout(async () => {
+        await patchFetch('/api/v1/gain/input', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: rxIdx, db }),
+        });
+      }, 300);
+    });
+
+    faderRow.append(fader, dbEl);
+    inner.append(nameEl, meterWrap, faderRow);
+    rowHead.appendChild(inner);
+    tr.appendChild(rowHead);
+
+    // Crosspoint cells: one per zone
+    cfg.zones.forEach((_, txIdx) => {
       const td = document.createElement('td');
       td.className = 'cross-cell';
+      td.dataset.txIdx = txIdx;
+      td.dataset.rxIdx = rxIdx;
 
       const btn = document.createElement('button');
       btn.className = 'cross-btn';
-      btn.dataset.tx = zoneIdx;
-      btn.dataset.rx = srcIdx;
-      btn.title = `${zoneName} / ${srcName}`;
+      btn.dataset.tx = txIdx;
+      btn.dataset.rx = rxIdx;
+      btn.title = srcName + ' → ' + cfg.zones[txIdx];
 
-      // matrix[tx][rx] = matrix[zoneIdx][srcIdx]
-      if (matrix[zoneIdx] && matrix[zoneIdx][srcIdx]) {
-        btn.classList.add('active');
-      }
+      const isActive = !!(appCfg.matrix[txIdx] && appCfg.matrix[txIdx][rxIdx]);
+      if (isActive) btn.classList.add('active');
 
       btn.addEventListener('click', () => {
         const wasActive = btn.classList.contains('active');
         btn.classList.toggle('active', !wasActive);
-        toggleCrosspoint(zoneIdx, srcIdx, !wasActive);
+        btn.classList.remove('flash');
+        void btn.offsetWidth;
+        if (!wasActive) btn.classList.add('flash');
+        toggleCrosspoint(txIdx, rxIdx, !wasActive);
       });
 
       // Crosshair hover: highlight entire column
       btn.addEventListener('mouseenter', () => {
-        tbody.querySelectorAll(`.cross-cell:nth-child(${zoneIdx + 2})`).forEach(cell => {
-          cell.classList.add('col-hover');
-        });
+        table.querySelectorAll('.cross-cell[data-tx-idx="' + txIdx + '"]')
+          .forEach(c => c.classList.add('col-hover'));
       });
-
       btn.addEventListener('mouseleave', () => {
-        tbody.querySelectorAll(`.cross-cell:nth-child(${zoneIdx + 2})`).forEach(cell => {
-          cell.classList.remove('col-hover');
-        });
+        table.querySelectorAll('.cross-cell.col-hover')
+          .forEach(c => c.classList.remove('col-hover'));
       });
 
       td.appendChild(btn);
       tr.appendChild(td);
     });
-
-    tbody.appendChild(tr);
   });
 
-  table.appendChild(tbody);
-}
-
-// ---------------------------------------------------------------------------
-// Public: loadConfig
-// ---------------------------------------------------------------------------
-
-window.loadConfig = async function loadConfig() {
-  const res = await fetch('/api/v1/config');
-  if (!res.ok) throw new Error(`Failed to load config: HTTP ${res.status}`);
-
-  const data = await res.json();
-  window.appConfig = data;
-
-  buildMatrix(data);
-
-  if (typeof window.buildGainRows === 'function') {
-    window.buildGainRows(data);
+  if (cfg.dante_name) {
+    const dn = _el('device-name');
+    if (dn) dn.textContent = cfg.dante_name;
   }
 
-  return data;
-};
+  updateMuteStatusBar();
+}
 
-// ---------------------------------------------------------------------------
-// onAppReady chain extension
-// ---------------------------------------------------------------------------
+// ── Crosspoint toggle ──────────────────────────────────────────────────────
 
-(function () {
-  const _prevReady = window.onAppReady;
-  window.onAppReady = async function () {
-    if (typeof _prevReady === 'function') await _prevReady();
-    await window.loadConfig();
-  };
-})();
+async function toggleCrosspoint(tx, rx, enabled) {
+  try {
+    const res = await patchFetch('/api/v1/matrix', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tx, rx, enabled }),
+    });
+    if (res && !res.ok) throw new Error('HTTP ' + res.status);
+    if (appCfg) appCfg.matrix[tx][rx] = enabled;
+  } catch (err) {
+    console.error('[matrix]', err);
+    toast('Route error: ' + err.message, 'err');
+    const table = _el('matrix-table');
+    const btn = table && table.querySelector(
+      '.cross-btn[data-tx="' + tx + '"][data-rx="' + rx + '"]'
+    );
+    if (btn) btn.classList.toggle('active', !enabled);
+  }
+}
 
-// --- END CONFIG LOADER + MATRIX TABLE BUILDER (js-03) ---
+// ── Zone mute handlers ─────────────────────────────────────────────────────
 
-// =============================================================================
-// WEBSOCKET + METER RENDERING MODULE
-// =============================================================================
+async function toggleZoneMute(txIdx) {
+  const isMuted = appCfg && appCfg.output_muted[txIdx];
+  const path = isMuted ? 'unmute' : 'mute';
+  try {
+    const res = await patchFetch('/api/v1/zones/' + txIdx + '/' + path, { method: 'POST' });
+    if (res && !res.ok) throw new Error('HTTP ' + res.status);
+    if (appCfg) appCfg.output_muted[txIdx] = !isMuted;
+    updateZoneMuteBtn(txIdx, !isMuted);
+    updateMuteStatusBar();
+    toast(
+      appCfg.zones[txIdx] + ' ' + (!isMuted ? 'muted' : 'unmuted'),
+      !isMuted ? 'warn' : 'ok'
+    );
+  } catch (err) {
+    toast('Mute error: ' + err.message, 'err');
+  }
+}
+
+function updateZoneMuteBtn(txIdx, muted) {
+  const btn = _el('zmute-' + txIdx);
+  if (!btn) return;
+  btn.classList.toggle('muted', muted);
+  btn.textContent = muted ? 'MUTED' : 'LIVE';
+}
+
+function updateMuteStatusBar() {
+  if (!appCfg) return;
+  const mutedZones = appCfg.zones.filter((_, i) => appCfg.output_muted[i]);
+  const el = _el('mute-status');
+  if (el) el.textContent = mutedZones.length
+    ? mutedZones.length + ' zone(s) muted'
+    : 'All zones live';
+}
+
+function initPanic() {
+  const panicBtn = _el('panic-btn');
+  if (panicBtn) panicBtn.addEventListener('click', async () => {
+    if (!confirm('Mute ALL zones? This will silence everything.')) return;
+    const res = await patchFetch('/api/v1/mute-all', { method: 'POST' });
+    if (res && res.ok) {
+      if (appCfg) appCfg.output_muted = appCfg.output_muted.map(() => true);
+      appCfg.zones.forEach((_, i) => updateZoneMuteBtn(i, true));
+      updateMuteStatusBar();
+      toast('All zones muted', 'warn');
+    }
+  });
+
+  const unmuteBtn = _el('unmute-all-btn');
+  if (unmuteBtn) unmuteBtn.addEventListener('click', async () => {
+    const res = await patchFetch('/api/v1/unmute-all', { method: 'POST' });
+    if (res && res.ok) {
+      if (appCfg) appCfg.output_muted = appCfg.output_muted.map(() => false);
+      appCfg.zones.forEach((_, i) => updateZoneMuteBtn(i, false));
+      updateMuteStatusBar();
+      toast('All zones live', 'ok');
+    }
+  });
+}
+
+// ── WebSocket + meters ─────────────────────────────────────────────────────
 
 let _ws = null;
-let _wsReconnectTimer = null;
+let _wsTimer = null;
 
-/**
- * Initialize WebSocket connection to ws://<host>/ws
- * Handles onopen, onclose, onerror, onmessage
- */
-window.initWS = function initWS() {
-  if (_ws !== null) return;
+function initWS() {
+  if (_ws) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _ws = new WebSocket(proto + '//' + location.host + '/ws');
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${window.location.host}/ws`;
-
-  _ws = new WebSocket(url);
-
-  _ws.onopen = function() {
+  _ws.onopen = () => {
     const dot = _el('ws-dot');
-    const label = _el('ws-label');
+    const lbl = _el('ws-label');
     if (dot) dot.classList.add('connected');
-    if (label) label.textContent = 'connected';
-    if (_wsReconnectTimer) {
-      clearTimeout(_wsReconnectTimer);
-      _wsReconnectTimer = null;
-    }
+    if (lbl) lbl.textContent = 'live';
+    if (_wsTimer) { clearTimeout(_wsTimer); _wsTimer = null; }
   };
 
-  _ws.onclose = function() {
+  const onDisconnect = () => {
     const dot = _el('ws-dot');
-    const label = _el('ws-label');
+    const lbl = _el('ws-label');
     if (dot) dot.classList.remove('connected');
-    if (label) label.textContent = 'connecting…';
+    if (lbl) lbl.textContent = 'connecting…';
     _ws = null;
-    _wsReconnectTimer = setTimeout(() => {
-      window.initWS();
-    }, 3000);
+    if (!_wsTimer) _wsTimer = setTimeout(initWS, 3000);
   };
+  _ws.onclose = onDisconnect;
+  _ws.onerror = onDisconnect;
 
-  _ws.onerror = function(err) {
-    console.error('[ws] error:', err);
-    const dot = _el('ws-dot');
-    const label = _el('ws-label');
-    if (dot) dot.classList.remove('connected');
-    if (label) label.textContent = 'connecting…';
-    _ws = null;
-    if (!_wsReconnectTimer) {
-      _wsReconnectTimer = setTimeout(() => {
-        window.initWS();
-      }, 3000);
-    }
-  };
-
-  _ws.onmessage = function(event) {
-    try {
-      const frame = JSON.parse(event.data);
-      window.updateMeters(frame);
-    } catch (err) {
-      console.error('[ws] parse error:', err);
-    }
-  };
-};
-
-/**
- * Update meter fills based on RMS frame {tx_rms, rx_rms}
- * @param {{tx_rms: number[], rx_rms: number[]}} frame
- */
-window.updateMeters = function updateMeters(frame) {
-  if (!frame) return;
-
-  const { rx_rms = [], tx_rms = [] } = frame;
-
-  // Update input source meters (rx_rms)
-  rx_rms.forEach((rms, i) => {
-    const row = _el('input-gains')?.querySelector(`.gain-row[data-ch="${i}"]`);
-    if (row) {
-      const fill = row.querySelector('.meter-fill');
-      if (fill) {
-        fill.style.width = `${rms * 100}%`;
-        if (rms > 0.9) {
-          fill.classList.add('clip');
-        } else {
-          fill.classList.remove('clip');
-        }
-      }
-    }
-  });
-
-  // Update output zone meters (tx_rms)
-  tx_rms.forEach((rms, i) => {
-    const row = _el('output-gains')?.querySelector(`.gain-row[data-ch="${i}"]`);
-    if (row) {
-      const fill = row.querySelector('.meter-fill');
-      if (fill) {
-        fill.style.width = `${rms * 100}%`;
-        if (rms > 0.9) {
-          fill.classList.add('clip');
-        } else {
-          fill.classList.remove('clip');
-        }
-      }
-    }
-  });
-};
-
-// Chain initWS() to window.onAppReady — initWS fires after config loads
-(function () {
-  const _prevReady = window.onAppReady;
-  window.onAppReady = async function () {
-    if (typeof _prevReady === 'function') await _prevReady();
-    window.initWS();
-  };
-})();
-
-// --- END WEBSOCKET + METER RENDERING MODULE ---
-
-// =============================================================================
-// MUTE/PANIC BAR + TOAST NOTIFICATION MODULE (js-06)
-// =============================================================================
-
-// ---------------------------------------------------------------------------
-// Toast notification system
-// ---------------------------------------------------------------------------
-
-window.toast = function toast(msg, type = 'ok') {
-  const container = _el('toast-container');
-  if (!container) return;
-
-  const toastEl = document.createElement('div');
-  toastEl.className = `toast ${type}`;
-  toastEl.textContent = msg;
-
-  container.appendChild(toastEl);
-
-  // Track active toasts to enforce max 5
-  const toasts = container.querySelectorAll('.toast');
-  if (toasts.length > 5) {
-    const oldest = toasts[0];
-    oldest.remove();
-  }
-
-  setTimeout(() => {
-    toastEl.classList.add('show');
-  }, 50);
-
-  setTimeout(() => {
-    toastEl.classList.remove('show');
-    setTimeout(() => {
-      if (toastEl.parentElement) toastEl.remove();
-    }, 300);
-  }, 3000);
-};
-
-// ---------------------------------------------------------------------------
-// Mute UI state management
-// ---------------------------------------------------------------------------
-
-window.updateMuteUI = function updateMuteUI(cfg) {
-  const panicBar = _el('panic-bar');
-  const muteStatus = _el('mute-status');
-
-  if (!cfg || !cfg.output_muted) return;
-
-  const allMuted = cfg.output_muted.every(m => m === true);
-
-  if (allMuted) {
-    if (panicBar) panicBar.classList.add('all-muted');
-    if (muteStatus) muteStatus.textContent = '⚠ All zones muted';
-  } else {
-    if (panicBar) panicBar.classList.remove('all-muted');
-    if (muteStatus) muteStatus.textContent = '';
-  }
-};
-
-// ---------------------------------------------------------------------------
-// Mute all / Unmute all button handlers
-// ---------------------------------------------------------------------------
-
-document.addEventListener('DOMContentLoaded', () => {
-  const btnMuteAll = _el('btn-mute-all');
-  const btnUnmuteAll = _el('btn-unmute-all');
-
-  if (btnMuteAll) {
-    btnMuteAll.addEventListener('click', async () => {
-      try {
-        const res = await window.patchFetch('/api/v1/mute-all', {
-          method: 'POST',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const panicBar = _el('panic-bar');
-        const muteStatus = _el('mute-status');
-
-        if (panicBar) panicBar.classList.add('all-muted');
-        if (muteStatus) muteStatus.textContent = '⚠ All zones muted';
-
-        if (window.appConfig) {
-          window.updateMuteUI(window.appConfig);
-        }
-
-        window.toast('All zones muted', 'err');
-      } catch (err) {
-        console.error('[mute] mute-all error:', err);
-        window.toast('Mute failed', 'err');
-      }
-    });
-  }
-
-  if (btnUnmuteAll) {
-    btnUnmuteAll.addEventListener('click', async () => {
-      try {
-        const res = await window.patchFetch('/api/v1/unmute-all', {
-          method: 'POST',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const panicBar = _el('panic-bar');
-        const muteStatus = _el('mute-status');
-
-        if (panicBar) panicBar.classList.remove('all-muted');
-        if (muteStatus) muteStatus.textContent = '';
-
-        // Refresh config to sync gain rows mute state
-        await window.loadConfig();
-
-        window.toast('All zones unmuted', 'ok');
-      } catch (err) {
-        console.error('[mute] unmute-all error:', err);
-        window.toast('Unmute failed', 'err');
-      }
-    });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Per-zone mute buttons in matrix
-// ---------------------------------------------------------------------------
-
-(function initPerZoneMute() {
-  const table = _el('matrix-table');
-  if (!table) return;
-
-  // Use MutationObserver to detect when matrix is built
-  const observer = new MutationObserver(() => {
-    // Once fired, detach observer
-    observer.disconnect();
-
-    // Find all zone header <th> elements (skip corner cell)
-    const headerRow = table.querySelector('thead tr');
-    if (!headerRow) return;
-
-    const ths = Array.from(headerRow.querySelectorAll('th')).slice(1); // Skip corner
-
-    ths.forEach((th, zoneIdx) => {
-      // Check if mute button already attached
-      if (th.querySelector('.zone-mute-btn')) return;
-
-      const btn = document.createElement('button');
-      btn.className = 'zone-mute-btn';
-      btn.dataset.tx = zoneIdx;
-      btn.textContent = 'mute';
-
-      // Set initial muted state
-      if (window.appConfig && window.appConfig.output_muted[zoneIdx]) {
-        btn.classList.add('muted');
-      }
-
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-
-        const tx = zoneIdx;
-        const isMuted = btn.classList.contains('muted');
-        const endpoint = isMuted ? 'unmute' : 'mute';
-
-        try {
-          const res = await window.patchFetch(`/api/v1/zones/${tx}/${endpoint}`, {
-            method: 'POST',
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-          if (isMuted) {
-            btn.classList.remove('muted');
-          } else {
-            btn.classList.add('muted');
-          }
-
-          // Update appConfig if available
-          if (window.appConfig && window.appConfig.output_muted) {
-            window.appConfig.output_muted[tx] = !isMuted;
-          }
-
-          window.toast(`Zone ${tx} ${isMuted ? 'unmuted' : 'muted'}`, 'ok');
-        } catch (err) {
-          console.error(`[mute] zone ${tx} ${endpoint} error:`, err);
-          window.toast(`Zone ${tx} ${endpoint} failed`, 'err');
-        }
-      });
-
-      th.appendChild(btn);
-    });
-  });
-
-  observer.observe(table, {
-    childList: true,
-    subtree: true,
-  });
-})();
-
-// ---------------------------------------------------------------------------
-// onAppReady chain extension — call updateMuteUI after config loads
-// ---------------------------------------------------------------------------
-
-(function () {
-  const _prevReady2 = window.onAppReady;
-  window.onAppReady = async function () {
-    if (typeof _prevReady2 === 'function') await _prevReady2();
-    if (window.appConfig) {
-      window.updateMuteUI(window.appConfig);
-    }
-  };
-})();
-
-// --- END MUTE/PANIC BAR + TOAST NOTIFICATION MODULE (js-06) ---
-
-// =============================================================================
-// GAIN SLIDERS MODULE (js-04)
-// =============================================================================
-
-/**
- * Debounce helper: delays function execution until ms have passed with no calls.
- * @param {Function} fn
- * @param {number} ms
- * @returns {Function}
- */
-function debounce(fn, ms) {
-  let timeoutId = null;
-  return function debounced(...args) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn.apply(this, args), ms);
+  _ws.onmessage = (event) => {
+    try { updateMeters(JSON.parse(event.data)); } catch {}
   };
 }
 
-/**
- * Build input and output gain slider sections.
- * Called by window.loadConfig() after config is fetched.
- * @param {Object} cfg
- * @param {string[]} cfg.sources - input source names (rx channels)
- * @param {string[]} cfg.zones - output zone names (tx channels)
- * @param {number[]} cfg.input_gain_db - initial dB values for sources
- * @param {number[]} cfg.output_gain_db - initial dB values for zones
- */
-window.buildGainRows = function buildGainRows(cfg) {
-  const { sources = [], zones = [], input_gain_db = [], output_gain_db = [] } = cfg;
+function updateMeters(frame) {
+  const rxRms = frame.rx_rms || [];
+  const txRms = frame.tx_rms || [];
 
-  // --- Build input gains section ---
-  const inputContainer = document.getElementById('input-gains');
-  if (inputContainer) {
-    inputContainer.innerHTML = '';
+  rxRms.forEach((rms, i) => {
+    const fill = _el('rm-' + i);
+    if (!fill) return;
+    fill.style.width = Math.min(rms * 100, 100) + '%';
+    fill.className = 'src-meter-fill' + (rms > 0.9 ? ' clip' : rms > 0.7 ? ' hot' : '');
+  });
 
-    sources.forEach((srcName, i) => {
-      const gainDb = input_gain_db[i] ?? 0;
-      const row = document.createElement('div');
-      row.className = 'gain-row';
-      row.dataset.ch = i;
+  txRms.forEach((rms, i) => {
+    const fill = _el('zm-' + i);
+    if (!fill) return;
+    fill.style.width = Math.min(rms * 100, 100) + '%';
+    fill.className = 'zone-meter-fill' + (rms > 0.9 ? ' clip' : rms > 0.7 ? ' hot' : '');
+  });
+}
 
-      const label = document.createElement('span');
-      label.className = 'gain-label';
-      label.textContent = srcName;
+// ── Scenes ─────────────────────────────────────────────────────────────────
 
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.className = 'gain-slider';
-      slider.min = '-60';
-      slider.max = '12';
-      slider.step = '0.5';
-      slider.value = gainDb;
+function initScenes() {
+  const toggleBtn = _el('btn-scenes-toggle');
+  if (toggleBtn) toggleBtn.addEventListener('click', () => {
+    const panel = _el('scenes-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) loadScenes();
+  });
 
-      const valDisplay = document.createElement('span');
-      valDisplay.className = 'gain-val';
-      valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
+  const closeBtn = _el('btn-close-scenes');
+  if (closeBtn) closeBtn.addEventListener('click', () => {
+    _el('scenes-panel').hidden = true;
+  });
 
-      const meter = document.createElement('div');
-      meter.className = 'meter-strip';
-      const fill = document.createElement('div');
-      fill.className = 'meter-fill';
-      meter.appendChild(fill);
-
-      row.appendChild(label);
-      row.appendChild(slider);
-      row.appendChild(valDisplay);
-      row.appendChild(meter);
-
-      // Live feedback on input event
-      slider.addEventListener('input', function() {
-        const val = parseFloat(this.value);
-        valDisplay.textContent = `${val.toFixed(1)} dB`;
-      });
-
-      // Debounced API call on change event
-      const debouncedSave = debounce(async function() {
-        const val = parseFloat(slider.value);
-        try {
-          const res = await window.patchFetch('/api/v1/gain/input', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: i, db: val }),
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        } catch (err) {
-          console.error('[gain] input save error:', err);
-          if (typeof window.toast === 'function') window.toast('Gain error', 'err');
-          slider.value = gainDb;
-          valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
-        }
-      }, 300);
-
-      slider.addEventListener('change', debouncedSave);
-
-      inputContainer.appendChild(row);
+  const saveBtn = _el('btn-save-scene');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const nameInput = _el('scene-name-input');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!name) { toast('Enter a scene name', 'warn'); return; }
+    const res = await patchFetch('/api/v1/scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
     });
-  }
-
-  // --- Build output gains section ---
-  const outputContainer = document.getElementById('output-gains');
-  if (outputContainer) {
-    outputContainer.innerHTML = '';
-
-    zones.forEach((zoneName, i) => {
-      const gainDb = output_gain_db[i] ?? 0;
-      const row = document.createElement('div');
-      row.className = 'gain-row';
-      row.dataset.ch = i;
-
-      const label = document.createElement('span');
-      label.className = 'gain-label';
-      label.textContent = zoneName;
-
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.className = 'gain-slider';
-      slider.min = '-60';
-      slider.max = '12';
-      slider.step = '0.5';
-      slider.value = gainDb;
-
-      const valDisplay = document.createElement('span');
-      valDisplay.className = 'gain-val';
-      valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
-
-      const meter = document.createElement('div');
-      meter.className = 'meter-strip';
-      const fill = document.createElement('div');
-      fill.className = 'meter-fill';
-      meter.appendChild(fill);
-
-      row.appendChild(label);
-      row.appendChild(slider);
-      row.appendChild(valDisplay);
-      row.appendChild(meter);
-
-      // Live feedback on input event
-      slider.addEventListener('input', function() {
-        const val = parseFloat(this.value);
-        valDisplay.textContent = `${val.toFixed(1)} dB`;
-      });
-
-      // Debounced API call on change event
-      const debouncedSave = debounce(async function() {
-        const val = parseFloat(slider.value);
-        try {
-          const res = await window.patchFetch('/api/v1/gain/output', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: i, db: val }),
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        } catch (err) {
-          console.error('[gain] output save error:', err);
-          if (typeof window.toast === 'function') window.toast('Gain error', 'err');
-          slider.value = gainDb;
-          valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
-        }
-      }, 300);
-
-      slider.addEventListener('change', debouncedSave);
-
-      outputContainer.appendChild(row);
-    });
-  }
-};
-
-// --- END GAIN SLIDERS MODULE (js-04) ---
-
-// --- END WEBSOCKET + METER RENDERING MODULE ---
-
-// =============================================================================
-// DANTE-PATCHBOX v2 — SCENES PANEL MODULE (js-05)
-// =============================================================================
-
-/**
- * Load scenes from /api/v1/scenes and render them in #scene-list.
- * Each scene is displayed as a row with load and delete buttons.
- * The active scene gets the 'active' class.
- * @returns {Promise<void>}
- */
-window.loadScenes = async function loadScenes() {
-  try {
-    const res = await window.patchFetch('/api/v1/scenes');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const data = await res.json();
-    const { scenes = [], active = null } = data;
-
-    const container = document.getElementById('scene-list');
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    scenes.forEach(scene => {
-      const { id, name, description = '' } = scene;
-
-      const row = document.createElement('div');
-      row.className = 'scene-row';
-      row.dataset.name = name;
-      if (name === active) {
-        row.classList.add('active');
-      }
-
-      const sname = document.createElement('span');
-      sname.className = 'sname';
-      sname.textContent = name;
-
-      const sdesc = document.createElement('span');
-      sdesc.className = 'sdesc';
-      sdesc.textContent = description || '';
-
-      const btnLoad = document.createElement('button');
-      btnLoad.className = 'btn btn-load';
-      btnLoad.textContent = 'Load';
-
-      const btnDel = document.createElement('button');
-      btnDel.className = 'btn danger btn-del';
-      btnDel.textContent = 'Delete';
-
-      row.appendChild(sname);
-      row.appendChild(sdesc);
-      row.appendChild(btnLoad);
-      row.appendChild(btnDel);
-
-      container.appendChild(row);
-    });
-  } catch (err) {
-    console.error('[scenes] load error:', err);
-    if (typeof window.toast === 'function') window.toast('Failed to load scenes', 'err');
-  }
-};
-
-// ---------------------------------------------------------------------------
-// Save scene event handler
-// ---------------------------------------------------------------------------
-
-(function () {
-  function handleSaveScene() {
-    const input = document.getElementById('scene-name-input');
-    if (!input) return;
-
-    const name = input.value.trim();
-    if (!name) {
-      input.style.borderColor = 'red';
-      setTimeout(() => {
-        input.style.borderColor = '';
-      }, 500);
-      return;
-    }
-
-    (async () => {
-      try {
-        const res = await window.patchFetch('/api/v1/scenes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        await window.loadScenes();
-        input.value = '';
-        if (typeof window.toast === 'function') window.toast('Scene saved', 'ok');
-      } catch (err) {
-        console.error('[scenes] save error:', err);
-        if (typeof window.toast === 'function') window.toast('Save failed', 'err');
-      }
-    })();
-  }
-
-  const btn = document.getElementById('btn-save-scene');
-  if (btn) btn.addEventListener('click', handleSaveScene);
-})();
-
-// ---------------------------------------------------------------------------
-// Load and Delete scene event delegation
-// ---------------------------------------------------------------------------
-
-(function () {
-  const container = document.getElementById('scene-list');
-  if (!container) return;
-
-  container.addEventListener('click', async e => {
-    const row = e.target.closest('.scene-row');
-    if (!row) return;
-
-    const sceneName = row.dataset.name;
-    if (!sceneName) return;
-
-    if (e.target.classList.contains('btn-load')) {
-      try {
-        const res = await window.patchFetch(`/api/v1/scenes/${sceneName}/load`, {
-          method: 'POST',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        await window.loadConfig();
-        await window.loadScenes();
-        if (typeof window.toast === 'function') window.toast('Scene loaded', 'ok');
-      } catch (err) {
-        console.error('[scenes] load error:', err);
-        if (typeof window.toast === 'function') window.toast('Load failed', 'err');
-      }
-    } else if (e.target.classList.contains('btn-del')) {
-      try {
-        const res = await window.patchFetch(`/api/v1/scenes/${sceneName}`, {
-          method: 'DELETE',
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        await window.loadScenes();
-        if (typeof window.toast === 'function') window.toast('Scene deleted', 'ok');
-      } catch (err) {
-        console.error('[scenes] delete error:', err);
-        if (typeof window.toast === 'function') window.toast('Delete failed', 'err');
-      }
+    if (res && res.ok) {
+      toast('Scene "' + name + '" saved', 'ok');
+      if (nameInput) nameInput.value = '';
+      loadScenes();
     }
   });
-})();
 
-// ---------------------------------------------------------------------------
-// Extend onAppReady chain to load scenes
-// ---------------------------------------------------------------------------
+  const nameInput = _el('scene-name-input');
+  if (nameInput) nameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { const b = _el('btn-save-scene'); if (b) b.click(); }
+  });
+}
 
-(function () {
-  const _prevReady = window.onAppReady;
-  window.onAppReady = async function () {
-    if (typeof _prevReady === 'function') await _prevReady();
-    await window.loadScenes();
-  };
-})();
+async function loadScenes() {
+  const res = await patchFetch('/api/v1/scenes');
+  if (!res || !res.ok) return;
+  const data = await res.json();
+  const scenes = data.scenes || [];
+  const active = data.active || null;
 
-// --- END SCENES PANEL MODULE (js-05) ---
+  const activeNameEl = _el('active-scene-name');
+  if (activeNameEl) activeNameEl.textContent = active || '—';
+
+  const list = _el('scene-list');
+  list.innerHTML = '';
+
+  if (!scenes.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text-dim);padding:8px 0">No scenes saved yet.</div>';
+    return;
+  }
+
+  scenes.forEach(scene => {
+    const row = document.createElement('div');
+    row.className = 'scene-row' + (scene.name === active ? ' active' : '');
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'scene-row-name';
+    nameSpan.textContent = scene.name;
+
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'scene-btn load';
+    loadBtn.textContent = 'LOAD';
+    loadBtn.addEventListener('click', async () => {
+      const r = await patchFetch(
+        '/api/v1/scenes/' + encodeURIComponent(scene.name) + '/load',
+        { method: 'POST' }
+      );
+      if (r && r.ok) {
+        toast('Scene "' + scene.name + '" loaded', 'ok');
+        const freshCfg = await fetch('/api/v1/config').then(r2 => r2.json());
+        buildConsole(freshCfg);
+        loadScenes();
+      }
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'scene-btn del';
+    delBtn.textContent = 'DEL';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Delete scene "' + scene.name + '"?')) return;
+      const r = await patchFetch(
+        '/api/v1/scenes/' + encodeURIComponent(scene.name),
+        { method: 'DELETE' }
+      );
+      if (r && r.ok) { toast('Deleted "' + scene.name + '"', 'ok'); loadScenes(); }
+    });
+
+    row.append(nameSpan, loadBtn, delBtn);
+    list.appendChild(row);
+  });
+}
+
+// ── Inline name editing ────────────────────────────────────────────────────
+
+function makeEditable(el, onSave) {
+  el.addEventListener('click', () => {
+    if (el.querySelector('input')) return;
+    const val = el.textContent;
+    const input = document.createElement('input');
+    input.value = val;
+    el.textContent = '';
+    el.appendChild(input);
+    input.focus();
+    input.select();
+
+    const finish = async (save) => {
+      const newVal = input.value.trim() || val;
+      el.textContent = newVal;
+      if (save && newVal !== val) {
+        try {
+          await onSave(newVal);
+          toast('Renamed', 'ok');
+        } catch {
+          el.textContent = val;
+          toast('Rename failed', 'err');
+        }
+      }
+    };
+
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { finish(false); }
+    });
+  });
+}

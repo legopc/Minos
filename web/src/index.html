@@ -3,96 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dante-patchbox</title>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <title>Dante Patchbox</title>
+  <!-- Preconnect for Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Bebas Neue (headers) + JetBrains Mono (labels/values) -->
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- Login overlay -->
-  <div class="login-overlay" id="login-overlay">
-    <div class="login-box">
-      <h2>dante-patchbox</h2>
-      <div class="login-field">
-        <label for="login-user">Username</label>
-        <input type="text" id="login-user" autocomplete="username">
+  <!-- HEADER (sticky) -->
+  <header id="app-header">
+    <div class="header-left">
+      <span class="app-title">Dante Patchbox</span>
+      <span class="device-name" id="device-name"></span>
+    </div>
+    <div class="header-right">
+      <div class="ws-badge">
+        <span class="ws-dot" id="ws-dot"></span>
+        <span class="ws-label" id="ws-label">connecting…</span>
       </div>
-      <div class="login-field">
-        <label for="login-pass">Password</label>
-        <input type="password" id="login-pass" autocomplete="current-password">
+      <span class="user-chip" id="user-chip"></span>
+      <button class="btn-scenes" id="btn-scenes-toggle" title="Scenes">SCENES</button>
+      <button class="btn-logout" id="btn-logout">LOGOUT</button>
+    </div>
+  </header>
+
+  <!-- PANIC STRIP (sticky below header) -->
+  <div class="panic-strip" id="panic-strip">
+    <button class="btn-panic" id="panic-btn">⚠ PANIC MUTE ALL</button>
+    <button class="btn-unmute-all" id="unmute-all-btn">UNMUTE ALL</button>
+    <span class="active-scene-label">Scene: <span id="active-scene-name">—</span></span>
+    <span class="mute-status" id="mute-status"></span>
+  </div>
+
+  <!-- MATRIX CONSOLE (fills remaining viewport) -->
+  <div class="console-wrap" id="console-wrap">
+    <table class="console-table" id="matrix-table">
+      <!-- Built dynamically by app.js buildConsole() -->
+    </table>
+  </div>
+
+  <!-- SCENES PANEL (hidden by default, collapsible bottom) -->
+  <div class="scenes-panel" id="scenes-panel" hidden>
+    <div class="scenes-panel-head">
+      <span class="scenes-panel-title">SCENES</span>
+      <button class="btn-close-scenes" id="btn-close-scenes">✕</button>
+    </div>
+    <div class="scenes-panel-body">
+      <div class="save-row">
+        <input type="text" id="scene-name-input" placeholder="Scene name…" autocomplete="off">
+        <button class="btn btn-save" id="btn-save-scene">SAVE CURRENT</button>
       </div>
-      <button id="login-btn" class="login-btn">Login</button>
-      <div class="login-error" id="login-error"></div>
+      <div class="scene-list" id="scene-list"></div>
     </div>
   </div>
 
-  <!-- Main app (hidden until authenticated) -->
-  <div id="app" style="display:none">
-    <header>
-      <div class="header-left">
-        <span class="app-title">🦞 dante-patchbox</span>
-        <span id="device-meta" class="dim-text"></span>
+  <!-- LOGIN OVERLAY (injected by app.js if not authed) -->
+  <div class="login-overlay" id="login-overlay" hidden>
+    <div class="login-box">
+      <h2 class="login-title">AUTHENTICATION REQUIRED</h2>
+      <div class="login-field">
+        <label for="login-username">USERNAME</label>
+        <input type="text" id="login-username" autocomplete="username" spellcheck="false">
       </div>
-      <div class="header-right">
-        <span id="user-badge" class="dim-text"></span>
-        <button id="logout-btn" class="btn-logout">logout</button>
-        <span class="ws-badge">
-          <span class="ws-dot" id="ws-dot"></span>
-          <span id="ws-label">connecting</span>
-        </span>
+      <div class="login-field">
+        <label for="login-password">PASSWORD</label>
+        <input type="password" id="login-password" autocomplete="current-password">
       </div>
-    </header>
-
-    <main class="container">
-      <!-- Panic / emergency mute bar -->
-      <div class="panic-bar" id="panic-bar">
-        <button class="btn-panic" id="btn-mute-all">⚠ MUTE ALL</button>
-        <button class="btn-unmute-all" id="btn-unmute-all">Unmute All</button>
-        <span id="mute-status" class="dim-text"></span>
-      </div>
-
-      <!-- Routing Matrix -->
-      <section id="section-matrix">
-        <div class="section-head"><h2>Routing Matrix</h2></div>
-        <div class="section-body">
-          <div class="matrix-scroll">
-            <table class="matrix-table" id="matrix-table"></table>
-          </div>
-        </div>
-      </section>
-
-      <!-- Input Gains -->
-      <section id="section-input-gains">
-        <div class="section-head"><h2>Input Gains — Sources</h2></div>
-        <div class="section-body">
-          <div class="gains-grid" id="input-gains"></div>
-        </div>
-      </section>
-
-      <!-- Output Gains -->
-      <section id="section-output-gains">
-        <div class="section-head"><h2>Output Gains — Zones</h2></div>
-        <div class="section-body">
-          <div class="gains-grid" id="output-gains"></div>
-        </div>
-      </section>
-
-      <!-- Scenes -->
-      <section id="section-scenes">
-        <div class="section-head"><h2>Scenes</h2></div>
-        <div class="section-body">
-          <div class="scenes-panel">
-            <div class="save-row">
-              <input type="text" id="scene-name-input" placeholder="Scene name…">
-              <button class="btn" id="btn-save-scene">Save Current</button>
-            </div>
-            <div id="scene-list"></div>
-          </div>
-        </div>
-      </section>
-    </main>
+      <div class="login-error" id="login-error"></div>
+      <button class="login-btn" id="login-btn">AUTHENTICATE</button>
+    </div>
   </div>
 
-  <!-- Toast notifications -->
+  <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container"></div>
 
   <script src="/app.js" defer></script>

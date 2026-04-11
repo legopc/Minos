@@ -2,56 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>patchbox — zone</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Patchbox Zone</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
-<body class="zone-page">
-  <header>
-    <div class="header-left">
-      <span class="app-title" style="font-size:11px;color:var(--dim)">🦞 dante-patchbox</span>
-      <span id="zone-title" class="zone-name"></span>
-    </div>
-    <div class="header-right">
-      <a href="/" id="admin-link" class="back-link">← admin</a>
-      <span class="ws-badge">
-        <span class="ws-dot" id="ws-dot"></span>
-      </span>
-    </div>
-  </header>
+<body>
+  <div class="zone-view">
 
-  <div class="zone-container">
-
-    <!-- Source selector -->
-    <section>
-      <h2>Source</h2>
-      <div class="source-list" id="source-list">
-        <!-- buttons injected by zone.js -->
-      </div>
-    </section>
-
-    <!-- Volume -->
-    <section>
-      <h2>Volume</h2>
-      <div class="vol-wrap">
-        <div class="vol-row">
-          <input type="range" id="vol-slider" min="-60" max="12" step="0.5" value="0">
-          <span class="vol-val" id="vol-val">0.0 dB</span>
+    <!-- Zone header -->
+    <header class="zone-view-header">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div class="zone-view-title" id="zone-title">Loading…</div>
+          <div style="font-size:10px; color:var(--text-dim); letter-spacing:0.06em; margin-top:2px;">
+            AUDIO ZONE
+          </div>
         </div>
-        <div class="meter-strip">
-          <div class="meter-fill" id="zone-meter-fill"></div>
+        <div class="ws-badge">
+          <span class="ws-dot" id="ws-dot"></span>
+          <span class="ws-label" id="ws-label">connecting…</span>
         </div>
       </div>
-    </section>
+    </header>
 
-    <!-- Mute zone -->
-    <section>
-      <button id="mute-btn" class="mute-zone-btn">MUTE ZONE</button>
-    </section>
+    <!-- Source routing list -->
+    <div class="zone-view-body">
+      <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-dim); margin-bottom:4px;">
+        AUDIO SOURCES
+      </div>
+      <div id="source-list">
+        <!-- Populated by zone.js -->
+      </div>
+    </div>
+
+    <!-- Footer: volume + mute -->
+    <footer class="zone-footer">
+      <div class="zone-volume-wrap">
+        <div class="zone-volume-label">ZONE VOLUME</div>
+        <input type="range" class="zone-vol-fader" id="output-fader"
+               min="-30" max="6" step="0.5" value="0">
+        <div class="zone-meter-bar">
+          <div class="meter-fill" id="output-meter"></div>
+        </div>
+      </div>
+      <span class="zone-vol-db" id="output-db">0.0 dB</span>
+      <button class="zone-mute-big" id="mute-btn">MUTE</button>
+    </footer>
 
   </div>
 
+  <!-- Login overlay (injected if auth needed) -->
+  <div class="login-overlay" id="login-overlay" hidden>
+    <div class="login-box">
+      <h2 class="login-title">AUTHENTICATION REQUIRED</h2>
+      <div class="login-field">
+        <label for="z-login-username">USERNAME</label>
+        <input type="text" id="z-login-username" autocomplete="username" spellcheck="false">
+      </div>
+      <div class="login-field">
+        <label for="z-login-password">PASSWORD</label>
+        <input type="password" id="z-login-password" autocomplete="current-password">
+      </div>
+      <div class="login-error" id="z-login-error"></div>
+      <button class="login-btn" id="z-login-btn">AUTHENTICATE</button>
+    </div>
+  </div>
+
+  <!-- Toast container -->
   <div class="toast-container" id="toast-container"></div>
 
   <script src="/zone.js" defer></script>
