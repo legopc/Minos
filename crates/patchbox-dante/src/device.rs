@@ -17,6 +17,9 @@ pub struct DanteDevice {
     pub device_name: String,
     pub n_rx: usize,
     pub n_tx: usize,
+    /// Keeps the DeviceServer alive — dropping it destroys the mDNS broadcaster.
+    #[cfg(feature = "inferno")]
+    server: std::sync::Mutex<Option<inferno_aoip::device_server::DeviceServer>>,
 }
 
 impl DanteDevice {
@@ -25,6 +28,8 @@ impl DanteDevice {
             device_name: device_name.into(),
             n_rx,
             n_tx,
+            #[cfg(feature = "inferno")]
+            server: std::sync::Mutex::new(None),
         }
     }
 
@@ -257,6 +262,10 @@ impl DanteDevice {
             write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
             // current_timestamp is intentionally NOT touched here — it belongs to the TX transmitter
         })).await;
+
+        // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
+        // which kills the mDNS broadcaster and removes the device from Dante Controller.
+        *self.server.lock().unwrap() = Some(server);
 
         Ok(())
     }
