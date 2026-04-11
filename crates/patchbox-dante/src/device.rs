@@ -108,6 +108,15 @@ impl DanteDevice {
                 tracing::info!(clock = %cfg_snapshot.dante_clock_path, "using PTP clock");
             }
         }
+        // LAN-optimised latency settings (see LATENCY TUNING comment near LEAD_SAMPLES).
+        // 1 ms: minimum for LAN Dante. Drives three things:
+        //   - flow negotiation minimum (max of our 1ms + sender's min, usually 1ms → 1ms total)
+        //   - mDNS-advertised TX latency (what downstream receivers buffer)
+        //   - mDNS-advertised RX latency capability (what DC picks for flows into us)
+        settings.tx_latency_ns = 1_000_000;
+        settings.self_info.tx_latency_ns = 1_000_000;
+        settings.self_info.latency_ns = 1_000_000;
+        settings.rx_jitter_samples = 192;   // 4 ms hole-fix wait — fine for a clean LAN
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 
@@ -202,11 +211,34 @@ impl DanteDevice {
         // Used in the 5-second alignment log to verify lead is stable; not used for write_pos.
         let current_ts_cb = Arc::clone(&current_timestamp);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
+        // ── LATENCY TUNING ──────────────────────────────────────────────
+        // Three knobs control audio playthrough latency:
+        //
+        //   1. READ_INTERVAL in inferno's samples_collector.rs (currently 2 ms)
+        //      Each callback delivers READ_INTERVAL_MS * 48 samples.
+        //      Minimum average audio batching delay = READ_INTERVAL / 2.
+        //
+        //   2. LEAD_SAMPLES (below) — TX ring write-ahead.
+        //      Audio written here won't be transmitted until LEAD_SAMPLES / 48000 s later.
+        //      MUST exceed READ_INTERVAL_MS * 48 samples to prevent TX read-ahead gaps.
+        //      Safety ladder: 192 (4 ms, 2 ms margin) → 256 (5.3 ms) → 384 (8 ms, safe).
+        //
+        //   3. settings.tx_latency_ns — Dante TX flow latency and flow negotiation minimum.
+        //      Also controls self_info.latency_ns (mDNS-advertised RX capability) and
+        //      self_info.tx_latency_ns (advertised TX latency to downstream receivers).
+        //      At 1 ms: max(MXWANI8_min=1ms, our_min=1ms) = 1 ms jitter-buffer hold-back.
+        //
+        // Total audio latency ≈ flow_latency + READ_INTERVAL/2 + LEAD/48000 + tx_latency_ns.
+        // At current settings: 1 ms + 1 ms + 4 ms + 1 ms ≈ 7 ms end-to-end.
+        //
+        // If pops return after reducing LEAD_SAMPLES, increase it (Tokio timer jitter exceeded
+        // the safety margin). Step up: 192 → 256 → 384. Never below READ_INTERVAL_MS * 48 = 96.
+        // ────────────────────────────────────────────────────────────────
         // LEAD_SAMPLES: how far ahead write_pos stays of the TX read position.
-        // Must exceed one callback's worth of samples (READ_INTERVAL=50ms ≈ 2400 samples)
-        // so TX never reads positions we haven't written yet.  4096 gives ~35ms headroom
-        // above the 50ms callback period and is well under RING_SIZE/2 (no wrap-around risk).
-        const LEAD_SAMPLES: usize = 4096;
+        // Must exceed one callback's worth of samples (READ_INTERVAL=2ms = 96 samples).
+        // 192 = 4 ms write-ahead = 2 ms safety margin above the 2 ms callback period.
+        // If pops return: step up to 256 (5.3 ms) or 384 (8 ms, very safe).
+        const LEAD_SAMPLES: usize = 192;
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
@@ -290,12 +322,12 @@ impl DanteDevice {
             }
             write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
 
-            // Diagnostic: log ring alignment every ~100 callbacks (≈5 s) so we can verify lead.
+            // Diagnostic: log ring alignment every ~2500 callbacks (≈5 s at 2ms READ_INTERVAL).
             {
                 use std::sync::atomic::AtomicUsize;
                 static CB_COUNT: AtomicUsize = AtomicUsize::new(0);
                 let n = CB_COUNT.fetch_add(1, AOrdering::Relaxed);
-                if n % 100 == 0 {
+                if n % 2500 == 0 {
                     let tx_ptp = current_ts_cb.load(AOrdering::Acquire);
                     if tx_ptp != 0 && tx_ptp != usize::MAX {
                         let lead = write_pos.wrapping_sub(
