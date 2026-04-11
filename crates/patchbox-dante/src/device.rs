@@ -106,23 +106,6 @@ impl DanteDevice {
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 
-        // Capture PTP time now — DeviceServer::start() already waited for clock sync
-        // This is used to align the TX ring buffer coordinate system
-        let ptp_start: Clock = {
-            use inferno_aoip::device_server::{MediaClock, RealTimeClockReceiver};
-            let mut clock_rx: RealTimeClockReceiver = server.get_realtime_clock_receiver();
-            clock_rx.update();
-            if let Some(overlay) = clock_rx.get() {
-                let mut mc = MediaClock::new(false);
-                mc.update_overlay(*overlay);
-                mc.wrapping_now_in_timebase(48000).unwrap_or(0)
-            } else {
-                tracing::warn!("PTP clock overlay not available after DeviceServer start — start_time = 0");
-                0
-            }
-        };
-        tracing::info!(ptp_start, "PTP start time captured");
-
         // TX ring buffer setup — non-interleaved, power-of-2 size
         const RING_SIZE: usize = 4096;
         let n_tx = self.n_tx;
@@ -161,12 +144,41 @@ impl DanteDevice {
             )
             .await;
 
-        tracing::info!("TX transmitter armed with ptp_start={}", ptp_start);
+        tracing::info!("TX transmitter armed — polling for PTP clock");
 
-        // Send PTP start time NOW — no longer needs to happen inside the RX callback
+        // The legopc/inferno fork no longer blocks in DeviceServer::start() until
+        // the clock is ready (the wait loop in make_shared_media_clock is commented out).
+        // We must yield to the tokio runtime in a loop so the background clock-receiver
+        // task can deliver the first ClockOverlay before we send start_time.
+        let ptp_start: Clock = {
+            use inferno_aoip::device_server::{MediaClock, RealTimeClockReceiver};
+            let mut clock_rx: RealTimeClockReceiver = server.get_realtime_clock_receiver();
+            let mut result: Clock = 0;
+            for attempt in 0..200 {  // up to 2 seconds (200 × 10ms)
+                clock_rx.update();
+                if let Some(overlay) = clock_rx.get() {
+                    let mut mc = MediaClock::new(false);
+                    mc.update_overlay(*overlay);
+                    if let Some(ts) = mc.wrapping_now_in_timebase(48000) {
+                        tracing::info!(ptp_start = ts, attempt, "PTP clock ready");
+                        result = ts;
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            if result == 0 {
+                tracing::warn!("PTP clock still unavailable after 2s — start_time = 0");
+            }
+            result
+        };
+
+        // Send start_time immediately — callback's write_pos starts at 0,
+        // so ptp_start anchors ring coordinate 0 to the current PTP instant.
         if let Err(e) = start_tx.send(ptp_start) {
             tracing::warn!("Failed to send TX start time: {:?}", e);
         }
+        tracing::info!(ptp_start, "TX start time sent");
 
         // Triple buffer for RT-safe config delivery to audio callback
         // The audio callback NEVER touches the RwLock — zero contention.
