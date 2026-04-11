@@ -151,10 +151,31 @@ impl DanteDevice {
 
         tracing::info!("TX transmitter armed — polling for PTP clock");
 
-        // The legopc/inferno fork no longer blocks in DeviceServer::start() until
-        // start_time is sent from inside the first RX callback (see below).
-        // This ensures write_pos and start_time are captured at the same PTP instant,
-        // so ring coordinate 0 exactly matches what the TX transmitter expects.
+        // Poll for PTP clock and record the wall-clock instant of capture.
+        // We use Instant to estimate elapsed samples at first-callback time,
+        // aligning write_pos without needing TX flows to be active yet.
+        let (ptp_at_poll, instant_at_poll): (Clock, std::time::Instant) = {
+            use inferno_aoip::device_server::{MediaClock, RealTimeClockReceiver};
+            let mut clock_rx: RealTimeClockReceiver = server.get_realtime_clock_receiver();
+            let mut ptp: Clock = 0;
+            for attempt in 0..200 {
+                clock_rx.update();
+                if let Some(overlay) = clock_rx.get() {
+                    let mut mc = MediaClock::new(false);
+                    mc.update_overlay(*overlay);
+                    if let Some(ts) = mc.wrapping_now_in_timebase(48000) {
+                        tracing::info!(ptp_at_poll = ts, attempt, "PTP clock polled");
+                        ptp = ts;
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            if ptp == 0 {
+                tracing::warn!("PTP clock not available after 2s — ring alignment may be off");
+            }
+            (ptp, std::time::Instant::now())
+        };
 
         // Triple buffer for RT-safe config delivery to audio callback
         // The audio callback NEVER touches the RwLock — zero contention.
@@ -174,10 +195,6 @@ impl DanteDevice {
         });
 
         let tx_bufs_cb = tx_bufs.clone();
-        // READ-ONLY reference to current_timestamp — lets us snap the TX transmitter's
-        // live PTP position on the very first callback to align write_pos with the ring.
-        // We never write back to it — the TX transmitter owns it.
-        let current_ts_cb = Arc::clone(&current_timestamp);
         let write_pos_cb = Arc::clone(&write_pos_atomic);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
 
@@ -224,17 +241,22 @@ impl DanteDevice {
             }
 
             // Write processed samples into TX ring buffers.
-            // On the very first block: snap write_pos to the TX transmitter's live PTP
-            // position (stored in current_timestamp) so ring coordinates align.
-            // We only READ current_timestamp here — the TX transmitter owns writes to it.
+            // On the very first block: align write_pos using wall-clock elapsed time since
+            // PTP was polled. TX reads at (ptp_now - ptp_at_poll) % RING_SIZE; we write
+            // starting at elapsed_samples % RING_SIZE — both measure the same elapsed time.
             if let Some(tx) = start_tx_opt.take() {
-                let ptp_now = current_ts_cb.load(AOrdering::Acquire);
-                let aligned = if ptp_now == 0 || ptp_now == usize::MAX { 0 } else { ptp_now };
-                write_pos_cb.store(aligned, AOrdering::Release);
-                if let Err(e) = tx.send(aligned as Clock) {
+                let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
+                let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
+                write_pos_cb.store(elapsed_samples, AOrdering::Release);
+                if let Err(e) = tx.send(ptp_at_poll as Clock) {
                     tracing::warn!("Failed to send TX start time: {e}");
                 } else {
-                    tracing::info!(ptp_start = aligned, "TX transmitter started — ring aligned");
+                    tracing::info!(
+                        ptp_at_poll,
+                        elapsed_samples,
+                        write_pos = elapsed_samples,
+                        "TX ring aligned via wall clock"
+                    );
                 }
             }
             let write_pos = write_pos_cb.load(AOrdering::Acquire);

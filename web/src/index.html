@@ -1,454 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>dante-patchbox</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #0d0d0d; --surface: #161616; --surface2: #1e1e1e;
-    --border: #2a2a2a; --text: #e0e0e0; --dim: #555;
-    --amber: #f5a623; --green: #52e08a; --red: #e05252;
-  }
-  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
-  header { padding: 14px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg); z-index: 100; }
-  header h1 { color: var(--amber); font-size: 16px; font-weight: 600; }
-  .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 6px; transition: background 0.3s; }
-  .ws-dot.connected { background: var(--green); }
-  .header-right { display: flex; align-items: center; gap: 16px; color: var(--dim); font-size: 11px; }
-  .container { padding: 24px; display: flex; flex-direction: column; gap: 32px; max-width: 1200px; }
-  section h2 { color: var(--amber); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-  section h2::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .matrix-wrap { overflow-x: auto; }
-  table { border-collapse: collapse; }
-  th { color: var(--dim); font-weight: 400; font-size: 11px; padding: 6px 14px; white-space: nowrap; text-align: center; }
-  th.row-header { text-align: left; min-width: 130px; color: var(--text); }
-  td { padding: 4px 14px; text-align: center; border: 1px solid var(--border); }
-  td.zone-cell { text-align: left; background: var(--surface); padding: 6px 14px; }
-  td.zone-cell a { color: var(--amber); text-decoration: none; font-size: 12px; }
-  td.zone-cell a:hover { text-decoration: underline; }
-  .cb-cell { background: var(--surface); }
-  .cb-cell:has(input:checked) { background: #1a1500; }
-  input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--amber); cursor: pointer; }
-  .meter { width: 100%; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 3px; }
-  .meter-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width 0.05s; width: 0%; }
-  .meter-fill.hot { background: var(--amber); }
-  .meter-fill.clip { background: var(--red); }
-  .gains { display: flex; flex-direction: column; gap: 12px; }
-  .gain-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 12px; }
-  .gain-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
-  .gain-right { display: flex; flex-direction: column; gap: 3px; }
-  input[type=range] { width: 100%; accent-color: var(--amber); cursor: pointer; height: 3px; }
-  .gain-value { text-align: right; color: var(--amber); font-size: 11px; }
-  /* Scenes */
-  .scenes-panel { display: flex; flex-direction: column; gap: 12px; }
-  .scene-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); padding: 10px 14px; border-radius: 4px; }
-  .scene-row.active { border-color: var(--amber); background: #1a1500; }
-  .scene-name { flex: 1; font-size: 13px; }
-  .scene-desc { color: var(--dim); font-size: 11px; flex: 2; }
-  .btn { padding: 5px 12px; background: transparent; border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 11px; cursor: pointer; border-radius: 3px; transition: border-color 0.15s; }
-  .btn:hover { border-color: var(--amber); color: var(--amber); }
-  .btn.danger:hover { border-color: var(--red); color: var(--red); }
-  .save-form { display: flex; gap: 8px; }
-  .save-form input { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 12px; padding: 6px 10px; border-radius: 3px; }
-  .save-form input:focus { outline: none; border-color: var(--amber); }
-  .toast { position: fixed; bottom: 20px; right: 20px; padding: 8px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
-  .toast.show { opacity: 1; }
-  .toast.ok { color: var(--green); border-color: var(--green); }
-  .toast.err { color: var(--red); border-color: var(--red); }
-
-  /* Login overlay */
-  .login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center; }
-  .login-overlay.hidden { display: none; }
-  .login-box { background: var(--surface); border: 1px solid var(--border); padding: 32px; min-width: 320px; border-radius: 6px; }
-  .login-box h2 { color: var(--amber); font-size: 14px; font-weight: 600; margin-bottom: 24px; letter-spacing: 0.08em; }
-  .login-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
-  .login-field label { color: var(--dim); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-  .login-field input { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 3px; }
-  .login-field input:focus { outline: none; border-color: var(--amber); }
-  .login-btn { width: 100%; padding: 10px; background: var(--amber); color: #000; font-family: inherit; font-size: 13px; font-weight: 600; border: none; border-radius: 3px; cursor: pointer; margin-top: 8px; }
-  .login-btn:hover { opacity: 0.9; }
-  .login-error { color: var(--red); font-size: 11px; margin-top: 8px; min-height: 16px; }
-  .logout-btn { background: none; border: 1px solid var(--border); color: var(--dim); font-family: inherit; font-size: 11px; padding: 4px 10px; cursor: pointer; border-radius: 3px; }
-  .logout-btn:hover { border-color: var(--red); color: var(--red); }
-  /* Panic / mute buttons */
-  .panic-bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #1a0000; border: 1px solid #e05252; border-radius: 4px; margin-bottom: 16px; }
-  .btn-panic { padding: 10px 28px; background: #e05252; color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; border: none; border-radius: 3px; cursor: pointer; letter-spacing: 0.05em; }
-  .btn-panic:hover { background: #c03c3c; }
-  .btn-unmute-all { padding: 10px 20px; background: transparent; border: 1px solid #52e08a; color: #52e08a; font-family: inherit; font-size: 13px; cursor: pointer; border-radius: 3px; }
-  .btn-unmute-all:hover { background: #001a0a; }
-  .zone-mute-btn { padding: 2px 8px; font-family: inherit; font-size: 10px; cursor: pointer; border-radius: 2px; background: transparent; border: 1px solid #2a2a2a; color: #555; margin-left: 6px; }
-  .zone-mute-btn.muted { border-color: #e05252; color: #e05252; background: #1a0000; }
-
-  /* Editable name styles */
-  .editable-name { cursor: default; position: relative; display: inline-block; }
-  .editable-name:hover { color: var(--amber); }
-  .editable-name:hover::after { content: ' ✎'; font-size: 9px; color: var(--dim); vertical-align: super; }
-  .editable-name.editing { outline: none; }
-  .name-input {
-    background: var(--bg); border: 1px solid var(--amber); color: var(--text);
-    font-family: inherit; font-size: inherit; padding: 1px 4px; border-radius: 2px;
-    width: 120px; outline: none;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dante-patchbox</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header>
-  <h1>🦞 dante-patchbox</h1>
-  <div class="header-right">
-    <span id="header-meta">—</span>
-    <button class="logout-btn" id="logout-btn" onclick="logout()" style="display:none">logout</button> <span><span class="ws-dot" id="ws-dot"></span><span id="ws-status">connecting</span></span>
-  </div>
-</header>
-<div class="login-overlay hidden" id="login-overlay">
-  <div class="login-box">
-    <h2>🦞 dante-patchbox — login</h2>
-    <div class="login-field">
-      <label>Username</label>
-      <input type="text" id="login-user" autocomplete="username" autofocus>
-    </div>
-    <div class="login-field">
-      <label>Password</label>
-      <input type="password" id="login-pass" autocomplete="current-password">
-    </div>
-    <button class="login-btn" onclick="doLogin()">Login</button>
-    <div class="login-error" id="login-error"></div>
-  </div>
-</div>
-<div class="container">
-  <div class="panic-bar" id="panic-bar">
-    <button class="btn-panic" onclick="muteAll()">&#9888; MUTE ALL</button>
-    <button class="btn-unmute-all" onclick="unmuteAll()">Unmute All</button>
-    <span id="mute-all-status" style="color:#555;font-size:11px"></span>
-  </div>
-  <section>
-    <h2>Routing Matrix</h2>
-    <div class="matrix-wrap"><table id="matrix-table"></table></div>
-  </section>
-  <section>
-    <h2>Input Gains — Sources</h2>
-    <div class="gains" id="input-gains"></div>
-  </section>
-  <section>
-    <h2>Output Gains — Zones</h2>
-    <div class="gains" id="output-gains"></div>
-  </section>
-  <section>
-    <h2>Scenes</h2>
-    <div class="scenes-panel">
-      <div class="save-form">
-        <input type="text" id="scene-name" placeholder="Scene name (e.g. Thursday Night)">
-        <input type="text" id="scene-desc" placeholder="Description (optional)">
-        <button class="btn" onclick="saveScene()">Save Current</button>
+  <!-- Login overlay -->
+  <div class="login-overlay" id="login-overlay">
+    <div class="login-box">
+      <h2>dante-patchbox</h2>
+      <div class="login-field">
+        <label for="login-user">Username</label>
+        <input type="text" id="login-user" autocomplete="username">
       </div>
-      <div id="scene-list"></div>
+      <div class="login-field">
+        <label for="login-pass">Password</label>
+        <input type="password" id="login-pass" autocomplete="current-password">
+      </div>
+      <button id="login-btn" class="login-btn">Login</button>
+      <div class="login-error" id="login-error"></div>
     </div>
-  </section>
-</div>
-<div class="toast" id="toast"></div>
+  </div>
 
-<script>
-let cfg = null, activeScene = null;
-const meters = { rx: [], tx: [] };
+  <!-- Main app (hidden until authenticated) -->
+  <div id="app" style="display:none">
+    <header>
+      <div class="header-left">
+        <span class="app-title">🦞 dante-patchbox</span>
+        <span id="device-meta" class="dim-text"></span>
+      </div>
+      <div class="header-right">
+        <span id="user-badge" class="dim-text"></span>
+        <button id="logout-btn" class="btn-logout">logout</button>
+        <span class="ws-badge">
+          <span class="ws-dot" id="ws-dot"></span>
+          <span id="ws-label">connecting</span>
+        </span>
+      </div>
+    </header>
 
-function toast(msg, ok) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.className = 'toast show ' + (ok ? 'ok' : 'err');
-  clearTimeout(el._t); el._t = setTimeout(() => el.className = 'toast', 1800);
-}
+    <main class="container">
+      <!-- Panic / emergency mute bar -->
+      <div class="panic-bar" id="panic-bar">
+        <button class="btn-panic" id="btn-mute-all">⚠ MUTE ALL</button>
+        <button class="btn-unmute-all" id="btn-unmute-all">Unmute All</button>
+        <span id="mute-status" class="dim-text"></span>
+      </div>
 
-function connectWS() {
-  const ws = new WebSocket('ws://' + location.host + '/ws');
-  const dot = document.getElementById('ws-dot'), status = document.getElementById('ws-status');
-  ws.onopen = () => { dot.className = 'ws-dot connected'; status.textContent = 'live'; };
-  ws.onclose = () => { dot.className = 'ws-dot'; status.textContent = 'reconnecting'; setTimeout(connectWS, 2000); };
-  ws.onmessage = e => {
-    const f = JSON.parse(e.data);
-    f.rx_rms.forEach((v, i) => { if (meters.rx[i]) updateMeter(meters.rx[i], v); });
-    f.tx_rms.forEach((v, i) => { if (meters.tx[i]) updateMeter(meters.tx[i], v); });
-  };
-}
+      <!-- Routing Matrix -->
+      <section id="section-matrix">
+        <h2>Routing Matrix</h2>
+        <div class="matrix-wrap">
+          <table class="matrix-table" id="matrix-table"></table>
+        </div>
+      </section>
 
-function updateMeter(el, rms) {
-  const pct = Math.min(rms * 250, 100);
-  el.style.width = pct + '%';
-  el.className = 'meter-fill' + (pct > 90 ? ' clip' : pct > 70 ? ' hot' : '');
-}
+      <!-- Input Gains -->
+      <section id="section-input-gains">
+        <h2>Input Gains — Sources</h2>
+        <div class="gains" id="input-gains"></div>
+      </section>
 
-// Inline name editing — returns a span that activates an input on double-click
-function makeEditableName(text, onSave) {
-  const span = document.createElement('span');
-  span.className = 'editable-name';
-  span.textContent = text;
-  span.title = 'Double-click to rename';
+      <!-- Output Gains -->
+      <section id="section-output-gains">
+        <h2>Output Gains — Zones</h2>
+        <div class="gains" id="output-gains"></div>
+      </section>
 
-  span.addEventListener('dblclick', () => {
-    const inp = document.createElement('input');
-    inp.className = 'name-input';
-    inp.value = span.textContent;
-    span.replaceWith(inp);
-    inp.focus();
-    inp.select();
+      <!-- Scenes -->
+      <section id="section-scenes">
+        <h2>Scenes</h2>
+        <div class="scenes-panel">
+          <div class="save-form">
+            <input type="text" id="scene-name-input" placeholder="Scene name…">
+            <button class="btn" id="btn-save-scene">Save Current</button>
+          </div>
+          <div id="scene-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-    const commit = async () => {
-      const val = inp.value.trim();
-      if (val && val !== text) {
-        const ok = await onSave(val);
-        if (ok) { text = val; }
-      }
-      const s2 = document.createElement('span');
-      s2.className = 'editable-name';
-      s2.textContent = text;
-      s2.title = 'Double-click to rename';
-      // re-attach same listener by recursion isn't needed — we do a full rebuild after save
-      inp.replaceWith(s2);
-    };
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toast-container"></div>
 
-    inp.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
-      if (e.key === 'Escape') { inp.value = text; inp.blur(); }
-    });
-    inp.addEventListener('blur', commit);
-  });
-
-  return span;
-}
-
-function buildMatrix() {
-  const t = document.getElementById('matrix-table'); t.innerHTML = '';
-  meters.rx = []; meters.tx = [];
-  const hr = t.insertRow();
-  const th0 = document.createElement('th'); th0.className = 'row-header'; th0.textContent = 'Zone \\ Source'; hr.appendChild(th0);
-
-  cfg.sources.forEach((s, rx) => {
-    const th = document.createElement('th');
-    const nameSpan = makeEditableName(s, async (newName) => {
-      const r = await api('PUT', '/api/v1/sources/' + rx + '/name', {name: newName});
-      if (r) { cfg.sources[rx] = newName; rebuildNames(); return true; }
-      return false;
-    });
-    th.appendChild(nameSpan);
-    const meterDiv = document.createElement('div'); meterDiv.className = 'meter';
-    const meterFill = document.createElement('div'); meterFill.className = 'meter-fill'; meterFill.id = 'rxm-' + rx;
-    meterDiv.appendChild(meterFill); th.appendChild(meterDiv);
-    hr.appendChild(th);
-    meters.rx[rx] = document.getElementById('rxm-' + rx);
-  });
-
-  cfg.zones.forEach((zone, tx) => {
-    const tr = t.insertRow();
-    const td0 = tr.insertCell(); td0.className = 'zone-cell';
-    const muteState = cfg.output_muted && cfg.output_muted[tx];
-
-    const zoneLink = document.createElement('a');
-    zoneLink.href = '/zone/' + encodeURIComponent(zone);
-    zoneLink.target = '_blank';
-    zoneLink.id = 'zone-link-' + tx;
-
-    const nameSpan = makeEditableName(zone, async (newName) => {
-      const r = await api('PUT', '/api/v1/zones/' + tx + '/name', {name: newName});
-      if (r) { cfg.zones[tx] = newName; rebuildNames(); return true; }
-      return false;
-    });
-    zoneLink.appendChild(nameSpan);
-    td0.appendChild(zoneLink);
-
-    const muteBtn = document.createElement('button');
-    muteBtn.id = 'zone-mute-' + tx;
-    muteBtn.className = 'zone-mute-btn' + (muteState ? ' muted' : '');
-    muteBtn.textContent = muteState ? 'MUTED' : 'MUTE';
-    muteBtn.onclick = () => toggleZoneMute(tx);
-    td0.appendChild(muteBtn);
-
-    const meterDiv = document.createElement('div'); meterDiv.className = 'meter';
-    const meterFill = document.createElement('div'); meterFill.className = 'meter-fill'; meterFill.id = 'txm-' + tx;
-    meterDiv.appendChild(meterFill); td0.appendChild(meterDiv);
-    meters.tx[tx] = document.getElementById('txm-' + tx);
-
-    cfg.sources.forEach((_, rx) => {
-      const td = tr.insertCell(); td.className = 'cb-cell';
-      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cfg.matrix[tx][rx];
-      cb.onchange = () => api('PUT', '/api/v1/matrix', {tx, rx, enabled: cb.checked});
-      td.appendChild(cb);
-    });
-  });
-}
-
-// Rebuild just the name text nodes in gains section without full rebuild
-function rebuildNames() {
-  buildGains();
-  // Update zone links in matrix (simpler to just rebuild matrix)
-  buildMatrix();
-}
-
-function buildGains() {
-  function slider(container, label, val, min, max, onchange) {
-    const row = document.createElement('div'); row.className = 'gain-row';
-    const lbl = document.createElement('span'); lbl.className = 'gain-label'; lbl.textContent = label;
-    const right = document.createElement('div'); right.className = 'gain-right';
-    const sl = document.createElement('input'); sl.type = 'range'; sl.min = min; sl.max = max; sl.step = 0.5; sl.value = val;
-    const m = document.createElement('div'); m.className = 'meter';
-    const mf = document.createElement('div'); mf.className = 'meter-fill';
-    m.appendChild(mf); right.appendChild(sl); right.appendChild(m);
-    const ve = document.createElement('span'); ve.className = 'gain-value'; ve.textContent = parseFloat(val).toFixed(1) + ' dB';
-    sl.oninput = () => ve.textContent = parseFloat(sl.value).toFixed(1) + ' dB';
-    sl.onchange = () => onchange(parseFloat(sl.value));
-    row.appendChild(lbl); row.appendChild(right); row.appendChild(ve);
-    container.appendChild(row);
-    return mf;
-  }
-  const ig = document.getElementById('input-gains'); ig.innerHTML = '';
-  cfg.sources.forEach((s, i) => { meters.rx[i] = slider(ig, s, cfg.input_gain_db[i], -20, 6, db => api('PUT', '/api/v1/gain/input', {channel: i, db})); });
-  const og = document.getElementById('output-gains'); og.innerHTML = '';
-  cfg.zones.forEach((z, i) => { meters.tx[i] = slider(og, z, cfg.output_gain_db[i], -60, 0, db => api('PUT', '/api/v1/gain/output', {channel: i, db})); });
-}
-
-async function buildScenes() {
-  const r = await fetch('/api/v1/scenes');
-  const data = await r.json();
-  activeScene = data.active;
-  const list = document.getElementById('scene-list'); list.innerHTML = '';
-  if (!data.scenes || data.scenes.length === 0) {
-    list.innerHTML = '<div style="color:var(--dim);font-size:12px;padding:8px 0">No scenes saved yet.</div>';
-    return;
-  }
-  data.scenes.forEach(sc => {
-    const row = document.createElement('div');
-    row.className = 'scene-row' + (sc.name === activeScene ? ' active' : '');
-    row.innerHTML = '<span class="scene-name">' + sc.name + '</span>' +
-      '<span class="scene-desc">' + (sc.description || '') + '</span>' +
-      '<button class="btn" onclick="loadScene(\'' + sc.name.replace(/'/g, "\\'") + '\')">Load</button>' +
-      '<button class="btn danger" onclick="deleteScene(\'' + sc.name.replace(/'/g, "\\'") + '\')">×</button>';
-    list.appendChild(row);
-  });
-}
-
-async function saveScene() {
-  const name = document.getElementById('scene-name').value.trim();
-  if (!name) { toast('enter a scene name', false); return; }
-  const desc = document.getElementById('scene-desc').value.trim();
-  await api('POST', '/api/v1/scenes', {name, description: desc || null});
-  document.getElementById('scene-name').value = '';
-  document.getElementById('scene-desc').value = '';
-  await buildScenes();
-}
-
-async function loadScene(name) {
-  await api('POST', '/api/v1/scenes/' + encodeURIComponent(name) + '/load');
-  await load();
-}
-
-async function deleteScene(name) {
-  await api('DELETE', '/api/v1/scenes/' + encodeURIComponent(name));
-  await buildScenes();
-}
-
-async function load() {
-  const r = await fetch('/api/v1/config'); cfg = await r.json();
-  document.getElementById('header-meta').textContent = cfg.rx_channels + ' sources → ' + cfg.tx_channels + ' zones';
-  buildMatrix(); buildGains(); await buildScenes();
-}
-
-// Startup sequence
-connectWS();
-
-// ── Auth ─────────────────────────────────────────────────────────────────
-let authToken = localStorage.getItem('patchbox_token');
-
-function showLogin(msg) {
-  document.getElementById('login-overlay').classList.remove('hidden');
-  document.getElementById('login-error').textContent = msg || '';
-  setTimeout(() => document.getElementById('login-user').focus(), 50);
-}
-function hideLogin() {
-  document.getElementById('login-overlay').classList.add('hidden');
-  document.getElementById('logout-btn').style.display = '';
-}
-function logout() {
-  localStorage.removeItem('patchbox_token');
-  authToken = null;
-  document.getElementById('logout-btn').style.display = 'none';
-  showLogin();
-}
-async function doLogin() {
-  const u = document.getElementById('login-user').value.trim();
-  const p = document.getElementById('login-pass').value;
-  if (!u || !p) { document.getElementById('login-error').textContent = 'enter username and password'; return; }
-  try {
-    const r = await fetch('/api/v1/login', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({username: u, password: p})
-    });
-    if (!r.ok) { document.getElementById('login-error').textContent = 'invalid credentials'; return; }
-    const data = await r.json();
-    authToken = data.token;
-    localStorage.setItem('patchbox_token', authToken);
-    hideLogin();
-    load();
-  } catch(e) { document.getElementById('login-error').textContent = 'connection error'; }
-}
-
-async function api(method, path, body) {
-  try {
-    const r = await fetch(path, {
-      method, headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (authToken || '')},
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if (r.status === 401) { showLogin('session expired'); return null; }
-    if (!r.ok) throw new Error(await r.text());
-    toast('saved', true);
-    return r;
-  } catch(e) { toast('error: ' + e.message, false); return null; }
-}
-
-async function toggleZoneMute(tx) {
-  const muted = cfg.output_muted && cfg.output_muted[tx];
-  await api('POST', '/api/v1/zones/' + tx + '/' + (muted ? 'unmute' : 'mute'));
-  if (!cfg.output_muted) cfg.output_muted = [];
-  cfg.output_muted[tx] = !muted;
-  const btn = document.getElementById('zone-mute-' + tx);
-  if (btn) { btn.classList.toggle('muted', !muted); btn.textContent = !muted ? 'MUTED' : 'MUTE'; }
-}
-
-async function muteAll() {
-  await api('POST', '/api/v1/mute-all');
-  if (!cfg.output_muted) cfg.output_muted = [];
-  for (let i = 0; i < cfg.tx_channels; i++) {
-    cfg.output_muted[i] = true;
-    const btn = document.getElementById('zone-mute-' + i);
-    if (btn) { btn.classList.add('muted'); btn.textContent = 'MUTED'; }
-  }
-}
-
-async function unmuteAll() {
-  await api('POST', '/api/v1/unmute-all');
-  if (!cfg.output_muted) cfg.output_muted = [];
-  for (let i = 0; i < cfg.tx_channels; i++) {
-    cfg.output_muted[i] = false;
-    const btn = document.getElementById('zone-mute-' + i);
-    if (btn) { btn.classList.remove('muted'); btn.textContent = 'MUTE'; }
-  }
-}
-
-// Validate existing token or show login
-function initAuth() {
-  document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  if (!authToken) {
-    showLogin();
-    return;
-  }
-  fetch('/api/v1/whoami', {headers: {'Authorization': 'Bearer ' + authToken}})
-    .then(r => {
-      if (r.ok) { hideLogin(); load(); }
-      else { localStorage.removeItem('patchbox_token'); authToken = null; showLogin(); }
-    })
-    .catch(() => { authToken = null; showLogin(); });
-}
-document.addEventListener("DOMContentLoaded", initAuth);
-</script>
-
+  <script src="/app.js" defer></script>
 </body>
 </html>

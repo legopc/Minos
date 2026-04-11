@@ -1,0 +1,990 @@
+/* ============================================================
+   DANTE PATCHBOX v2 — Web UI Design System
+   Industrial/Utilitarian Dark Theme
+   Purpose-built for AoIP audio patchbay
+   ============================================================ */
+
+/* CSS Variables — Color System & Tokens */
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface2: #1c1c1c;
+  --border: #252525;
+  --border-active: #3a3a3a;
+  --text: #d8d8d8;
+  --dim: #4a4a4a;
+  --amber: #f5a623;
+  --amber-dim: #7a5310;
+  --green: #4ade80;
+  --red: #f87171;
+  --blue: #60a5fa;
+}
+
+/* ============================================================
+   BASE RESET & BODY
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ============================================================
+   HEADER — Sticky top bar with status & user
+   ============================================================ */
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.ws-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.ws-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--dim);
+  transition: background-color 0.3s ease;
+}
+
+.ws-dot.connected {
+  background-color: var(--green);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.btn-logout {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  background-color: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-logout:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* ============================================================
+   MAIN CONTAINER & LAYOUT
+   ============================================================ */
+
+main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ============================================================
+   SECTION HEADINGS — Barlow Condensed with border rule
+   ============================================================ */
+
+section h2 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--amber);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+section h2::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: var(--border);
+}
+
+/* ============================================================
+   MATRIX TABLE — Input/Output patch grid
+   ============================================================ */
+
+.matrix-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background-color: var(--surface);
+}
+
+table.matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--surface);
+}
+
+.matrix-table th {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  background-color: transparent;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  text-align: center;
+  font-weight: 600;
+}
+
+.matrix-table th.input-header {
+  min-width: 120px;
+  text-align: left;
+}
+
+.matrix-table th.output-header {
+  min-width: 80px;
+  text-align: center;
+}
+
+.matrix-table td {
+  padding: 0;
+  border: 1px solid var(--border);
+}
+
+.matrix-table tr:first-child td {
+  border-top: 1px solid var(--border);
+}
+
+/* Checkbox cell styling */
+.cb-cell {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cb-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--amber);
+}
+
+.cb-cell:has(input:checked) {
+  background-color: var(--amber-dim);
+  border-left: 2px solid var(--amber);
+}
+
+/* Input label cell */
+.input-label-cell {
+  padding: 10px 14px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Output label cell */
+.output-label-cell {
+  padding: 10px 12px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* Zone mute button in matrix row */
+.zone-mute-btn {
+  font-size: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  background-color: transparent;
+  border: 1px solid var(--dim);
+  color: var(--dim);
+  padding: 4px 8px;
+  margin: 2px;
+  border-radius: 1px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.zone-mute-btn:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.zone-mute-btn.muted {
+  background-color: var(--red);
+  border-color: var(--red);
+  color: white;
+}
+
+/* ============================================================
+   GAIN ROWS — Sliders & meter strips
+   ============================================================ */
+
+.gains {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gain-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 58px;
+  gap: 12px;
+  align-items: center;
+}
+
+.gain-label {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gain-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gain-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+input[type="range"] {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(
+    to right,
+    var(--border) 0%,
+    var(--border) 100%
+  );
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  accent-color: var(--amber);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--amber);
+  cursor: pointer;
+  border: none;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--amber);
+  cursor: pointer;
+  border: 1px solid var(--amber);
+}
+
+.gain-value {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--amber);
+  text-align: right;
+  min-width: 50px;
+}
+
+/* Meter strip — dynamic gradient based on level */
+.meter-strip {
+  width: 100%;
+  height: 3px;
+  background-color: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+  background: linear-gradient(
+    to right,
+    var(--green) 0%,
+    var(--green) 70%,
+    var(--amber) 70%,
+    var(--amber) 90%,
+    var(--red) 90%,
+    var(--red) 100%
+  );
+}
+
+.meter-fill.clip {
+  background-color: var(--red);
+}
+
+/* ============================================================
+   SCENES PANEL — Save/load scene management
+   ============================================================ */
+
+.scenes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scene-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.scene-row:hover {
+  border-color: var(--border-active);
+}
+
+.scene-row.active {
+  border-color: var(--amber);
+  background-color: #1c1200;
+}
+
+.sname {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sdesc {
+  flex: 1;
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Generic button styling */
+.btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  background-color: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.btn.primary {
+  background-color: var(--amber);
+  border-color: var(--amber);
+  color: #000;
+  font-weight: 500;
+}
+
+.btn.primary:hover {
+  opacity: 0.9;
+}
+
+.btn.danger:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Save scene form */
+.save-scene-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background-color: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: 2px;
+}
+
+.save-scene-form input[type="text"] {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 2px;
+  transition: border-color 0.2s ease;
+}
+
+.save-scene-form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.1);
+}
+
+.save-scene-form button {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  background-color: var(--amber);
+  border: 1px solid var(--amber);
+  color: #000;
+  padding: 8px 14px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.2s ease;
+}
+
+.save-scene-form button:hover {
+  opacity: 0.9;
+}
+
+/* ============================================================
+   LOGIN OVERLAY & BOX
+   ============================================================ */
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.login-overlay.hidden {
+  display: none;
+}
+
+.login-box {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  padding: 36px;
+  min-width: 340px;
+  border-radius: 2px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.login-box h1 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+  margin: 0 0 28px 0;
+  padding: 0;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.login-field label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+.login-field input[type="text"],
+.login-field input[type="password"] {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 2px;
+  transition: border-color 0.2s ease;
+}
+
+.login-field input[type="text"]:focus,
+.login-field input[type="password"]:focus {
+  outline: none;
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.1);
+}
+
+.login-submit {
+  width: 100%;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  background-color: var(--amber);
+  border: 1px solid var(--amber);
+  color: #000;
+  padding: 12px 16px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  margin-top: 8px;
+}
+
+.login-submit:hover {
+  opacity: 0.9;
+}
+
+.login-error {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+/* ============================================================
+   PANIC BAR — Emergency mute & unmute controls
+   ============================================================ */
+
+.panic-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background-color: #140000;
+  border: 1px solid #3a0000;
+  border-radius: 2px;
+}
+
+.panic-bar-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--red);
+  min-width: 80px;
+}
+
+.btn-panic {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  background-color: var(--red);
+  border: 1px solid var(--red);
+  color: white;
+  padding: 10px 24px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.btn-panic:hover {
+  opacity: 0.9;
+}
+
+.btn-unmute-all {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  background-color: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  padding: 8px 18px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.btn-unmute-all:hover {
+  background-color: rgba(74, 222, 128, 0.1);
+}
+
+/* ============================================================
+   EDITABLE NAME SPANS — Click to edit channel/zone names
+   ============================================================ */
+
+.editable {
+  cursor: pointer;
+  transition: color 0.2s ease;
+  position: relative;
+}
+
+.editable:hover {
+  color: var(--amber);
+}
+
+.editable::after {
+  content: ' ✎';
+  font-size: 0.85em;
+  color: var(--dim);
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.editable:hover::after {
+  opacity: 1;
+}
+
+.name-input {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  background-color: var(--bg);
+  border: 1px solid var(--amber);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.15);
+}
+
+.name-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25);
+}
+
+/* ============================================================
+   TOAST NOTIFICATIONS — System messages & alerts
+   ============================================================ */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 999;
+}
+
+.toast {
+  background-color: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 2px;
+  font-size: 11px;
+  opacity: 0;
+  transform: translateX(400px);
+  transition: all 0.3s ease;
+  pointer-events: auto;
+  max-width: 320px;
+  word-wrap: break-word;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast.ok {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.toast.err {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ============================================================
+   ZONE VIEW PAGE — Zone-specific patching interface
+   ============================================================ */
+
+.zone-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--bg);
+}
+
+.zone-container {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  flex: 1;
+}
+
+.zone-container h2 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+  margin: 0;
+  padding: 0;
+}
+
+/* Source button grid */
+.source-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.source-btn {
+  width: 100%;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 16px 20px;
+  border-radius: 2px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.source-btn:hover {
+  border-color: var(--amber);
+}
+
+.source-btn.active {
+  background-color: #1c1200;
+  border-color: var(--amber);
+  color: var(--amber);
+  font-weight: 500;
+}
+
+/* Volume section in zone view */
+.volume-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.volume-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--amber);
+}
+
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-slider {
+  flex: 1;
+}
+
+.volume-value {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--amber);
+  min-width: 45px;
+  text-align: right;
+}
+
+/* Mute zone button */
+.btn-mute-zone {
+  width: 100%;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  background-color: transparent;
+  border: 2px solid var(--red);
+  color: var(--red);
+  padding: 18px 24px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.btn-mute-zone:hover {
+  background-color: rgba(248, 113, 113, 0.05);
+}
+
+.btn-mute-zone.muted {
+  background-color: var(--red);
+  color: white;
+}
+
+.btn-mute-zone.muted:hover {
+  opacity: 0.9;
+}
+
+/* ============================================================
+   RESPONSIVE DESIGN
+   ============================================================ */
+
+@media (max-width: 768px) {
+  main {
+    padding: 16px 12px;
+    gap: 20px;
+  }
+
+  .matrix-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .gain-row {
+    grid-template-columns: 100px 1fr 50px;
+    gap: 10px;
+  }
+
+  .gain-label {
+    font-size: 11px;
+  }
+
+  .login-box {
+    min-width: 92vw;
+    padding: 28px;
+  }
+
+  .zone-container {
+    max-width: 100%;
+    padding: 20px 16px;
+  }
+
+  header {
+    padding: 12px 16px;
+  }
+
+  .header-right {
+    gap: 12px;
+  }
+
+  .scene-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .sname,
+  .sdesc {
+    flex: 0 0 100%;
+  }
+
+  .scene-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .gain-row {
+    grid-template-columns: 80px 1fr 40px;
+  }
+
+  .login-box {
+    min-width: 95vw;
+    padding: 20px;
+  }
+
+  .toast {
+    max-width: calc(100vw - 40px);
+  }
+
+  .panic-bar {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .btn-panic,
+  .btn-unmute-all {
+    width: 100%;
+  }
+
+  .panic-bar-label {
+    width: 100%;
+    text-align: center;
+  }
+}

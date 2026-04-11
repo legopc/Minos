@@ -1,12 +1,33 @@
 use axum::{
     middleware,
     extract::{Path, State, WebSocketUpgrade, ws::{WebSocket, Message}},
-    http::StatusCode,
-    response::{Html, IntoResponse},
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
     routing::{get, put, post, delete},
     Json, Router,
 };
+use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+
+#[derive(RustEmbed)]
+#[folder = "../../web/src/"]
+struct Assets;
+
+/// Serve a file embedded at compile-time from web/src/
+fn serve_asset(path: &str) -> Response {
+    match Assets::get(path) {
+        Some(content) => {
+            let mime = match path.rsplit('.').next() {
+                Some("css")  => "text/css; charset=utf-8",
+                Some("js")   => "application/javascript; charset=utf-8",
+                Some("html") => "text/html; charset=utf-8",
+                _            => "application/octet-stream",
+            };
+            ([(header::CONTENT_TYPE, mime)], content.data.into_owned()).into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
 use crate::state::AppState;
 use crate::auth_api;
 use crate::scenes::Scene;
@@ -208,9 +229,12 @@ async fn handle_ws(mut socket: WebSocket, s: AppState) {
     }
 }
 
-// UI
-async fn serve_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/index.html")) }
-async fn serve_zone_ui() -> impl IntoResponse { Html(include_str!("../../../web/src/zone.html")) }
+// Static asset handlers (embedded via rust-embed)
+async fn serve_ui()       -> impl IntoResponse { serve_asset("index.html") }
+async fn serve_zone_ui()  -> impl IntoResponse { serve_asset("zone.html") }
+async fn serve_css()      -> impl IntoResponse { serve_asset("style.css") }
+async fn serve_app_js()   -> impl IntoResponse { serve_asset("app.js") }
+async fn serve_zone_js()  -> impl IntoResponse { serve_asset("zone.js") }
 
 
 // GET /api/v1/whoami — validate token and return user info
@@ -247,6 +271,9 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(serve_ui))
         .route("/zone/{name}", get(serve_zone_ui))
+        .route("/style.css", get(serve_css))
+        .route("/app.js", get(serve_app_js))
+        .route("/zone.js", get(serve_zone_js))
         .route("/ws", get(ws_handler))
         .route("/api/v1/health", get(get_health))
         .route("/api/v1/login", post(auth_api::login))
