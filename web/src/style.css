@@ -63,7 +63,8 @@ header {
   gap: 12px;
 }
 
-.header-title {
+.header-title,
+.app-title {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 14px;
   font-weight: 600;
@@ -103,6 +104,12 @@ header {
   align-items: center;
   gap: 16px;
 }
+
+.dim-text {
+  font-size: 11px;
+  color: var(--dim);
+}
+
 
 .btn-logout {
   font-family: 'IBM Plex Mono', monospace;
@@ -482,7 +489,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Save scene form */
-.save-scene-form {
+.save-scene-form,
+.save-form {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -492,7 +500,8 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 2px;
 }
 
-.save-scene-form input[type="text"] {
+.save-scene-form input[type="text"],
+.save-form input[type="text"] {
   flex: 1;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 12px;
@@ -504,13 +513,15 @@ input[type="range"]::-moz-range-thumb {
   transition: border-color 0.2s ease;
 }
 
-.save-scene-form input[type="text"]:focus {
+.save-scene-form input[type="text"]:focus,
+.save-form input[type="text"]:focus {
   outline: none;
   border-color: var(--amber);
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.1);
 }
 
-.save-scene-form button {
+.save-scene-form button,
+.save-form button {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   background-color: var(--amber);
@@ -523,7 +534,8 @@ input[type="range"]::-moz-range-thumb {
   transition: opacity 0.2s ease;
 }
 
-.save-scene-form button:hover {
+.save-scene-form button:hover,
+.save-form button:hover {
   opacity: 0.9;
 }
 
@@ -554,7 +566,8 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.login-box h1 {
+.login-box h1,
+.login-box h2 {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 18px;
   font-weight: 700;
@@ -600,7 +613,8 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.1);
 }
 
-.login-submit {
+.login-submit,
+.login-btn {
   width: 100%;
   font-family: 'IBM Plex Mono', monospace;
   font-size: 13px;
@@ -615,7 +629,8 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 8px;
 }
 
-.login-submit:hover {
+.login-submit:hover,
+.login-btn:hover {
   opacity: 0.9;
 }
 

@@ -199,6 +199,219 @@ document.addEventListener('DOMContentLoaded', async () => {
 // --- END AUTH LAYER — other modules appended below ---
 
 // =============================================================================
+// DANTE-PATCHBOX v2 — CONFIG LOADER + MATRIX TABLE BUILDER (js-03)
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Internal: inline name editor
+// ---------------------------------------------------------------------------
+
+function _attachEditable(span) {
+  span.addEventListener('click', _startEdit);
+  span.addEventListener('focus', _startEdit);
+}
+
+function _startEdit(e) {
+  const span = e.currentTarget;
+  if (span.querySelector('input')) return; // already editing
+
+  const originalName = span.textContent.trim();
+  const input = document.createElement('input');
+  input.className = 'name-input';
+  input.value = originalName;
+
+  span.textContent = '';
+  span.appendChild(input);
+  input.focus();
+  input.select();
+
+  async function _commitEdit() {
+    const newName = input.value.trim();
+    if (!newName) {
+      _cancelEdit();
+      return;
+    }
+
+    const idx = parseInt(span.dataset.idx, 10);
+    const isSrc = span.classList.contains('src-name');
+    const url = isSrc
+      ? `/api/v1/sources/${idx}/name`
+      : `/api/v1/zones/${idx}/name`;
+
+    try {
+      const res = await window.patchFetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      span.textContent = newName;
+      if (typeof window.toast === 'function') window.toast('Name saved', 'ok');
+    } catch (err) {
+      console.error('[matrix] rename error:', err);
+      span.textContent = originalName;
+      if (typeof window.toast === 'function') window.toast('Rename failed', 'err');
+    }
+  }
+
+  function _cancelEdit() {
+    span.textContent = originalName;
+  }
+
+  input.addEventListener('blur', _commitEdit);
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.removeEventListener('blur', _commitEdit);
+      _commitEdit();
+    } else if (e.key === 'Escape') {
+      input.removeEventListener('blur', _commitEdit);
+      _cancelEdit();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Internal: crosspoint toggle
+// ---------------------------------------------------------------------------
+
+async function toggleCrosspoint(tx, rx, enabled) {
+  try {
+    const res = await window.patchFetch('/api/v1/matrix', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tx, rx, enabled }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } catch (err) {
+    console.error('[matrix] crosspoint toggle error:', err);
+    // Revert checkbox state
+    const table = document.getElementById('matrix-table');
+    if (table) {
+      const cb = table.querySelector(
+        `input[type="checkbox"][data-tx="${tx}"][data-rx="${rx}"]`
+      );
+      if (cb) cb.checked = !enabled;
+    }
+    if (typeof window.toast === 'function') window.toast('Routing error', 'err');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal: matrix table builder
+// ---------------------------------------------------------------------------
+
+function buildMatrix(cfg) {
+  const table = document.getElementById('matrix-table');
+  if (!table) return;
+
+  // Clear any existing content
+  table.innerHTML = '';
+
+  const { sources, zones, matrix } = cfg;
+
+  // --- Header row ---
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  // Corner cell
+  const corner = document.createElement('th');
+  corner.className = 'input-header';
+  headerRow.appendChild(corner);
+
+  zones.forEach((zoneName, zoneIdx) => {
+    const th = document.createElement('th');
+    const span = document.createElement('span');
+    span.className = 'editable zone-name';
+    span.dataset.idx = zoneIdx;
+    span.textContent = zoneName;
+    _attachEditable(span);
+    th.appendChild(span);
+    headerRow.appendChild(th);
+  });
+
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  // --- Body rows (one per source/rx channel) ---
+  const tbody = document.createElement('tbody');
+
+  sources.forEach((srcName, srcIdx) => {
+    const tr = document.createElement('tr');
+
+    // Source name cell
+    const labelTd = document.createElement('td');
+    labelTd.className = 'input-header';
+    const srcSpan = document.createElement('span');
+    srcSpan.className = 'editable src-name';
+    srcSpan.dataset.idx = srcIdx;
+    srcSpan.textContent = srcName;
+    _attachEditable(srcSpan);
+    labelTd.appendChild(srcSpan);
+    tr.appendChild(labelTd);
+
+    // Crosspoint checkboxes — one per zone (tx channel)
+    zones.forEach((_zoneName, zoneIdx) => {
+      const td = document.createElement('td');
+      td.className = 'cb-cell';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.tx = zoneIdx;
+      cb.dataset.rx = srcIdx;
+      // matrix[tx][rx] = matrix[zoneIdx][srcIdx]
+      cb.checked = !!(matrix[zoneIdx] && matrix[zoneIdx][srcIdx]);
+
+      cb.addEventListener('change', () => {
+        toggleCrosspoint(zoneIdx, srcIdx, cb.checked);
+      });
+
+      td.appendChild(cb);
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+}
+
+// ---------------------------------------------------------------------------
+// Public: loadConfig
+// ---------------------------------------------------------------------------
+
+window.loadConfig = async function loadConfig() {
+  const res = await fetch('/api/v1/config');
+  if (!res.ok) throw new Error(`Failed to load config: HTTP ${res.status}`);
+
+  const data = await res.json();
+  window.appConfig = data;
+
+  buildMatrix(data);
+
+  if (typeof window.buildGainRows === 'function') {
+    window.buildGainRows(data);
+  }
+
+  return data;
+};
+
+// ---------------------------------------------------------------------------
+// onAppReady chain extension
+// ---------------------------------------------------------------------------
+
+(function () {
+  const _prevReady = window.onAppReady;
+  window.onAppReady = async function () {
+    if (typeof _prevReady === 'function') await _prevReady();
+    await window.loadConfig();
+  };
+})();
+
+// --- END CONFIG LOADER + MATRIX TABLE BUILDER (js-03) ---
+
+// =============================================================================
 // WEBSOCKET + METER RENDERING MODULE
 // =============================================================================
 
@@ -305,11 +518,555 @@ window.updateMeters = function updateMeters(frame) {
   });
 };
 
-// Chain initWS() to window.onAppReady
-const _origOnAppReady = window.onAppReady;
-window.onAppReady = function onAppReady() {
-  if (_origOnAppReady && typeof _origOnAppReady === 'function') {
-    _origOnAppReady.call(window);
+// Chain initWS() to window.onAppReady — initWS fires after config loads
+(function () {
+  const _prevReady = window.onAppReady;
+  window.onAppReady = async function () {
+    if (typeof _prevReady === 'function') await _prevReady();
+    window.initWS();
+  };
+})();
+
+// --- END WEBSOCKET + METER RENDERING MODULE ---
+
+// =============================================================================
+// MUTE/PANIC BAR + TOAST NOTIFICATION MODULE (js-06)
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// Toast notification system
+// ---------------------------------------------------------------------------
+
+window.toast = function toast(msg, type = 'ok') {
+  const container = _el('toast-container');
+  if (!container) return;
+
+  const toastEl = document.createElement('div');
+  toastEl.className = `toast ${type}`;
+  toastEl.textContent = msg;
+
+  container.appendChild(toastEl);
+
+  // Track active toasts to enforce max 5
+  const toasts = container.querySelectorAll('.toast');
+  if (toasts.length > 5) {
+    const oldest = toasts[0];
+    oldest.remove();
   }
-  window.initWS();
+
+  setTimeout(() => {
+    toastEl.classList.add('show');
+  }, 50);
+
+  setTimeout(() => {
+    toastEl.classList.remove('show');
+    setTimeout(() => {
+      if (toastEl.parentElement) toastEl.remove();
+    }, 300);
+  }, 3000);
 };
+
+// ---------------------------------------------------------------------------
+// Mute UI state management
+// ---------------------------------------------------------------------------
+
+window.updateMuteUI = function updateMuteUI(cfg) {
+  const panicBar = _el('panic-bar');
+  const muteStatus = _el('mute-status');
+
+  if (!cfg || !cfg.output_muted) return;
+
+  const allMuted = cfg.output_muted.every(m => m === true);
+
+  if (allMuted) {
+    if (panicBar) panicBar.classList.add('all-muted');
+    if (muteStatus) muteStatus.textContent = '⚠ All zones muted';
+  } else {
+    if (panicBar) panicBar.classList.remove('all-muted');
+    if (muteStatus) muteStatus.textContent = '';
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Mute all / Unmute all button handlers
+// ---------------------------------------------------------------------------
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnMuteAll = _el('btn-mute-all');
+  const btnUnmuteAll = _el('btn-unmute-all');
+
+  if (btnMuteAll) {
+    btnMuteAll.addEventListener('click', async () => {
+      try {
+        const res = await window.patchFetch('/api/v1/mute-all', {
+          method: 'POST',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const panicBar = _el('panic-bar');
+        const muteStatus = _el('mute-status');
+
+        if (panicBar) panicBar.classList.add('all-muted');
+        if (muteStatus) muteStatus.textContent = '⚠ All zones muted';
+
+        if (window.appConfig) {
+          window.updateMuteUI(window.appConfig);
+        }
+
+        window.toast('All zones muted', 'err');
+      } catch (err) {
+        console.error('[mute] mute-all error:', err);
+        window.toast('Mute failed', 'err');
+      }
+    });
+  }
+
+  if (btnUnmuteAll) {
+    btnUnmuteAll.addEventListener('click', async () => {
+      try {
+        const res = await window.patchFetch('/api/v1/unmute-all', {
+          method: 'POST',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const panicBar = _el('panic-bar');
+        const muteStatus = _el('mute-status');
+
+        if (panicBar) panicBar.classList.remove('all-muted');
+        if (muteStatus) muteStatus.textContent = '';
+
+        // Refresh config to sync gain rows mute state
+        await window.loadConfig();
+
+        window.toast('All zones unmuted', 'ok');
+      } catch (err) {
+        console.error('[mute] unmute-all error:', err);
+        window.toast('Unmute failed', 'err');
+      }
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Per-zone mute buttons in matrix
+// ---------------------------------------------------------------------------
+
+(function initPerZoneMute() {
+  const table = _el('matrix-table');
+  if (!table) return;
+
+  // Use MutationObserver to detect when matrix is built
+  const observer = new MutationObserver(() => {
+    // Once fired, detach observer
+    observer.disconnect();
+
+    // Find all zone header <th> elements (skip corner cell)
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+
+    const ths = Array.from(headerRow.querySelectorAll('th')).slice(1); // Skip corner
+
+    ths.forEach((th, zoneIdx) => {
+      // Check if mute button already attached
+      if (th.querySelector('.zone-mute-btn')) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'zone-mute-btn';
+      btn.dataset.tx = zoneIdx;
+      btn.textContent = 'mute';
+
+      // Set initial muted state
+      if (window.appConfig && window.appConfig.output_muted[zoneIdx]) {
+        btn.classList.add('muted');
+      }
+
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+
+        const tx = zoneIdx;
+        const isMuted = btn.classList.contains('muted');
+        const endpoint = isMuted ? 'unmute' : 'mute';
+
+        try {
+          const res = await window.patchFetch(`/api/v1/zones/${tx}/${endpoint}`, {
+            method: 'POST',
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          if (isMuted) {
+            btn.classList.remove('muted');
+          } else {
+            btn.classList.add('muted');
+          }
+
+          // Update appConfig if available
+          if (window.appConfig && window.appConfig.output_muted) {
+            window.appConfig.output_muted[tx] = !isMuted;
+          }
+
+          window.toast(`Zone ${tx} ${isMuted ? 'unmuted' : 'muted'}`, 'ok');
+        } catch (err) {
+          console.error(`[mute] zone ${tx} ${endpoint} error:`, err);
+          window.toast(`Zone ${tx} ${endpoint} failed`, 'err');
+        }
+      });
+
+      th.appendChild(btn);
+    });
+  });
+
+  observer.observe(table, {
+    childList: true,
+    subtree: true,
+  });
+})();
+
+// ---------------------------------------------------------------------------
+// onAppReady chain extension — call updateMuteUI after config loads
+// ---------------------------------------------------------------------------
+
+(function () {
+  const _prevReady2 = window.onAppReady;
+  window.onAppReady = async function () {
+    if (typeof _prevReady2 === 'function') await _prevReady2();
+    if (window.appConfig) {
+      window.updateMuteUI(window.appConfig);
+    }
+  };
+})();
+
+// --- END MUTE/PANIC BAR + TOAST NOTIFICATION MODULE (js-06) ---
+
+// =============================================================================
+// GAIN SLIDERS MODULE (js-04)
+// =============================================================================
+
+/**
+ * Debounce helper: delays function execution until ms have passed with no calls.
+ * @param {Function} fn
+ * @param {number} ms
+ * @returns {Function}
+ */
+function debounce(fn, ms) {
+  let timeoutId = null;
+  return function debounced(...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+
+/**
+ * Build input and output gain slider sections.
+ * Called by window.loadConfig() after config is fetched.
+ * @param {Object} cfg
+ * @param {string[]} cfg.sources - input source names (rx channels)
+ * @param {string[]} cfg.zones - output zone names (tx channels)
+ * @param {number[]} cfg.input_gain_db - initial dB values for sources
+ * @param {number[]} cfg.output_gain_db - initial dB values for zones
+ */
+window.buildGainRows = function buildGainRows(cfg) {
+  const { sources = [], zones = [], input_gain_db = [], output_gain_db = [] } = cfg;
+
+  // --- Build input gains section ---
+  const inputContainer = document.getElementById('input-gains');
+  if (inputContainer) {
+    inputContainer.innerHTML = '';
+
+    sources.forEach((srcName, i) => {
+      const gainDb = input_gain_db[i] ?? 0;
+      const row = document.createElement('div');
+      row.className = 'gain-row';
+      row.dataset.ch = i;
+
+      const label = document.createElement('span');
+      label.className = 'gain-label';
+      label.textContent = srcName;
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'gain-slider';
+      slider.min = '-60';
+      slider.max = '12';
+      slider.step = '0.5';
+      slider.value = gainDb;
+
+      const valDisplay = document.createElement('span');
+      valDisplay.className = 'gain-val';
+      valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
+
+      const meter = document.createElement('div');
+      meter.className = 'meter-strip';
+      const fill = document.createElement('div');
+      fill.className = 'meter-fill';
+      meter.appendChild(fill);
+
+      row.appendChild(label);
+      row.appendChild(slider);
+      row.appendChild(valDisplay);
+      row.appendChild(meter);
+
+      // Live feedback on input event
+      slider.addEventListener('input', function() {
+        const val = parseFloat(this.value);
+        valDisplay.textContent = `${val.toFixed(1)} dB`;
+      });
+
+      // Debounced API call on change event
+      const debouncedSave = debounce(async function() {
+        const val = parseFloat(slider.value);
+        try {
+          const res = await window.patchFetch('/api/v1/gain/input', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel: i, db: val }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (err) {
+          console.error('[gain] input save error:', err);
+          if (typeof window.toast === 'function') window.toast('Gain error', 'err');
+          slider.value = gainDb;
+          valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
+        }
+      }, 300);
+
+      slider.addEventListener('change', debouncedSave);
+
+      inputContainer.appendChild(row);
+    });
+  }
+
+  // --- Build output gains section ---
+  const outputContainer = document.getElementById('output-gains');
+  if (outputContainer) {
+    outputContainer.innerHTML = '';
+
+    zones.forEach((zoneName, i) => {
+      const gainDb = output_gain_db[i] ?? 0;
+      const row = document.createElement('div');
+      row.className = 'gain-row';
+      row.dataset.ch = i;
+
+      const label = document.createElement('span');
+      label.className = 'gain-label';
+      label.textContent = zoneName;
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'gain-slider';
+      slider.min = '-60';
+      slider.max = '12';
+      slider.step = '0.5';
+      slider.value = gainDb;
+
+      const valDisplay = document.createElement('span');
+      valDisplay.className = 'gain-val';
+      valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
+
+      const meter = document.createElement('div');
+      meter.className = 'meter-strip';
+      const fill = document.createElement('div');
+      fill.className = 'meter-fill';
+      meter.appendChild(fill);
+
+      row.appendChild(label);
+      row.appendChild(slider);
+      row.appendChild(valDisplay);
+      row.appendChild(meter);
+
+      // Live feedback on input event
+      slider.addEventListener('input', function() {
+        const val = parseFloat(this.value);
+        valDisplay.textContent = `${val.toFixed(1)} dB`;
+      });
+
+      // Debounced API call on change event
+      const debouncedSave = debounce(async function() {
+        const val = parseFloat(slider.value);
+        try {
+          const res = await window.patchFetch('/api/v1/gain/output', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel: i, db: val }),
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (err) {
+          console.error('[gain] output save error:', err);
+          if (typeof window.toast === 'function') window.toast('Gain error', 'err');
+          slider.value = gainDb;
+          valDisplay.textContent = `${gainDb.toFixed(1)} dB`;
+        }
+      }, 300);
+
+      slider.addEventListener('change', debouncedSave);
+
+      outputContainer.appendChild(row);
+    });
+  }
+};
+
+// --- END GAIN SLIDERS MODULE (js-04) ---
+
+// --- END WEBSOCKET + METER RENDERING MODULE ---
+
+// =============================================================================
+// DANTE-PATCHBOX v2 — SCENES PANEL MODULE (js-05)
+// =============================================================================
+
+/**
+ * Load scenes from /api/v1/scenes and render them in #scene-list.
+ * Each scene is displayed as a row with load and delete buttons.
+ * The active scene gets the 'active' class.
+ * @returns {Promise<void>}
+ */
+window.loadScenes = async function loadScenes() {
+  try {
+    const res = await window.patchFetch('/api/v1/scenes');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+    const { scenes = [], active = null } = data;
+
+    const container = document.getElementById('scene-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    scenes.forEach(scene => {
+      const { id, name, description = '' } = scene;
+
+      const row = document.createElement('div');
+      row.className = 'scene-row';
+      row.dataset.name = name;
+      if (name === active) {
+        row.classList.add('active');
+      }
+
+      const sname = document.createElement('span');
+      sname.className = 'sname';
+      sname.textContent = name;
+
+      const sdesc = document.createElement('span');
+      sdesc.className = 'sdesc';
+      sdesc.textContent = description || '';
+
+      const btnLoad = document.createElement('button');
+      btnLoad.className = 'btn btn-load';
+      btnLoad.textContent = 'Load';
+
+      const btnDel = document.createElement('button');
+      btnDel.className = 'btn danger btn-del';
+      btnDel.textContent = 'Delete';
+
+      row.appendChild(sname);
+      row.appendChild(sdesc);
+      row.appendChild(btnLoad);
+      row.appendChild(btnDel);
+
+      container.appendChild(row);
+    });
+  } catch (err) {
+    console.error('[scenes] load error:', err);
+    if (typeof window.toast === 'function') window.toast('Failed to load scenes', 'err');
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Save scene event handler
+// ---------------------------------------------------------------------------
+
+(function () {
+  function handleSaveScene() {
+    const input = document.getElementById('scene-name-input');
+    if (!input) return;
+
+    const name = input.value.trim();
+    if (!name) {
+      input.style.borderColor = 'red';
+      setTimeout(() => {
+        input.style.borderColor = '';
+      }, 500);
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await window.patchFetch('/api/v1/scenes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        await window.loadScenes();
+        input.value = '';
+        if (typeof window.toast === 'function') window.toast('Scene saved', 'ok');
+      } catch (err) {
+        console.error('[scenes] save error:', err);
+        if (typeof window.toast === 'function') window.toast('Save failed', 'err');
+      }
+    })();
+  }
+
+  const btn = document.getElementById('btn-save-scene');
+  if (btn) btn.addEventListener('click', handleSaveScene);
+})();
+
+// ---------------------------------------------------------------------------
+// Load and Delete scene event delegation
+// ---------------------------------------------------------------------------
+
+(function () {
+  const container = document.getElementById('scene-list');
+  if (!container) return;
+
+  container.addEventListener('click', async e => {
+    const row = e.target.closest('.scene-row');
+    if (!row) return;
+
+    const sceneName = row.dataset.name;
+    if (!sceneName) return;
+
+    if (e.target.classList.contains('btn-load')) {
+      try {
+        const res = await window.patchFetch(`/api/v1/scenes/${sceneName}/load`, {
+          method: 'POST',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        await window.loadConfig();
+        await window.loadScenes();
+        if (typeof window.toast === 'function') window.toast('Scene loaded', 'ok');
+      } catch (err) {
+        console.error('[scenes] load error:', err);
+        if (typeof window.toast === 'function') window.toast('Load failed', 'err');
+      }
+    } else if (e.target.classList.contains('btn-del')) {
+      try {
+        const res = await window.patchFetch(`/api/v1/scenes/${sceneName}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        await window.loadScenes();
+        if (typeof window.toast === 'function') window.toast('Scene deleted', 'ok');
+      } catch (err) {
+        console.error('[scenes] delete error:', err);
+        if (typeof window.toast === 'function') window.toast('Delete failed', 'err');
+      }
+    }
+  });
+})();
+
+// ---------------------------------------------------------------------------
+// Extend onAppReady chain to load scenes
+// ---------------------------------------------------------------------------
+
+(function () {
+  const _prevReady = window.onAppReady;
+  window.onAppReady = async function () {
+    if (typeof _prevReady === 'function') await _prevReady();
+    await window.loadScenes();
+  };
+})();
+
+// --- END SCENES PANEL MODULE (js-05) ---
