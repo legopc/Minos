@@ -111,8 +111,10 @@ impl DanteDevice {
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 
-        // TX ring buffer setup — non-interleaved, power-of-2 size
-        const RING_SIZE: usize = 4096;
+        // TX ring buffer setup — non-interleaved, power-of-2 size.
+        // RING_SIZE >> LEAD_SAMPLES: prevents TX from reading overwritten data even at
+        // maximum realistic drift.  32768 @ 48 kHz = 682 ms ring; LEAD_SAMPLES = 85 ms.
+        const RING_SIZE: usize = 32768;
         let n_tx = self.n_tx;
         let n_rx = self.n_rx;
 
@@ -196,7 +198,15 @@ impl DanteDevice {
 
         let tx_bufs_cb = tx_bufs.clone();
         let write_pos_cb = Arc::clone(&write_pos_atomic);
+        // Diagnostic only: TX transmitter writes min_next_ts here after each batch.
+        // Used in the 5-second alignment log to verify lead is stable; not used for write_pos.
+        let current_ts_cb = Arc::clone(&current_timestamp);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
+        // LEAD_SAMPLES: how far ahead write_pos stays of the TX read position.
+        // Must exceed one callback's worth of samples (READ_INTERVAL=50ms ≈ 2400 samples)
+        // so TX never reads positions we haven't written yet.  4096 gives ~35ms headroom
+        // above the 50ms callback period and is well under RING_SIZE/2 (no wrap-around risk).
+        const LEAD_SAMPLES: usize = 4096;
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
@@ -241,25 +251,35 @@ impl DanteDevice {
             }
 
             // Write processed samples into TX ring buffers.
-            // On the very first block: align write_pos using wall-clock elapsed time since
-            // PTP was polled. TX reads at (ptp_now - ptp_at_poll) % RING_SIZE; we write
-            // starting at elapsed_samples % RING_SIZE — both measure the same elapsed time.
+            //
+            // Linear write position: advance by `block` (= PTP-derived sample count from
+            // inferno's jitter buffer) each callback.  Since `block` tracks the PTP clock
+            // at exactly the same rate as the TX transmitter, write_pos stays exactly
+            // LEAD_SAMPLES ahead of TX with no drift and no gaps between consecutive writes.
+            //
+            // Self-correcting from tx_ptp was removed: Tokio's 50 ms interval fires with
+            // ±jitter, so recomputing write_pos = tx_ptp + LEAD each callback creates
+            // micro-gaps between writes whenever the interval fires late — those gaps hit
+            // TX as silent zeros → pops.  Pure linear advance eliminates the gaps.
+            //
+            // On first block: init write_pos = elapsed + LEAD and send start_time = ptp_at_poll.
             if let Some(tx) = start_tx_opt.take() {
                 let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
                 let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
-                write_pos_cb.store(elapsed_samples, AOrdering::Release);
-                if let Err(e) = tx.send(ptp_at_poll as Clock) {
+                write_pos_cb.store(elapsed_samples.wrapping_add(LEAD_SAMPLES), AOrdering::Release);
+                if let Err(e) = tx.send(ptp_at_poll) {
                     tracing::warn!("Failed to send TX start time: {e}");
                 } else {
                     tracing::info!(
                         ptp_at_poll,
-                        elapsed_samples,
-                        write_pos = elapsed_samples,
-                        "TX ring aligned via wall clock"
+                        write_pos = elapsed_samples + LEAD_SAMPLES,
+                        "TX ring armed — write leads TX by {LEAD_SAMPLES} samples"
                     );
                 }
             }
+
             let write_pos = write_pos_cb.load(AOrdering::Acquire);
+
             for (o, ch) in tx_f32.iter().enumerate() {
                 if o >= tx_bufs_cb.len() { break; }
                 let buf = &tx_bufs_cb[o];
@@ -269,7 +289,22 @@ impl DanteDevice {
                 }
             }
             write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
-            // current_timestamp is intentionally NOT touched here — it belongs to the TX transmitter
+
+            // Diagnostic: log ring alignment every ~100 callbacks (≈5 s) so we can verify lead.
+            {
+                use std::sync::atomic::AtomicUsize;
+                static CB_COUNT: AtomicUsize = AtomicUsize::new(0);
+                let n = CB_COUNT.fetch_add(1, AOrdering::Relaxed);
+                if n % 100 == 0 {
+                    let tx_ptp = current_ts_cb.load(AOrdering::Acquire);
+                    if tx_ptp != 0 && tx_ptp != usize::MAX {
+                        let lead = write_pos.wrapping_sub(
+                            tx_ptp.wrapping_sub(ptp_at_poll as usize)
+                        );
+                        tracing::debug!(write_pos, tx_ptp, lead, block, "ring alignment");
+                    }
+                }
+            }
         })).await;
 
         // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
