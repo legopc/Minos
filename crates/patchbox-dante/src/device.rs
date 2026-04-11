@@ -122,7 +122,7 @@ impl DanteDevice {
 
         // TX ring buffer setup — non-interleaved, power-of-2 size.
         // RING_SIZE >> LEAD_SAMPLES: prevents TX from reading overwritten data even at
-        // maximum realistic drift.  32768 @ 48 kHz = 682 ms ring; LEAD_SAMPLES = 85 ms.
+        // maximum realistic drift.  32768 @ 48 kHz = 682 ms ring; LEAD_SAMPLES = 4 ms.
         const RING_SIZE: usize = 32768;
         let n_tx = self.n_tx;
         let n_rx = self.n_rx;
@@ -214,31 +214,31 @@ impl DanteDevice {
         // ── LATENCY TUNING ──────────────────────────────────────────────
         // Three knobs control audio playthrough latency:
         //
-        //   1. READ_INTERVAL in inferno's samples_collector.rs (currently 2 ms)
-        //      Each callback delivers READ_INTERVAL_MS * 48 samples.
-        //      Minimum average audio batching delay = READ_INTERVAL / 2.
+        //   1. Event-driven wakeup (samples_collector.rs via TransferNotifier + Notify)
+        //      Replaces 2 ms polling. Wakeup now fires within <0.5 ms of packet arrival.
+        //      Minimum batching delay ≈ 0 ms (event-driven).
         //
         //   2. LEAD_SAMPLES (below) — TX ring write-ahead.
         //      Audio written here won't be transmitted until LEAD_SAMPLES / 48000 s later.
-        //      MUST exceed READ_INTERVAL_MS * 48 samples to prevent TX read-ahead gaps.
-        //      Safety ladder: 192 (4 ms, 2 ms margin) → 256 (5.3 ms) → 384 (8 ms, safe).
+        //      With SCHED_FIFO + event-driven wakeup, jitter is <0.5 ms → LEAD can be 2 ms.
+        //      Safety ladder: 96 (2 ms, 1.5 ms margin) → 192 (4 ms) → 384 (8 ms, very safe).
         //
         //   3. settings.tx_latency_ns — Dante TX flow latency and flow negotiation minimum.
         //      Also controls self_info.latency_ns (mDNS-advertised RX capability) and
         //      self_info.tx_latency_ns (advertised TX latency to downstream receivers).
         //      At 1 ms: max(MXWANI8_min=1ms, our_min=1ms) = 1 ms jitter-buffer hold-back.
         //
-        // Total audio latency ≈ flow_latency + READ_INTERVAL/2 + LEAD/48000 + tx_latency_ns.
-        // At current settings: 1 ms + 1 ms + 4 ms + 1 ms ≈ 7 ms end-to-end.
+        // Total audio latency ≈ flow_latency + wakeup_latency + LEAD/48000 + tx_latency_ns.
+        // At current settings: 1 ms + <0.5 ms + 2 ms + 1 ms ≈ 4-5 ms (our portion).
         //
-        // If pops return after reducing LEAD_SAMPLES, increase it (Tokio timer jitter exceeded
-        // the safety margin). Step up: 192 → 256 → 384. Never below READ_INTERVAL_MS * 48 = 96.
+        // NOTE: the monitoring device's own RX jitter buffer and DAC buffer also add latency.
+        // If pops return after reducing LEAD_SAMPLES, increase it.
+        // Step up: 96 → 128 → 192. Never below ~48 (1 ms) with SCHED_FIFO.
         // ────────────────────────────────────────────────────────────────
         // LEAD_SAMPLES: how far ahead write_pos stays of the TX read position.
-        // Must exceed one callback's worth of samples (READ_INTERVAL=2ms = 96 samples).
-        // 192 = 4 ms write-ahead = 2 ms safety margin above the 2 ms callback period.
-        // If pops return: step up to 256 (5.3 ms) or 384 (8 ms, very safe).
-        const LEAD_SAMPLES: usize = 192;
+        // With event-driven wakeup (<0.5 ms jitter) + SCHED_FIFO, 96 (2 ms) is safe.
+        // If pops return: step up to 128 (2.7 ms) or 192 (4 ms, very safe).
+        const LEAD_SAMPLES: usize = 96;
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
