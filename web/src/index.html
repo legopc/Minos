@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>dante-patchbox</title>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -52,33 +52,41 @@
 
       <!-- Routing Matrix -->
       <section id="section-matrix">
-        <h2>Routing Matrix</h2>
-        <div class="matrix-wrap">
-          <table class="matrix-table" id="matrix-table"></table>
+        <div class="section-head"><h2>Routing Matrix</h2></div>
+        <div class="section-body">
+          <div class="matrix-scroll">
+            <table class="matrix-table" id="matrix-table"></table>
+          </div>
         </div>
       </section>
 
       <!-- Input Gains -->
       <section id="section-input-gains">
-        <h2>Input Gains — Sources</h2>
-        <div class="gains" id="input-gains"></div>
+        <div class="section-head"><h2>Input Gains — Sources</h2></div>
+        <div class="section-body">
+          <div class="gains-grid" id="input-gains"></div>
+        </div>
       </section>
 
       <!-- Output Gains -->
       <section id="section-output-gains">
-        <h2>Output Gains — Zones</h2>
-        <div class="gains" id="output-gains"></div>
+        <div class="section-head"><h2>Output Gains — Zones</h2></div>
+        <div class="section-body">
+          <div class="gains-grid" id="output-gains"></div>
+        </div>
       </section>
 
       <!-- Scenes -->
       <section id="section-scenes">
-        <h2>Scenes</h2>
-        <div class="scenes-panel">
-          <div class="save-form">
-            <input type="text" id="scene-name-input" placeholder="Scene name…">
-            <button class="btn" id="btn-save-scene">Save Current</button>
+        <div class="section-head"><h2>Scenes</h2></div>
+        <div class="section-body">
+          <div class="scenes-panel">
+            <div class="save-row">
+              <input type="text" id="scene-name-input" placeholder="Scene name…">
+              <button class="btn" id="btn-save-scene">Save Current</button>
+            </div>
+            <div id="scene-list"></div>
           </div>
-          <div id="scene-list"></div>
         </div>
       </section>
     </main>

@@ -286,13 +286,11 @@ async function toggleCrosspoint(tx, rx, enabled) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   } catch (err) {
     console.error('[matrix] crosspoint toggle error:', err);
-    // Revert checkbox state
+    // Revert button active state
     const table = document.getElementById('matrix-table');
     if (table) {
-      const cb = table.querySelector(
-        `input[type="checkbox"][data-tx="${tx}"][data-rx="${rx}"]`
-      );
-      if (cb) cb.checked = !enabled;
+      const btn = table.querySelector(`.cross-btn[data-tx="${tx}"][data-rx="${rx}"]`);
+      if (btn) btn.classList.toggle('active', !enabled);
     }
     if (typeof window.toast === 'function') window.toast('Routing error', 'err');
   }
@@ -322,12 +320,19 @@ function buildMatrix(cfg) {
 
   zones.forEach((zoneName, zoneIdx) => {
     const th = document.createElement('th');
+    th.className = 'zone-head';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'zone-label-wrap';
+
     const span = document.createElement('span');
-    span.className = 'editable zone-name';
+    span.className = 'editable zone-name zone-head-name';
     span.dataset.idx = zoneIdx;
     span.textContent = zoneName;
     _attachEditable(span);
-    th.appendChild(span);
+
+    wrap.appendChild(span);
+    th.appendChild(wrap);
     headerRow.appendChild(th);
   });
 
@@ -351,23 +356,42 @@ function buildMatrix(cfg) {
     labelTd.appendChild(srcSpan);
     tr.appendChild(labelTd);
 
-    // Crosspoint checkboxes — one per zone (tx channel)
-    zones.forEach((_zoneName, zoneIdx) => {
+    // Crosspoint buttons — one per zone (tx channel)
+    zones.forEach((zoneName, zoneIdx) => {
       const td = document.createElement('td');
-      td.className = 'cb-cell';
+      td.className = 'cross-cell';
 
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.dataset.tx = zoneIdx;
-      cb.dataset.rx = srcIdx;
+      const btn = document.createElement('button');
+      btn.className = 'cross-btn';
+      btn.dataset.tx = zoneIdx;
+      btn.dataset.rx = srcIdx;
+      btn.title = `${zoneName} / ${srcName}`;
+
       // matrix[tx][rx] = matrix[zoneIdx][srcIdx]
-      cb.checked = !!(matrix[zoneIdx] && matrix[zoneIdx][srcIdx]);
+      if (matrix[zoneIdx] && matrix[zoneIdx][srcIdx]) {
+        btn.classList.add('active');
+      }
 
-      cb.addEventListener('change', () => {
-        toggleCrosspoint(zoneIdx, srcIdx, cb.checked);
+      btn.addEventListener('click', () => {
+        const wasActive = btn.classList.contains('active');
+        btn.classList.toggle('active', !wasActive);
+        toggleCrosspoint(zoneIdx, srcIdx, !wasActive);
       });
 
-      td.appendChild(cb);
+      // Crosshair hover: highlight entire column
+      btn.addEventListener('mouseenter', () => {
+        tbody.querySelectorAll(`.cross-cell:nth-child(${zoneIdx + 2})`).forEach(cell => {
+          cell.classList.add('col-hover');
+        });
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        tbody.querySelectorAll(`.cross-cell:nth-child(${zoneIdx + 2})`).forEach(cell => {
+          cell.classList.remove('col-hover');
+        });
+      });
+
+      td.appendChild(btn);
       tr.appendChild(td);
     });
 
