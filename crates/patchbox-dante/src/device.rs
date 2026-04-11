@@ -312,6 +312,48 @@ impl DanteDevice {
 
             let write_pos = write_pos_cb.load(AOrdering::Acquire);
 
+            // ── Silence guard & gap-resumption resync ──────────────────────
+            // ExternalBuffer uses unconditional_read=true: TX reads ring
+            // positions even before write_pos reaches them.  After the first
+            // ring revolution (~682 ms at 48 kHz) those positions hold old
+            // audio → pop whenever write_pos stalls during silence.
+            //
+            //  block==0 (silence): zero-fill ring from write_pos up to
+            //    tx_current_pos + LEAD_SAMPLES so TX always reads silence.
+            //  block > 2×LEAD (gap resumption): snap write_pos to tx+LEAD
+            //    to prevent latency runaway from buffered silence samples.
+            // ──────────────────────────────────────────────────────────────
+            let tx_guard = current_ts_cb.load(AOrdering::Acquire);
+            if block == 0 {
+                if tx_guard != 0 && tx_guard != usize::MAX {
+                    let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
+                    let target = tx_off.wrapping_add(LEAD_SAMPLES);
+                    let needed = target.wrapping_sub(write_pos) as isize;
+                    if needed > 0 && needed < RING_SIZE as isize {
+                        for buf in &tx_bufs_cb {
+                            for i in 0..needed as usize {
+                                buf[write_pos.wrapping_add(i) % RING_SIZE]
+                                    .store(0, AOrdering::Relaxed);
+                            }
+                        }
+                        write_pos_cb.store(target, AOrdering::Release);
+                    }
+                }
+                return;
+            }
+            let write_pos = if block > LEAD_SAMPLES * 2
+                && tx_guard != 0
+                && tx_guard != usize::MAX
+            {
+                let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
+                let snapped = tx_off.wrapping_add(LEAD_SAMPLES);
+                write_pos_cb.store(snapped, AOrdering::Release);
+                snapped
+            } else {
+                write_pos
+            };
+            // ──────────────────────────────────────────────────────────────
+
             for (o, ch) in tx_f32.iter().enumerate() {
                 if o >= tx_bufs_cb.len() { break; }
                 let buf = &tx_bufs_cb[o];
