@@ -92,6 +92,7 @@ impl DanteDevice {
         );
         settings.make_rx_channels(self.n_rx);
         settings.make_tx_channels(self.n_tx);
+        settings.self_info.product_version_bytes = Some([4, 1, 6, 2]);
 
         tracing::info!(
             name = %self.device_name,
