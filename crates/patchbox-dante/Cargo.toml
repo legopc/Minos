@@ -16,5 +16,5 @@ tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
 atomic = "0.6"
 triple_buffer = "9"
-inferno_aoip = { git = "https://github.com/legopc/inferno", rev = "c20787c", optional = true }
+inferno_aoip = { git = "https://github.com/legopc/inferno", branch = "dev", optional = true }
 libc = { version = "0.2", optional = true }
