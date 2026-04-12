@@ -66,17 +66,19 @@ Eventually may have a touchscreen attached serving the web UI locally.
 - [x] Config persisted to TOML
 
 
-### Phase 0.5 — Hardware Integration (next)
+### Phase 0.5 — Hardware Integration ✅ Complete
 
-- [x] Inferno audio integration ported, feature-gated ()
-- [x] RT-safe RX callback: , no allocations, no blocking
+The live Dante audio path is now working on real hardware. The detailed bring-up history, bug chronology, and latency notes live in [`docs/AUDIO_ENGINE.md`](AUDIO_ENGINE.md).
+
+- [x] Inferno audio integration ported, feature-gated
+- [x] RT-safe RX callback: DSP runs in the callback with no blocking on config reads
 - [x] RT thread priority: SCHED_FIFO 90
 - [x] Linear RMS meters updated from audio callback
-- [ ] **Triple buffer for config hot path** — replace RwLock in audio callback with lock-free triple buffer
+- [x] **Triple buffer for config hot path** — audio callback no longer reads the config `RwLock`
 - [ ] **Atomic config writes** — write to .tmp then rename, never corrupt on crash
-- [ ] **CAP_NET_RAW in systemd unit** — required for Inferno raw socket
-- [ ] **Hardware test** — run against Shure MXWANI8 on home network with PTP master
-- [ ] **Latency tuning** — measure and tune Dante buffer sizes
+- [x] **Runtime capabilities applied for hardware testing** — `cap_net_raw` for Dante raw sockets and `cap_sys_nice` for RT scheduling
+- [x] **Hardware test** — validated against Shure MXWANI8 on the home Dante network with working PTP
+- [x] **Latency tuning** — event-driven wakeup, `LEAD_SAMPLES=96`, current patchbox portion ~4-5ms
 - [ ] **statime integration** — PTP sync daemon config for patchbox node
 - [ ] **Graceful degradation** — on process death, existing Dante subscriptions stay active
 

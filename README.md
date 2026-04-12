@@ -6,9 +6,9 @@ This patchbay is named **Minos** after the judge in Dante Alighieri's *Divine Co
 
 > **⚠️ AI-ASSISTED CODE — READ BEFORE RUNNING**
 >
-> This repository is substantially AI-assisted. The Rust source code, web UI, systemd units, and configuration were written with the help of an AI coding assistant. **Do not blindly run code in a production environment without understanding what it does.** Review the source before deploying.
+> This repository is substantially AI-assisted. The Rust source code, web UI, and configuration were written with the help of an AI coding assistant. **Do not blindly run code in a production environment without understanding what it does.** Review the source before deploying.
 >
-> That said: this is being actively developed and tested against real Dante hardware. Phase 0 (routing matrix, DSP, web UI, authentication) is complete. Phase 0.5 (real Dante audio integration with Inferno AoIP) is in progress. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
+> That said: this is being actively developed and tested against real Dante hardware. Phase 0 (routing matrix, DSP, web UI, authentication) is complete. Phase 0.5 (real Dante audio integration with Inferno AoIP) is complete. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
 
 ---
 
@@ -51,11 +51,11 @@ Minos is part of the **Inferno AoIP Ecosystem** — a family of open-source Dant
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 0 | Routing matrix, gains, scenes, auth, web UI, metering | ✅ Complete |
-| Phase 0.5 | Real Dante audio via Inferno AoIP, hardware testing | 🔧 In progress |
+| Phase 0.5 | Real Dante audio via Inferno AoIP, hardware testing | ✅ Complete |
 | Phase 1 | DSP per output (EQ, limiter) | ⏳ Planned |
 | Phase 2 | Zone ownership, subscription management | ⏳ Planned |
 
-See [`docs/PROJECT.md`](docs/PROJECT.md) for the full architecture and roadmap.
+See [`docs/PROJECT.md`](docs/PROJECT.md) for the full architecture and roadmap, and [`docs/AUDIO_ENGINE.md`](docs/AUDIO_ENGINE.md) for the hardware-tested audio-path notes.
 
 ---
 
@@ -71,12 +71,14 @@ cargo build --release
 
 Open `http://localhost:9191` — log in with a Linux system user account.
 
-To build with real Dante audio support (requires PTP daemon and CAP_NET_RAW):
+To build with real Dante audio support (requires a PTP daemon plus `cap_net_raw` and `cap_sys_nice` on the deployed binary):
 
 ```bash
 cargo build --release --features inferno
-sudo setcap cap_net_raw+ep ./target/release/patchbox
+sudo setcap cap_net_raw,cap_sys_nice+ep ./target/release/patchbox
 ```
+
+`cap_net_raw` is required for Dante raw sockets; `cap_sys_nice` is required so the DSP callback can elevate to `SCHED_FIFO`.
 
 ---
 
@@ -106,6 +108,10 @@ Minos is a single Rust binary built on:
 - **PAM + JWT** — authentication via Linux system accounts
 
 The audio DSP path runs in the Inferno RX callback with no allocations and no locks — RT-safe by design. Config changes propagate via a lock-free triple buffer so the web API never blocks the audio thread.
+
+## Audio engine
+
+The live Dante path was tuned and debugged on real hardware. The important fixes were: correct Dante 24-bit sample scaling, gap-free TX ring advancement, event-driven inferno wakeups, `SCHED_FIFO` callback scheduling, and a silence guard for inferno's external TX ring. See [`docs/AUDIO_ENGINE.md`](docs/AUDIO_ENGINE.md) for the full chronology, root-cause notes, and current latency model.
 
 ---
 
