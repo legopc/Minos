@@ -92,8 +92,9 @@ impl DanteDevice {
         );
         settings.make_rx_channels(self.n_rx);
         settings.make_tx_channels(self.n_tx);
-        settings.self_info.firmware_version_bytes = Some([4, 1, 6, 2]);
-        settings.self_info.product_version_bytes = Some([4, 1, 6, 2]);
+        // DC decodes as b[0].b[1].(b[2]<<8|b[3]).content[0x23] → [4,1,0,6] → "4.1.6.2"
+        settings.self_info.firmware_version_bytes = Some([4, 1, 0, 6]);
+        settings.self_info.product_version_bytes = Some([4, 1, 0, 6]);
 
         tracing::info!(
             name = %self.device_name,
