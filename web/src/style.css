@@ -1832,3 +1832,170 @@ body.sidebar-collapsed .nav-badge { display: none; }
   background: var(--color-danger); color: #fff; border-color: var(--color-danger);
 }
 .strip-mute-btn:hover:not(.active) { border-color: var(--color-danger); color: var(--color-danger); }
+
+/* ── DSP Block Buttons (channel strip bottom row) ────── */
+.dsp-blocks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.dsp-block-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 7px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.dsp-block-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.dsp-block-btn.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.3);
+}
+
+.dsp-block-dot {
+  font-size: 6px;
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.dsp-block-btn.active .dsp-block-dot {
+  opacity: 1;
+  color: var(--color-accent);
+}
+
+/* ── DSP Modal Dialog ────────────────────────────────── */
+dialog.dsp-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  padding: 0;
+  min-width: 340px;
+  max-width: 680px;
+  width: 90vw;
+  max-height: 90vh;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.7);
+}
+
+dialog.dsp-modal::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+}
+
+.dsp-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-hi);
+}
+
+.dsp-modal-title {
+  flex: 1;
+  font-family: var(--font-head);
+  font-size: 16px;
+  letter-spacing: 1.5px;
+  color: var(--color-text);
+}
+
+.dsp-modal-enable-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-dim);
+  font-size: 14px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.dsp-modal-enable-btn.active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.dsp-modal-close {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text-dim);
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.dsp-modal-close:hover {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.dsp-modal-body {
+  overflow-y: auto;
+  max-height: calc(90vh - 52px);
+  padding: 0;
+}
+
+/* Make section panels inside modal look right (no outer collapse) */
+dialog.dsp-modal .section-panel {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+dialog.dsp-modal .section-header {
+  display: none; /* hide the collapsible header inside modal — enable btn in modal header instead */
+}
+
+dialog.dsp-modal .section-panel.collapsed .section-body {
+  display: block !important; /* always show body inside modal */
+}
+
+dialog.dsp-modal .section-body {
+  padding: 16px;
+}
+
+/* EQ section inside modal gets more room */
+dialog.dsp-modal .eq-curve {
+  width: 100%;
+  height: 140px;
+  margin-bottom: 12px;
+}
+
+dialog.dsp-modal .eq-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

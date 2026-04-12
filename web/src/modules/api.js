@@ -84,27 +84,25 @@ export const scenes = {
 // Input (channels/sources) — Sprint 2 stubs
 export const inputDsp = {
   get:            (ch) => get(`/api/v1/inputs/${ch}/dsp`),
-  setGain:        (ch, gain_db) => post(`/api/v1/inputs/${ch}/gain`, { gain_db }),
-  setPolarity:    (ch, invert)  => post(`/api/v1/inputs/${ch}/polarity`, { invert }),
-  setHpf:         (ch, cfg)     => post(`/api/v1/inputs/${ch}/hpf`, cfg),
-  setLpf:         (ch, cfg)     => post(`/api/v1/inputs/${ch}/lpf`, cfg),
-  setEq:          (ch, cfg)     => post(`/api/v1/inputs/${ch}/eq`, cfg),
-  setEqBand:      (ch, band)    => post(`/api/v1/inputs/${ch}/eq/band`, band),
-  setGate:        (ch, cfg)     => post(`/api/v1/inputs/${ch}/gate`, cfg),
-  setCompressor:  (ch, cfg)     => post(`/api/v1/inputs/${ch}/compressor`, cfg),
+  setGain:        (ch, gain_db) => put(`/api/v1/inputs/${ch}/gain`, { gain_db }),
+  setPolarity:    (ch, invert)  => put(`/api/v1/inputs/${ch}/polarity`, { invert }),
+  setHpf:         (ch, cfg)     => put(`/api/v1/inputs/${ch}/hpf`, cfg),
+  setLpf:         (ch, cfg)     => put(`/api/v1/inputs/${ch}/lpf`, cfg),
+  setEq:          (ch, cfg)     => put(`/api/v1/inputs/${ch}/eq`, cfg),
+  setGate:        (ch, cfg)     => put(`/api/v1/inputs/${ch}/gate`, cfg),
+  setCompressor:  (ch, cfg)     => put(`/api/v1/inputs/${ch}/compressor`, cfg),
 };
 
 // Output DSP (extends existing zones) — Sprint 2 stubs
 export const outputDsp = {
   get:            (ch) => get(`/api/v1/outputs/${ch}/dsp`),
-  setGain:        (ch, gain_db) => post(`/api/v1/outputs/${ch}/gain`, { gain_db }),
-  setHpf:         (ch, cfg)     => post(`/api/v1/outputs/${ch}/hpf`, cfg),
-  setLpf:         (ch, cfg)     => post(`/api/v1/outputs/${ch}/lpf`, cfg),
-  setEq:          (ch, cfg)     => post(`/api/v1/outputs/${ch}/eq`, cfg),
-  setEqBand:      (ch, band)    => post(`/api/v1/outputs/${ch}/eq/band`, band),
-  setCompressor:  (ch, cfg)     => post(`/api/v1/outputs/${ch}/compressor`, cfg),
-  setLimiter:     (ch, cfg)     => post(`/api/v1/outputs/${ch}/limiter`, cfg),
-  setDelay:       (ch, cfg)     => post(`/api/v1/outputs/${ch}/delay`, cfg),
+  setGain:        (ch, gain_db) => put(`/api/v1/outputs/${ch}/gain`, { gain_db }),
+  setHpf:         (ch, cfg)     => put(`/api/v1/outputs/${ch}/hpf`, cfg),
+  setLpf:         (ch, cfg)     => put(`/api/v1/outputs/${ch}/lpf`, cfg),
+  setEq:          (ch, cfg)     => put(`/api/v1/outputs/${ch}/eq`, cfg),
+  setCompressor:  (ch, cfg)     => put(`/api/v1/outputs/${ch}/compressor`, cfg),
+  setLimiter:     (ch, cfg)     => put(`/api/v1/outputs/${ch}/limiter`, cfg),
+  setDelay:       (ch, cfg)     => put(`/api/v1/outputs/${ch}/delay`, cfg),
 };
 
 // Convenience: toast-friendly error extraction

@@ -33,7 +33,7 @@ export async function init(container) {
       for (let i = 0; i < sources.length; i++) {
         const wrapEl = document.createElement('div');
         row.appendChild(wrapEl);
-        const strip = new ChannelStrip(wrapEl, i, 'input', sources[i].name || `IN ${i + 1}`);
+        const strip = new ChannelStrip(wrapEl, i, 'input', sources[i] || `IN ${i + 1}`);
         await strip.load();
         strips.push(strip);
       }

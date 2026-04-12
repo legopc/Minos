@@ -23,6 +23,10 @@ export class VuMeter {
     this.grDb = 0;
     this.gateOpen = true;
     
+    // Smoothing state for exponential moving average
+    this._smoothRms = -60;
+    this._smoothPeak = -60;
+    
     // Animation state
     this.lastTime = performance.now();
     this.animationId = null;
@@ -80,19 +84,27 @@ export class VuMeter {
     const grArray = isInput ? frameData.rx_gr_db : frameData.tx_gr_db;
     const gateArray = isInput ? frameData.rx_gate_open : undefined;
     
-    // Update RMS
+    // Exponential smoothing helpers
+    const emaAttack  = (raw, prev, α) => α * raw + (1 - α) * prev;
+    const emaRelease = (raw, prev, α) => α * raw + (1 - α) * prev;
+
+    // Update smoothed RMS
     if (rmsArray && rmsArray[this.channelIndex] !== undefined) {
-      const linear = rmsArray[this.channelIndex];
-      this.rmsDb = this.linearToDb(linear);
+      const raw = this.linearToDb(rmsArray[this.channelIndex]);
+      const α = raw > this._smoothRms ? 0.25 : 0.04;
+      this._smoothRms = emaAttack(raw, this._smoothRms, α);
+      this.rmsDb = this._smoothRms;
     } else {
-      this.rmsDb = -60;
+      this._smoothRms = emaRelease(-60, this._smoothRms, 0.04);
+      this.rmsDb = this._smoothRms;
     }
-    
-    // Update peak
+
+    // Update smoothed peak
     if (peakArray && peakArray[this.channelIndex] !== undefined) {
-      const linear = peakArray[this.channelIndex];
-      this.peakDb = this.linearToDb(linear);
-      // Update peak hold (only if peak is higher)
+      const raw = this.linearToDb(peakArray[this.channelIndex]);
+      const α = raw > this._smoothPeak ? 0.3 : 0.03;
+      this._smoothPeak = emaAttack(raw, this._smoothPeak, α);
+      this.peakDb = this._smoothPeak;
       if (this.peakDb > this.peakHoldDb) {
         this.peakHoldDb = this.peakDb;
       }

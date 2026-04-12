@@ -42,10 +42,16 @@ async function updateHealth() {
     const ptpDotEl = document.getElementById('ptp-dot');
     
     if (ptpStatusEl && ptpDotEl) {
-      ptpStatusEl.textContent = health.ptp?.synced ? 'Synced' : 'Not Synced';
-      ptpDotEl.className = health.ptp?.synced
-        ? 'status-dot status-dot-ok' 
-        : 'status-dot status-dot-warn';
+      if (!health.ptp) {
+        ptpStatusEl.textContent = 'No PTP';
+        ptpDotEl.className = 'status-dot status-dot-err';
+      } else if (health.ptp.synced) {
+        ptpStatusEl.textContent = 'Synced';
+        ptpDotEl.className = 'status-dot status-dot-ok';
+      } else {
+        ptpStatusEl.textContent = 'Awaiting Sync';
+        ptpDotEl.className = 'status-dot status-dot-warn';
+      }
     }
     
     // System card

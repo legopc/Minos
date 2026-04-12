@@ -49,6 +49,8 @@ export class ChannelStrip {
     this._render();
     this._attachListeners();
     this._mountSubComponents();
+    this._renderDspButtons();
+    this._setupModal();
   }
 
   // ── Rendering ───────────────────────────────────────────────────────────────
@@ -75,12 +77,16 @@ export class ChannelStrip {
             <span class="strip-gain-value">0.0 dB</span>
           </div>
         </div>
-        <div class="strip-filter-wrap"></div>
-        <div class="strip-eq-wrap"></div>
-        <div class="strip-gate-wrap"></div>
-        <div class="strip-comp-wrap"></div>
-        <div class="strip-limiter-wrap"></div>
-        <div class="strip-delay-wrap"></div>
+        <div class="strip-sections-staging" style="display:none"></div>
+        <div class="dsp-blocks-row"></div>
+        <dialog class="dsp-modal">
+          <div class="dsp-modal-header">
+            <button class="dsp-modal-enable-btn" title="Toggle enable">○</button>
+            <span class="dsp-modal-title"></span>
+            <button class="dsp-modal-close">×</button>
+          </div>
+          <div class="dsp-modal-body"></div>
+        </dialog>
       </div>
     `;
 
@@ -93,25 +99,136 @@ export class ChannelStrip {
   }
 
   _mountSubComponents() {
-    const filterWrap  = this._strip.querySelector('.strip-filter-wrap');
-    const eqWrap      = this._strip.querySelector('.strip-eq-wrap');
-    const gateWrap    = this._strip.querySelector('.strip-gate-wrap');
-    const compWrap    = this._strip.querySelector('.strip-comp-wrap');
-    const limiterWrap = this._strip.querySelector('.strip-limiter-wrap');
-    const delayWrap   = this._strip.querySelector('.strip-delay-wrap');
+    const staging = this._strip.querySelector('.strip-sections-staging');
 
-    this._filter     = new FilterSection(filterWrap, this.ch, this.type);
-    this._eq         = new EqSection(eqWrap, this.ch, this.type);
-    this._compressor = new CompressorSection(compWrap, this.ch, this.type);
+    const makeWrap = () => {
+      const d = document.createElement('div');
+      staging.appendChild(d);
+      return d;
+    };
+
+    this._filterWrap  = makeWrap();
+    this._eqWrap      = makeWrap();
+    this._compWrap    = makeWrap();
+    this._gateWrap    = null;
+    this._limiterWrap = null;
+    this._delayWrap   = null;
+
+    this._filter     = new FilterSection(this._filterWrap, this.ch, this.type);
+    this._eq         = new EqSection(this._eqWrap, this.ch, this.type);
+    this._compressor = new CompressorSection(this._compWrap, this.ch, this.type);
 
     if (this.type === 'input') {
-      this._gate = new GateSection(gateWrap, this.ch);
+      this._gateWrap = makeWrap();
+      this._gate = new GateSection(this._gateWrap, this.ch);
     } else {
-      this._limiter = new LimiterSection(limiterWrap, this.ch);
-      this._delay   = new DelaySection(delayWrap, this.ch);
+      this._limiterWrap = makeWrap();
+      this._delayWrap   = makeWrap();
+      this._limiter = new LimiterSection(this._limiterWrap, this.ch);
+      this._delay   = new DelaySection(this._delayWrap, this.ch);
     }
 
     this._vuMeter = new VuMeter(this._canvasEl, this.ch, this.type);
+  }
+
+  // ── DSP block buttons & modal ────────────────────────────────────────────────
+
+  _renderDspButtons() {
+    const row = this._strip.querySelector('.dsp-blocks-row');
+    row.innerHTML = '';
+
+    const blocks = this.type === 'input'
+      ? [
+          { key: 'filter',     label: 'FILT', section: () => this._filterWrap,  getEnabled: () => !!(this._filter?.state?.hpf?.enabled || this._filter?.state?.lpf?.enabled) },
+          { key: 'eq',         label: 'EQ',   section: () => this._eqWrap,      getEnabled: () => !!(this._eq?.state?.enabled) },
+          { key: 'gate',       label: 'GATE', section: () => this._gateWrap,    getEnabled: () => !!(this._gate?.state?.enabled) },
+          { key: 'compressor', label: 'COMP', section: () => this._compWrap,    getEnabled: () => !!(this._compressor?.state?.enabled) },
+        ]
+      : [
+          { key: 'filter',     label: 'FILT', section: () => this._filterWrap,  getEnabled: () => !!(this._filter?.state?.hpf?.enabled || this._filter?.state?.lpf?.enabled) },
+          { key: 'eq',         label: 'EQ',   section: () => this._eqWrap,      getEnabled: () => !!(this._eq?.state?.enabled) },
+          { key: 'compressor', label: 'COMP', section: () => this._compWrap,    getEnabled: () => !!(this._compressor?.state?.enabled) },
+          { key: 'limiter',    label: 'LIM',  section: () => this._limiterWrap, getEnabled: () => !!(this._limiter?.state?.enabled) },
+          { key: 'delay',      label: 'DLY',  section: () => this._delayWrap,   getEnabled: () => !!(this._delay?.state?.enabled) },
+        ];
+
+    this._dspBlocks = blocks;
+    this._blockBtns = {};
+
+    for (const block of blocks) {
+      const btn = document.createElement('button');
+      btn.className = 'dsp-block-btn';
+      btn.dataset.key = block.key;
+      btn.innerHTML = `<span class="dsp-block-label">${block.label}</span><span class="dsp-block-dot">●</span>`;
+      btn.addEventListener('click', () => this._openDspModal(block));
+      row.appendChild(btn);
+      this._blockBtns[block.key] = btn;
+    }
+  }
+
+  _openDspModal(block) {
+    const dialog    = this._strip.querySelector('.dsp-modal');
+    const titleEl   = dialog.querySelector('.dsp-modal-title');
+    const bodyEl    = dialog.querySelector('.dsp-modal-body');
+    const enableBtn = dialog.querySelector('.dsp-modal-enable-btn');
+
+    // Move section's wrap DOM into modal body
+    const sectionWrap = block.section();
+    bodyEl.innerHTML = '';
+    if (sectionWrap) bodyEl.appendChild(sectionWrap);
+
+    titleEl.textContent = `${block.label} — ${this.channelName}`;
+
+    // Sync enable button state
+    const updateEnableBtn = () => {
+      const active = block.getEnabled();
+      enableBtn.textContent = active ? '◉' : '○';
+      enableBtn.classList.toggle('active', !!active);
+    };
+    updateEnableBtn();
+
+    // Remove any stale enable-btn listener, then re-attach
+    if (dialog._enableBtnHandler) {
+      enableBtn.removeEventListener('click', dialog._enableBtnHandler);
+    }
+    dialog._enableBtnHandler = updateEnableBtn;
+
+    // Store for close handler
+    dialog._currentBlock    = block;
+    dialog._currentWrap     = sectionWrap;
+    dialog._updateEnableBtn = updateEnableBtn;
+
+    dialog.showModal();
+  }
+
+  _setupModal() {
+    const dialog   = this._strip.querySelector('.dsp-modal');
+    const closeBtn = dialog.querySelector('.dsp-modal-close');
+
+    closeBtn.addEventListener('click', () => dialog.close());
+
+    // Backdrop click (click on the <dialog> element itself, not its content)
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+
+    // On close: restore section wrap back to staging
+    dialog.addEventListener('close', () => {
+      const staging = this._strip.querySelector('.strip-sections-staging');
+      const wrap    = dialog._currentWrap;
+      if (wrap) staging.appendChild(wrap);
+      dialog.querySelector('.dsp-modal-body').innerHTML = '';
+      this._updateAllBlockBtns();
+    });
+  }
+
+  _updateAllBlockBtns() {
+    for (const block of (this._dspBlocks || [])) {
+      const btn = this._blockBtns?.[block.key];
+      if (!btn) continue;
+      const active = block.getEnabled();
+      btn.classList.toggle('active', !!active);
+    }
   }
 
   // ── Event listeners ─────────────────────────────────────────────────────────
@@ -247,13 +364,13 @@ export class ChannelStrip {
 
     // Polarity (input only)
     if (this.type === 'input' && data.polarity !== undefined) {
-      this._polarity = !!data.polarity?.invert ?? false;
+      this._polarity = data.polarity === true;
       this._updatePolarityUI();
     }
 
     // Sub-sections
-    if (data.filters) {
-      this._filter.setState(data.filters);
+    if (data.hpf !== undefined || data.lpf !== undefined) {
+      this._filter.setState({ hpf: data.hpf, lpf: data.lpf });
     }
 
     if (data.eq) {
@@ -287,9 +404,14 @@ export class ChannelStrip {
       this._polarityBtn.removeEventListener('click', this._onPolarityClick);
       this._polarityBtn.addEventListener('click', this._onPolarityClick);
     }
+
+    this._updateAllBlockBtns();
   }
 
   destroy() {
+    const dialog = this._strip?.querySelector('.dsp-modal');
+    if (dialog?.open) dialog.close();
+
     this.containerEl.removeEventListener('dblclick', this._onNameDblClick);
 
     if (this._gainSlider) {

@@ -270,25 +270,18 @@ export class EqSection {
   }
 
   async _onBandChange(i, gainEl, freqEl, qEl) {
-    const prev  = { ...this.state.bands[i] };
+    const prev    = { ...this.state.bands[i] };
     const gain_db = parseFloat(gainEl.value);
     const freq_hz = parseFloat(freqEl.value);
     const q       = parseFloat(qEl.value);
 
-    const band = {
-      band:      i,
-      band_type: this.state.bands[i].band_type,
-      freq_hz,
-      gain_db,
-      q,
-    };
-
     try {
-      await this.api.setEqBand(this.channelIndex, band);
-      this.state.bands[i] = { band_type: band.band_type, freq_hz, gain_db, q };
+      this.state.bands[i] = { band_type: this.state.bands[i].band_type, freq_hz, gain_db, q };
+      await this.api.setEq(this.channelIndex, { enabled: this.state.enabled, bands: this.state.bands });
       this.redrawCurve();
     } catch (err) {
       this._toast(`EQ band ${i + 1} update failed: ${err.message}`);
+      this.state.bands[i] = prev;
       gainEl.value = prev.gain_db;
       freqEl.value = prev.freq_hz;
       qEl.value    = prev.q;

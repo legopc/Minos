@@ -55,7 +55,7 @@ export async function init(container) {
     // Create strips sequentially
     for (let i = 0; i < outputCount; i++) {
       const zone = config.zones[i];
-      const zoneName = zone.name || `Zone ${i + 1}`;
+      const zoneName = (typeof zone === 'string' ? zone : (zone.name || `Zone ${i + 1}`));
 
       // Column wrapper
       const colEl = document.createElement('div');
@@ -64,9 +64,8 @@ export async function init(container) {
       // Mute button
       const muteBtn = document.createElement('button');
       muteBtn.className = 'strip-mute-btn';
-      muteBtn.textContent = zone.muted ? 'MUTED' : 'MUTE';
-      muteBtn.setAttribute('data-muted', zone.muted ? 'true' : 'false');
-      if (zone.muted) muteBtn.classList.add('active');
+      muteBtn.textContent = 'MUTE';
+      muteBtn.setAttribute('data-muted', 'false');
       
       // Store reference for state tracking
       muteButtonRefs.push({
