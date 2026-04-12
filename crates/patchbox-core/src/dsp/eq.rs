@@ -41,6 +41,40 @@ impl Coeffs {
             a2: a2 / a0,
         }
     }
+
+    /// Low shelf (boost/cut below freq_hz).
+    fn low_shelf(freq_hz: f32, gain_db: f32, q: f32) -> Self {
+        let a  = 10.0_f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * std::f32::consts::PI * freq_hz.clamp(20.0, 20_000.0) / SAMPLE_RATE;
+        let (sin_w0, cos_w0) = w0.sin_cos();
+        let alpha = sin_w0 / (2.0 * q.clamp(0.1, 10.0));
+        let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
+
+        let b0 =  a * ((a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha);
+        let b1 =  2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let b2 =  a * ((a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha);
+        let a0 =       (a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let a2 =        (a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha;
+        Self { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 }
+    }
+
+    /// High shelf (boost/cut above freq_hz).
+    fn high_shelf(freq_hz: f32, gain_db: f32, q: f32) -> Self {
+        let a  = 10.0_f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * std::f32::consts::PI * freq_hz.clamp(20.0, 20_000.0) / SAMPLE_RATE;
+        let (sin_w0, cos_w0) = w0.sin_cos();
+        let alpha = sin_w0 / (2.0 * q.clamp(0.1, 10.0));
+        let two_sqrt_a_alpha = 2.0 * a.sqrt() * alpha;
+
+        let b0 =  a * ((a + 1.0) + (a - 1.0) * cos_w0 + two_sqrt_a_alpha);
+        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0);
+        let b2 =  a * ((a + 1.0) + (a - 1.0) * cos_w0 - two_sqrt_a_alpha);
+        let a0 =        (a + 1.0) - (a - 1.0) * cos_w0 + two_sqrt_a_alpha;
+        let a1 =  2.0 * ((a - 1.0) - (a + 1.0) * cos_w0);
+        let a2 =        (a + 1.0) - (a - 1.0) * cos_w0 - two_sqrt_a_alpha;
+        Self { b0: b0/a0, b1: b1/a0, b2: b2/a0, a1: a1/a0, a2: a2/a0 }
+    }
 }
 
 /// Single biquad filter with state (transposed direct form II — numerically stable).
@@ -71,9 +105,9 @@ impl BiquadFilter {
     }
 }
 
-/// 3-band parametric EQ. RT-safe: no allocation, no locks.
+/// 5-band parametric EQ. RT-safe: no allocation, no locks.
 pub struct ParametricEq {
-    bands: [BiquadFilter; 3],
+    bands: [BiquadFilter; 5],
     /// Shadow of last-applied config for change detection.
     last_config: Option<EqConfig>,
 }
@@ -82,7 +116,7 @@ impl ParametricEq {
     pub fn new() -> Self {
         let identity = BiquadFilter::new(Coeffs::identity());
         Self {
-            bands: [identity; 3],
+            bands: [identity; 5],
             last_config: None,
         }
     }
@@ -90,10 +124,12 @@ impl ParametricEq {
     /// Update coefficients if config changed. Call once per audio block.
     /// RT-safe: pure arithmetic, no allocation.
     pub fn sync(&mut self, cfg: &EqConfig) {
+        use crate::config::EqBandType;
         let changed = self.last_config.as_ref().map_or(true, |prev| {
             prev.enabled != cfg.enabled
                 || prev.bands.iter().zip(cfg.bands.iter()).any(|(a, b)| {
-                    (a.freq_hz - b.freq_hz).abs() > 0.01
+                    a.band_type != b.band_type
+                        || (a.freq_hz - b.freq_hz).abs() > 0.01
                         || (a.gain_db - b.gain_db).abs() > 0.001
                         || (a.q - b.q).abs() > 0.001
                 })
@@ -102,7 +138,11 @@ impl ParametricEq {
         if changed {
             if cfg.enabled {
                 for (i, band) in cfg.bands.iter().enumerate() {
-                    self.bands[i].coeffs = Coeffs::peaking(band.freq_hz, band.gain_db, band.q);
+                    self.bands[i].coeffs = match band.band_type {
+                        EqBandType::LowShelf  => Coeffs::low_shelf(band.freq_hz, band.gain_db, band.q),
+                        EqBandType::HighShelf => Coeffs::high_shelf(band.freq_hz, band.gain_db, band.q),
+                        EqBandType::Peaking   => Coeffs::peaking(band.freq_hz, band.gain_db, band.q),
+                    };
                     self.bands[i].reset();
                 }
             } else {
@@ -134,17 +174,14 @@ impl Default for ParametricEq {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{EqBand, EqConfig};
+    use crate::config::{EqBand, EqBandType, EqConfig};
 
     fn make_cfg(freq: f32, gain_db: f32, q: f32, enabled: bool) -> EqConfig {
-        EqConfig {
-            bands: [
-                EqBand { freq_hz: freq, gain_db, q },
-                EqBand { freq_hz: 1000.0, gain_db: 0.0, q: 0.707 },
-                EqBand { freq_hz: 8000.0, gain_db: 0.0, q: 0.707 },
-            ],
-            enabled,
-        }
+        use crate::config::EqBandType;
+        let mut cfg = EqConfig::default();
+        cfg.enabled = enabled;
+        cfg.bands[2] = EqBand { freq_hz: freq, gain_db, q, band_type: EqBandType::Peaking };
+        cfg
     }
 
     #[test]
@@ -237,5 +274,37 @@ mod tests {
         eq.sync(&cfg);
         // State unchanged (no reset triggered)
         assert_eq!(eq.bands[0].s1, s1_before);
+    }
+
+    #[test]
+    fn low_shelf_boost_increases_low_freq() {
+        let mut eq = ParametricEq::new();
+        let mut cfg = EqConfig::default();
+        cfg.bands[0] = EqBand { freq_hz: 200.0, gain_db: 6.0, q: 0.707, band_type: EqBandType::LowShelf };
+        cfg.enabled = true;
+        eq.sync(&cfg);
+        let sr = 48_000.0f32;
+        let sine: Vec<f32> = (0..4800).map(|i| (2.0*std::f32::consts::PI*50.0*i as f32/sr).sin()*0.5).collect();
+        let mut warmup = sine[..480].to_vec(); eq.process_block(&mut warmup);
+        let mut out = sine[480..].to_vec(); eq.process_block(&mut out);
+        let rms_in: f32  = (sine[480..].iter().map(|x|x*x).sum::<f32>() / out.len() as f32).sqrt();
+        let rms_out: f32 = (out.iter().map(|x|x*x).sum::<f32>() / out.len() as f32).sqrt();
+        assert!(rms_out > rms_in * 1.3, "low shelf +6dB should boost 50Hz: in={rms_in:.4} out={rms_out:.4}");
+    }
+
+    #[test]
+    fn high_shelf_boost_increases_high_freq() {
+        let mut eq = ParametricEq::new();
+        let mut cfg = EqConfig::default();
+        cfg.bands[4] = EqBand { freq_hz: 8000.0, gain_db: 6.0, q: 0.707, band_type: EqBandType::HighShelf };
+        cfg.enabled = true;
+        eq.sync(&cfg);
+        let sr = 48_000.0f32;
+        let sine: Vec<f32> = (0..4800).map(|i| (2.0*std::f32::consts::PI*15000.0*i as f32/sr).sin()*0.5).collect();
+        let mut warmup = sine[..480].to_vec(); eq.process_block(&mut warmup);
+        let mut out = sine[480..].to_vec(); eq.process_block(&mut out);
+        let rms_in: f32  = (sine[480..].iter().map(|x|x*x).sum::<f32>() / out.len() as f32).sqrt();
+        let rms_out: f32 = (out.iter().map(|x|x*x).sum::<f32>() / out.len() as f32).sqrt();
+        assert!(rms_out > rms_in * 1.3, "high shelf +6dB should boost 15kHz: in={rms_in:.4} out={rms_out:.4}");
     }
 }

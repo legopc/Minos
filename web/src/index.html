@@ -3,20 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dante Patchbox</title>
-  <!-- Preconnect for Google Fonts -->
+  <title>Patchbox</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Bebas Neue (headers) + JetBrains Mono (labels/values) -->
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <!-- HEADER (sticky) -->
+  <!-- HEADER -->
   <header id="app-header">
     <div class="header-left">
-      <span class="app-title">Dante Patchbox</span>
+      <button class="btn-sidebar-toggle" id="btn-sidebar-toggle" title="Toggle nav">☰</button>
+      <span class="app-title">PATCHBOX</span>
       <span class="device-name" id="device-name"></span>
+    </div>
+    <div class="header-center">
+      <span class="status-badge" id="badge-dante" data-state="unknown">DANTE</span>
+      <span class="status-badge" id="badge-ptp" data-state="unknown">PTP</span>
     </div>
     <div class="header-right">
       <div class="ws-badge">
@@ -24,12 +27,11 @@
         <span class="ws-label" id="ws-label">connecting…</span>
       </div>
       <span class="user-chip" id="user-chip"></span>
-      <button class="btn-scenes" id="btn-scenes-toggle" title="Scenes">SCENES</button>
       <button class="btn-logout" id="btn-logout">LOGOUT</button>
     </div>
   </header>
 
-  <!-- PANIC STRIP (sticky below header) -->
+  <!-- PANIC STRIP -->
   <div class="panic-strip" id="panic-strip">
     <button class="btn-panic" id="panic-btn">⚠ PANIC MUTE ALL</button>
     <button class="btn-unmute-all" id="unmute-all-btn">UNMUTE ALL</button>
@@ -37,29 +39,42 @@
     <span class="mute-status" id="mute-status"></span>
   </div>
 
-  <!-- MATRIX CONSOLE (fills remaining viewport) -->
-  <div class="console-wrap" id="console-wrap">
-    <table class="console-table" id="matrix-table">
-      <!-- Built dynamically by app.js buildConsole() -->
-    </table>
-  </div>
+  <!-- APP BODY -->
+  <div class="app-body">
+    <!-- SIDEBAR NAV -->
+    <nav class="sidebar" id="sidebar">
+      <ul class="nav-list">
+        <li class="nav-item" data-route="dashboard">
+          <span class="nav-icon">◎</span><span class="nav-label">DASHBOARD</span>
+        </li>
+        <li class="nav-item" data-route="matrix">
+          <span class="nav-icon">⊞</span><span class="nav-label">MATRIX</span>
+        </li>
+        <li class="nav-item" data-route="inputs">
+          <span class="nav-icon">↓</span><span class="nav-label">INPUTS</span>
+        </li>
+        <li class="nav-item" data-route="outputs">
+          <span class="nav-icon">↑</span><span class="nav-label">OUTPUTS</span>
+        </li>
+        <li class="nav-item" data-route="scenes">
+          <span class="nav-icon">⊡</span><span class="nav-label">SCENES</span>
+        </li>
+        <li class="nav-item" data-route="system">
+          <span class="nav-icon">⚙</span><span class="nav-label">SYSTEM</span>
+        </li>
+      </ul>
+    </nav>
 
-  <!-- SCENES PANEL (hidden by default, collapsible bottom) -->
-  <div class="scenes-panel" id="scenes-panel" hidden>
-    <div class="scenes-panel-head">
-      <span class="scenes-panel-title">SCENES</span>
-      <button class="btn-close-scenes" id="btn-close-scenes">✕</button>
-    </div>
-    <div class="scenes-panel-body">
-      <div class="save-row">
-        <input type="text" id="scene-name-input" placeholder="Scene name…" autocomplete="off">
-        <button class="btn btn-save" id="btn-save-scene">SAVE CURRENT</button>
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <div id="page-container">
+        <!-- pages render here dynamically -->
+        <div class="page-loading">Loading…</div>
       </div>
-      <div class="scene-list" id="scene-list"></div>
-    </div>
+    </main>
   </div>
 
-  <!-- LOGIN OVERLAY (injected by app.js if not authed) -->
+  <!-- LOGIN OVERLAY -->
   <div class="login-overlay" id="login-overlay" hidden>
     <div class="login-box">
       <h2 class="login-title">AUTHENTICATION REQUIRED</h2>
@@ -79,6 +94,6 @@
   <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container"></div>
 
-  <script src="/app.js" defer></script>
+  <script type="module" src="/modules/router.js"></script>
 </body>
 </html>

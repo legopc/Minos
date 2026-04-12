@@ -248,7 +248,15 @@ async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 #[derive(Serialize)]
-pub struct MeterFrame { pub tx_rms: Vec<f32>, pub rx_rms: Vec<f32>, pub gr_db: Vec<f32> }
+pub struct MeterFrame {
+    pub tx_rms: Vec<f32>,
+    pub rx_rms: Vec<f32>,
+    pub tx_peak: Vec<f32>,
+    pub rx_peak: Vec<f32>,
+    pub tx_gr_db: Vec<f32>,
+    pub rx_gr_db: Vec<f32>,
+    pub rx_gate_open: Vec<bool>,
+}
 
 // GET /api/v1/config
 async fn get_config(State(s): State<AppState>) -> impl IntoResponse {
@@ -399,6 +407,232 @@ async fn put_limiter_enabled(State(s): State<AppState>, Path(tx): Path<usize>, J
     StatusCode::NO_CONTENT.into_response()
 }
 
+use patchbox_core::config::{
+    InputChannelDsp, OutputChannelDsp,
+    FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
+};
+
+#[derive(Deserialize)] struct GainBody { gain_db: f32 }
+#[derive(Deserialize)] struct EnabledBody { enabled: bool }
+#[derive(Deserialize)] struct MutedBody { muted: bool }
+#[derive(Deserialize)] struct PolarityBody { invert: bool }
+
+// ---------------------------------------------------------------------------
+// Input DSP handlers
+// ---------------------------------------------------------------------------
+
+// GET /api/v1/inputs/:ch/dsp
+async fn get_input_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match cfg.input_dsp.get(ch) {
+        Some(dsp) => Json(dsp.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/inputs/:ch/gain
+async fn put_input_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GainBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/polarity
+async fn put_input_polarity(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<PolarityBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.polarity = body.invert;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/hpf
+async fn put_input_hpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.hpf = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/lpf
+async fn put_input_lpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.lpf = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/eq
+async fn put_input_eq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/eq/enabled
+async fn put_input_eq_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq.enabled = body.enabled;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/gate
+async fn put_input_gate(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GateConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.gate = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/compressor
+async fn put_input_compressor(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<CompressorConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.compressor = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/enabled
+async fn put_input_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.enabled = body.enabled;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Output DSP handlers
+// ---------------------------------------------------------------------------
+
+// GET /api/v1/outputs/:ch/dsp
+async fn get_output_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match cfg.output_dsp.get(ch) {
+        Some(dsp) => Json(dsp.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/outputs/:ch/gain
+async fn put_output_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GainBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/hpf
+async fn put_output_hpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.hpf = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/lpf
+async fn put_output_lpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.lpf = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/eq
+async fn put_output_eq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/eq/enabled
+async fn put_output_eq_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq.enabled = body.enabled;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/compressor
+async fn put_output_compressor(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<CompressorConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.compressor = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/limiter
+async fn put_output_limiter(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<LimiterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.limiter = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/delay
+async fn put_output_delay(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<DelayConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.delay = body;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/enabled
+async fn put_output_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.enabled = body.enabled;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/outputs/:ch/mute — alias: set muted state directly
+async fn put_output_mute(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<MutedBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.muted = body.muted;
+    drop(cfg);
+    let _ = s.persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // GET /ws
 async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, s))
@@ -409,7 +643,15 @@ async fn handle_ws(mut socket: WebSocket, s: AppState) {
     loop {
         tick.tick().await;
         let meters = s.meters.read().await;
-        let frame = MeterFrame { tx_rms: meters.tx_rms.clone(), rx_rms: meters.rx_rms.clone(), gr_db: meters.gr_db.clone() };
+        let frame = MeterFrame {
+            tx_rms: meters.tx_rms.clone(),
+            rx_rms: meters.rx_rms.clone(),
+            tx_peak: meters.tx_peak.clone(),
+            rx_peak: meters.rx_peak.clone(),
+            tx_gr_db: meters.tx_gr_db.clone(),
+            rx_gr_db: meters.rx_gr_db.clone(),
+            rx_gate_open: meters.rx_gate_open.clone(),
+        };
         drop(meters);
         let json = match serde_json::to_string(&frame) { Ok(j) => j, Err(_) => continue };
         if socket.send(Message::Text(json.into())).await.is_err() { break; }
@@ -456,6 +698,29 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/zones/:tx/eq/enabled", put(put_eq_enabled))
         .route("/api/v1/zones/:tx/limiter", get(get_limiter).put(put_limiter))
         .route("/api/v1/zones/:tx/limiter/enabled", put(put_limiter_enabled))
+        // Input DSP
+        .route("/api/v1/inputs/:ch/dsp", get(get_input_dsp))
+        .route("/api/v1/inputs/:ch/gain", put(put_input_gain))
+        .route("/api/v1/inputs/:ch/polarity", put(put_input_polarity))
+        .route("/api/v1/inputs/:ch/hpf", put(put_input_hpf))
+        .route("/api/v1/inputs/:ch/lpf", put(put_input_lpf))
+        .route("/api/v1/inputs/:ch/eq", put(put_input_eq))
+        .route("/api/v1/inputs/:ch/eq/enabled", put(put_input_eq_enabled))
+        .route("/api/v1/inputs/:ch/gate", put(put_input_gate))
+        .route("/api/v1/inputs/:ch/compressor", put(put_input_compressor))
+        .route("/api/v1/inputs/:ch/enabled", put(put_input_enabled))
+        // Output DSP
+        .route("/api/v1/outputs/:ch/dsp", get(get_output_dsp))
+        .route("/api/v1/outputs/:ch/gain", put(put_output_gain))
+        .route("/api/v1/outputs/:ch/hpf", put(put_output_hpf))
+        .route("/api/v1/outputs/:ch/lpf", put(put_output_lpf))
+        .route("/api/v1/outputs/:ch/eq", put(put_output_eq))
+        .route("/api/v1/outputs/:ch/eq/enabled", put(put_output_eq_enabled))
+        .route("/api/v1/outputs/:ch/compressor", put(put_output_compressor))
+        .route("/api/v1/outputs/:ch/limiter", put(put_output_limiter))
+        .route("/api/v1/outputs/:ch/delay", put(put_output_delay))
+        .route("/api/v1/outputs/:ch/enabled", put(put_output_enabled))
+        .route("/api/v1/outputs/:ch/mute", put(put_output_mute))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required

@@ -223,11 +223,8 @@ impl DanteDevice {
         let audio_callbacks_cb = Arc::clone(&audio_callbacks);
         let resyncs_cb = Arc::clone(&resyncs);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
-        // Per-output DSP state (EQ + limiter). Allocated once here, moved into the closure.
-        // Resized defensively on first callback if n_tx differs (should not happen at runtime).
-        let mut dsp_state: Vec<patchbox_core::matrix::PerOutputDsp> = (0..n_tx)
-            .map(|_| patchbox_core::matrix::PerOutputDsp::new())
-            .collect();
+        // Stateful matrix processor: owns input DSP + output DSP. Allocated once, moved into closure.
+        let mut matrix_proc = patchbox_core::matrix::MatrixProcessor::new(n_rx, n_tx, 48_000.0);
         // ── LATENCY TUNING ──────────────────────────────────────────────
         // Three knobs control audio playthrough latency:
         //
@@ -267,10 +264,8 @@ impl DanteDevice {
             let actual_rx = channels.len().min(n_rx);
             let block     = samples_count;
 
-            // Defensive resize — n_tx is constant at runtime; this branch fires at most once.
-            if dsp_state.len() != n_tx {
-                dsp_state.resize_with(n_tx, patchbox_core::matrix::PerOutputDsp::new);
-            }
+            // Sync DSP state from latest config (RT-safe: no alloc when vecs already sized)
+            matrix_proc.sync(cfg);
 
             // Convert RX i32 → f32
             let rx_f32: Vec<Vec<f32>> = (0..actual_rx)
@@ -284,8 +279,8 @@ impl DanteDevice {
             let inputs_ref:       Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
             let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
-            // Run DSP matrix (EQ + limiter replaces old soft_clip)
-            patchbox_core::matrix::process(&inputs_ref, &mut outputs_ref, cfg, &mut dsp_state, 48_000.0);
+            // Run DSP matrix (input DSP → routing → output DSP)
+            matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
 
             // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
             if let Ok(mut m) = meters.try_write() {
@@ -299,10 +294,17 @@ impl DanteDevice {
                         m.tx_rms[i] = rms_linear(ch);
                     }
                 }
+                if m.tx_gr_db.len() != n_tx {
+                    m.tx_gr_db.resize(n_tx, 0.0);
+                }
                 if m.gr_db.len() != n_tx {
                     m.gr_db.resize(n_tx, 0.0);
                 }
                 for (i, d) in dsp_state.iter().enumerate() {
+                    if i < m.tx_gr_db.len() {
+                        m.tx_gr_db[i] = d.last_gr_db;
+                    }
+                    // Maintain backward compat with deprecated gr_db field
                     if i < m.gr_db.len() {
                         m.gr_db[i] = d.last_gr_db;
                     }

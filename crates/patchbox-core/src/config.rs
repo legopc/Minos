@@ -1,6 +1,20 @@
 //! Configuration types — loaded from config.toml
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// EQ band filter type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum EqBandType {
+    LowShelf,
+    Peaking,
+    HighShelf,
+}
+
+impl Default for EqBandType {
+    fn default() -> Self {
+        EqBandType::Peaking
+    }
+}
 
 /// One band of a parametric EQ.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,32 +25,256 @@ pub struct EqBand {
     pub gain_db: f32,
     /// Q factor (0.1–10.0); higher = narrower band
     pub q: f32,
+    #[serde(default)]
+    pub band_type: EqBandType,
 }
 
 impl Default for EqBand {
     fn default() -> Self {
-        Self { freq_hz: 1000.0, gain_db: 0.0, q: 0.707 }
+        Self { freq_hz: 1000.0, gain_db: 0.0, q: 0.707, band_type: EqBandType::Peaking }
     }
 }
 
-/// Per-output 3-band parametric EQ.
+/// Per-output 5-band EQ.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqConfig {
-    pub bands: [EqBand; 3],
+    #[serde(deserialize_with = "deser_eq_bands", default = "EqConfig::default_bands")]
+    pub bands: [EqBand; 5],
     #[serde(default)]
     pub enabled: bool,
+}
+
+fn deser_eq_bands<'de, D>(deserializer: D) -> Result<[EqBand; 5], D::Error>
+where D: Deserializer<'de>
+{
+    let v = Vec::<EqBand>::deserialize(deserializer)?;
+    let mut bands = EqConfig::default_bands();
+    for (i, b) in v.into_iter().take(5).enumerate() {
+        bands[i] = b;
+    }
+    Ok(bands)
+}
+
+impl EqConfig {
+    pub fn default_bands() -> [EqBand; 5] {
+        [
+            EqBand { freq_hz: 100.0,   gain_db: 0.0, q: 0.707, band_type: EqBandType::LowShelf },
+            EqBand { freq_hz: 250.0,   gain_db: 0.0, q: 0.707, band_type: EqBandType::Peaking },
+            EqBand { freq_hz: 1000.0,  gain_db: 0.0, q: 0.707, band_type: EqBandType::Peaking },
+            EqBand { freq_hz: 4000.0,  gain_db: 0.0, q: 0.707, band_type: EqBandType::Peaking },
+            EqBand { freq_hz: 10000.0, gain_db: 0.0, q: 0.707, band_type: EqBandType::HighShelf },
+        ]
+    }
 }
 
 impl Default for EqConfig {
     fn default() -> Self {
         Self {
-            // Low shelf ~100Hz, mid parametric ~1kHz, high shelf ~8kHz
-            bands: [
-                EqBand { freq_hz: 100.0, gain_db: 0.0, q: 0.707 },
-                EqBand { freq_hz: 1000.0, gain_db: 0.0, q: 0.707 },
-                EqBand { freq_hz: 8000.0, gain_db: 0.0, q: 0.707 },
-            ],
+            bands: Self::default_bands(),
             enabled: false,
+        }
+    }
+}
+
+/// High-pass or low-pass filter config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    pub freq_hz: f32,
+}
+
+/// HPF default (80 Hz).
+pub fn default_hpf() -> FilterConfig {
+    FilterConfig { enabled: false, freq_hz: 80.0 }
+}
+
+/// LPF default (16 kHz).
+pub fn default_lpf() -> FilterConfig {
+    FilterConfig { enabled: false, freq_hz: 16000.0 }
+}
+
+impl Default for FilterConfig {
+    fn default() -> Self {
+        default_hpf()
+    }
+}
+
+/// Noise gate / expander.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "GateConfig::default_threshold_db")]
+    pub threshold_db: f32,
+    #[serde(default = "GateConfig::default_ratio")]
+    pub ratio: f32,
+    #[serde(default = "GateConfig::default_attack_ms")]
+    pub attack_ms: f32,
+    #[serde(default = "GateConfig::default_hold_ms")]
+    pub hold_ms: f32,
+    #[serde(default = "GateConfig::default_release_ms")]
+    pub release_ms: f32,
+    #[serde(default = "GateConfig::default_range_db")]
+    pub range_db: f32,
+}
+
+impl GateConfig {
+    fn default_threshold_db() -> f32 { -60.0 }
+    fn default_ratio() -> f32 { 10.0 }
+    fn default_attack_ms() -> f32 { 1.0 }
+    fn default_hold_ms() -> f32 { 50.0 }
+    fn default_release_ms() -> f32 { 200.0 }
+    fn default_range_db() -> f32 { -60.0 }
+}
+
+impl Default for GateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: Self::default_threshold_db(),
+            ratio: Self::default_ratio(),
+            attack_ms: Self::default_attack_ms(),
+            hold_ms: Self::default_hold_ms(),
+            release_ms: Self::default_release_ms(),
+            range_db: Self::default_range_db(),
+        }
+    }
+}
+
+/// Dynamics compressor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressorConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "CompressorConfig::default_threshold_db")]
+    pub threshold_db: f32,
+    #[serde(default = "CompressorConfig::default_ratio")]
+    pub ratio: f32,
+    #[serde(default = "CompressorConfig::default_knee_db")]
+    pub knee_db: f32,
+    #[serde(default = "CompressorConfig::default_attack_ms")]
+    pub attack_ms: f32,
+    #[serde(default = "CompressorConfig::default_release_ms")]
+    pub release_ms: f32,
+    #[serde(default)]
+    pub makeup_db: f32,
+}
+
+impl CompressorConfig {
+    fn default_threshold_db() -> f32 { -18.0 }
+    fn default_ratio() -> f32 { 4.0 }
+    fn default_knee_db() -> f32 { 6.0 }
+    fn default_attack_ms() -> f32 { 10.0 }
+    fn default_release_ms() -> f32 { 100.0 }
+}
+
+impl Default for CompressorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: Self::default_threshold_db(),
+            ratio: Self::default_ratio(),
+            knee_db: Self::default_knee_db(),
+            attack_ms: Self::default_attack_ms(),
+            release_ms: Self::default_release_ms(),
+            makeup_db: 0.0,
+        }
+    }
+}
+
+/// Sample-accurate delay line.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DelayConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Delay in ms, clamped 0–500.
+    #[serde(default)]
+    pub delay_ms: f32,
+}
+
+impl Default for DelayConfig {
+    fn default() -> Self {
+        Self { enabled: false, delay_ms: 0.0 }
+    }
+}
+
+/// Full DSP chain for one input channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputChannelDsp {
+    #[serde(default = "default_channel_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub gain_db: f32,
+    /// true = invert polarity
+    #[serde(default)]
+    pub polarity: bool,
+    #[serde(default = "default_hpf")]
+    pub hpf: FilterConfig,
+    #[serde(default = "default_lpf")]
+    pub lpf: FilterConfig,
+    #[serde(default)]
+    pub eq: EqConfig,
+    #[serde(default)]
+    pub gate: GateConfig,
+    #[serde(default)]
+    pub compressor: CompressorConfig,
+}
+
+impl Default for InputChannelDsp {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            gain_db: 0.0,
+            polarity: false,
+            hpf: default_hpf(),
+            lpf: default_lpf(),
+            eq: EqConfig::default(),
+            gate: GateConfig::default(),
+            compressor: CompressorConfig::default(),
+        }
+    }
+}
+
+/// Full DSP chain for one output channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputChannelDsp {
+    #[serde(default = "default_channel_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
+    /// true = invert polarity
+    #[serde(default)]
+    pub polarity: bool,
+    #[serde(default = "default_hpf")]
+    pub hpf: FilterConfig,
+    #[serde(default = "default_lpf")]
+    pub lpf: FilterConfig,
+    #[serde(default)]
+    pub eq: EqConfig,
+    #[serde(default)]
+    pub compressor: CompressorConfig,
+    #[serde(default)]
+    pub limiter: LimiterConfig,
+    #[serde(default)]
+    pub delay: DelayConfig,
+}
+
+impl Default for OutputChannelDsp {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            gain_db: 0.0,
+            muted: false,
+            polarity: false,
+            hpf: default_hpf(),
+            lpf: default_lpf(),
+            eq: EqConfig::default(),
+            compressor: CompressorConfig::default(),
+            limiter: LimiterConfig::default(),
+            delay: DelayConfig::default(),
         }
     }
 }
@@ -90,6 +328,12 @@ pub struct PatchboxConfig {
     /// Per-output brick-wall limiter (len == tx_channels)
     #[serde(default)]
     pub per_output_limiter: Vec<LimiterConfig>,
+    /// Per-input DSP chain (len == rx_channels) — supersedes input_gain_db
+    #[serde(default)]
+    pub input_dsp: Vec<InputChannelDsp>,
+    /// Per-output DSP chain (len == tx_channels) — supersedes output_gain_db, output_muted, per_output_eq, per_output_limiter
+    #[serde(default)]
+    pub output_dsp: Vec<OutputChannelDsp>,
     /// Dante device name as seen on the network
     pub dante_name: String,
     /// Network interface for Dante
@@ -124,6 +368,8 @@ impl Default for PatchboxConfig {
             output_muted: vec![false; tx],
             per_output_eq: vec![EqConfig::default(); tx],
             per_output_limiter: vec![LimiterConfig::default(); tx],
+            input_dsp: (0..rx).map(|_| InputChannelDsp::default()).collect(),
+            output_dsp: (0..tx).map(|_| OutputChannelDsp::default()).collect(),
             dante_name: "patchbox".to_string(),
             dante_nic: "eth0".to_string(),
             dante_clock_path: default_clock_path(),
@@ -147,8 +393,45 @@ impl PatchboxConfig {
         for row in &mut self.matrix {
             row.resize(self.rx_channels, false);
         }
+
+        // Migrate legacy fields into new DSP structs if input_dsp/output_dsp are missing/short
+        if self.input_dsp.len() < self.rx_channels {
+            self.input_dsp.resize_with(self.rx_channels, InputChannelDsp::default);
+            for (i, dsp) in self.input_dsp.iter_mut().enumerate() {
+                if let Some(&g) = self.input_gain_db.get(i) {
+                    if g != 0.0 { dsp.gain_db = g; }
+                }
+            }
+        }
+        if self.output_dsp.len() < self.tx_channels {
+            self.output_dsp.resize_with(self.tx_channels, OutputChannelDsp::default);
+            for (i, dsp) in self.output_dsp.iter_mut().enumerate() {
+                if let Some(&g) = self.output_gain_db.get(i) {
+                    if g != 0.0 { dsp.gain_db = g; }
+                }
+                if let Some(&m) = self.output_muted.get(i) {
+                    dsp.muted = m;
+                }
+                if let Some(eq) = self.per_output_eq.get(i) {
+                    dsp.eq.enabled = eq.enabled;
+                    for (j, b) in eq.bands[..3.min(eq.bands.len())].iter().enumerate() {
+                        dsp.eq.bands[j + 1] = EqBand {
+                            freq_hz: b.freq_hz,
+                            gain_db: b.gain_db,
+                            q: b.q,
+                            band_type: EqBandType::Peaking,
+                        };
+                    }
+                }
+                if let Some(lim) = self.per_output_limiter.get(i) {
+                    dsp.limiter = lim.clone();
+                }
+            }
+        }
     }
 }
+
+fn default_channel_enabled() -> bool { true }
 
 fn default_clock_path() -> String {
     "/tmp/ptp-usrvclock".to_string()
