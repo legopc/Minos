@@ -110,6 +110,7 @@ impl DanteDevice {
                 settings.clock_path = Some(std::path::PathBuf::from(&cfg_snapshot.dante_clock_path));
                 tracing::info!(clock = %cfg_snapshot.dante_clock_path, "using PTP clock");
             }
+            settings.rx_jitter_samples = cfg_snapshot.rx_jitter_samples;
         }
         // LAN-optimised latency settings (see LATENCY TUNING comment near LEAD_SAMPLES).
         // 1 ms: minimum for LAN Dante. Drives three things:
@@ -119,7 +120,6 @@ impl DanteDevice {
         settings.tx_latency_ns = 1_000_000;
         settings.self_info.tx_latency_ns = 1_000_000;
         settings.self_info.latency_ns = 1_000_000;
-        settings.rx_jitter_samples = 192;   // 4 ms hole-fix wait — fine for a clean LAN
         let mut server = DeviceServer::start(settings).await;
         tracing::info!("inferno_aoip DeviceServer started");
 
@@ -214,6 +214,11 @@ impl DanteDevice {
         // Used in the 5-second alignment log to verify lead is stable; not used for write_pos.
         let current_ts_cb = Arc::clone(&current_timestamp);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
+        // Per-output DSP state (EQ + limiter). Allocated once here, moved into the closure.
+        // Resized defensively on first callback if n_tx differs (should not happen at runtime).
+        let mut dsp_state: Vec<patchbox_core::matrix::PerOutputDsp> = (0..n_tx)
+            .map(|_| patchbox_core::matrix::PerOutputDsp::new())
+            .collect();
         // ── LATENCY TUNING ──────────────────────────────────────────────
         // Three knobs control audio playthrough latency:
         //
@@ -221,27 +226,24 @@ impl DanteDevice {
         //      Replaces 2 ms polling. Wakeup now fires within <0.5 ms of packet arrival.
         //      Minimum batching delay ≈ 0 ms (event-driven).
         //
-        //   2. LEAD_SAMPLES (below) — TX ring write-ahead.
-        //      Audio written here won't be transmitted until LEAD_SAMPLES / 48000 s later.
-        //      With SCHED_FIFO + event-driven wakeup, jitter is <0.5 ms → LEAD can be 2 ms.
-        //      Safety ladder: 96 (2 ms, 1.5 ms margin) → 192 (4 ms) → 384 (8 ms, very safe).
+        //   2. lead_samples (config) — TX ring write-ahead (default 48 = 1 ms).
+        //      Audio written here won't be transmitted until lead_samples / 48000 s later.
+        //      With SCHED_FIFO + event-driven wakeup, jitter is <0.5 ms → LEAD can be 1 ms.
+        //      Safety ladder: 48 (1 ms) → 96 (2 ms) → 192 (4 ms, very safe).
         //
         //   3. settings.tx_latency_ns — Dante TX flow latency and flow negotiation minimum.
         //      Also controls self_info.latency_ns (mDNS-advertised RX capability) and
         //      self_info.tx_latency_ns (advertised TX latency to downstream receivers).
         //      At 1 ms: max(MXWANI8_min=1ms, our_min=1ms) = 1 ms jitter-buffer hold-back.
         //
-        // Total audio latency ≈ flow_latency + wakeup_latency + LEAD/48000 + tx_latency_ns.
-        // At current settings: 1 ms + <0.5 ms + 2 ms + 1 ms ≈ 4-5 ms (our portion).
+        // Total audio latency ≈ flow_latency + wakeup_latency + lead_samples/48000 + tx_latency_ns.
+        // At default settings: 1 ms + <0.5 ms + 1 ms + 1 ms ≈ 3-4 ms (our portion).
         //
         // NOTE: the monitoring device's own RX jitter buffer and DAC buffer also add latency.
-        // If pops return after reducing LEAD_SAMPLES, increase it.
-        // Step up: 96 → 128 → 192. Never below ~48 (1 ms) with SCHED_FIFO.
+        // If pops return after reducing lead_samples, increase it.
+        // Step up: 48 → 96 → 192. Never below ~48 (1 ms) with SCHED_FIFO.
         // ────────────────────────────────────────────────────────────────
-        // LEAD_SAMPLES: how far ahead write_pos stays of the TX read position.
-        // With event-driven wakeup (<0.5 ms jitter) + SCHED_FIFO, 96 (2 ms) is safe.
-        // If pops return: step up to 128 (2.7 ms) or 192 (4 ms, very safe).
-        const LEAD_SAMPLES: usize = 96;
+        let lead_samples = initial_cfg.lead_samples;
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
@@ -256,6 +258,11 @@ impl DanteDevice {
             let actual_rx = channels.len().min(n_rx);
             let block     = samples_count;
 
+            // Defensive resize — n_tx is constant at runtime; this branch fires at most once.
+            if dsp_state.len() != n_tx {
+                dsp_state.resize_with(n_tx, patchbox_core::matrix::PerOutputDsp::new);
+            }
+
             // Convert RX i32 → f32
             let rx_f32: Vec<Vec<f32>> = (0..actual_rx)
                 .map(|i| channels[i][..block].iter().map(|&s| i32_to_f32(s)).collect())
@@ -268,10 +275,10 @@ impl DanteDevice {
             let inputs_ref:       Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
             let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
-            // Run DSP matrix
-            patchbox_core::matrix::process(&inputs_ref, &mut outputs_ref, cfg);
+            // Run DSP matrix (EQ + limiter replaces old soft_clip)
+            patchbox_core::matrix::process(&inputs_ref, &mut outputs_ref, cfg, &mut dsp_state, 48_000.0);
 
-            // Update meters with linear RMS (best-effort, non-blocking)
+            // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
             if let Ok(mut m) = meters.try_write() {
                 for (i, ch) in rx_f32.iter().enumerate() {
                     if i < m.rx_rms.len() {
@@ -283,6 +290,14 @@ impl DanteDevice {
                         m.tx_rms[i] = rms_linear(ch);
                     }
                 }
+                if m.gr_db.len() != n_tx {
+                    m.gr_db.resize(n_tx, 0.0);
+                }
+                for (i, d) in dsp_state.iter().enumerate() {
+                    if i < m.gr_db.len() {
+                        m.gr_db[i] = d.last_gr_db;
+                    }
+                }
             }
 
             // Write processed samples into TX ring buffers.
@@ -290,25 +305,26 @@ impl DanteDevice {
             // Linear write position: advance by `block` (= PTP-derived sample count from
             // inferno's jitter buffer) each callback.  Since `block` tracks the PTP clock
             // at exactly the same rate as the TX transmitter, write_pos stays exactly
-            // LEAD_SAMPLES ahead of TX with no drift and no gaps between consecutive writes.
+            // lead_samples ahead of TX with no drift and no gaps between consecutive writes.
             //
             // Self-correcting from tx_ptp was removed: Tokio's 50 ms interval fires with
-            // ±jitter, so recomputing write_pos = tx_ptp + LEAD each callback creates
+            // ±jitter, so recomputing write_pos = tx_ptp + lead_samples each callback creates
             // micro-gaps between writes whenever the interval fires late — those gaps hit
             // TX as silent zeros → pops.  Pure linear advance eliminates the gaps.
             //
-            // On first block: init write_pos = elapsed + LEAD and send start_time = ptp_at_poll.
+            // On first block: init write_pos = elapsed + lead_samples and send start_time = ptp_at_poll.
             if let Some(tx) = start_tx_opt.take() {
                 let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
                 let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
-                write_pos_cb.store(elapsed_samples.wrapping_add(LEAD_SAMPLES), AOrdering::Release);
+                write_pos_cb.store(elapsed_samples.wrapping_add(lead_samples), AOrdering::Release);
                 if let Err(e) = tx.send(ptp_at_poll) {
                     tracing::warn!("Failed to send TX start time: {e}");
                 } else {
                     tracing::info!(
                         ptp_at_poll,
-                        write_pos = elapsed_samples + LEAD_SAMPLES,
-                        "TX ring armed — write leads TX by {LEAD_SAMPLES} samples"
+                        write_pos = elapsed_samples + lead_samples,
+                        "TX ring armed — write leads TX by {} samples",
+                        lead_samples
                     );
                 }
             }
@@ -322,15 +338,15 @@ impl DanteDevice {
             // audio → pop whenever write_pos stalls during silence.
             //
             //  block==0 (silence): zero-fill ring from write_pos up to
-            //    tx_current_pos + LEAD_SAMPLES so TX always reads silence.
-            //  block > 2×LEAD (gap resumption): snap write_pos to tx+LEAD
+            //    tx_current_pos + lead_samples so TX always reads silence.
+            //  block > 2×lead_samples (gap resumption): snap write_pos to tx+lead_samples
             //    to prevent latency runaway from buffered silence samples.
             // ──────────────────────────────────────────────────────────────
             let tx_guard = current_ts_cb.load(AOrdering::Acquire);
             if block == 0 {
                 if tx_guard != 0 && tx_guard != usize::MAX {
                     let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
-                    let target = tx_off.wrapping_add(LEAD_SAMPLES);
+                    let target = tx_off.wrapping_add(lead_samples);
                     let needed = target.wrapping_sub(write_pos) as isize;
                     if needed > 0 && needed < RING_SIZE as isize {
                         for buf in &tx_bufs_cb {
@@ -344,12 +360,12 @@ impl DanteDevice {
                 }
                 return;
             }
-            let write_pos = if block > LEAD_SAMPLES * 2
+            let write_pos = if block > lead_samples * 2
                 && tx_guard != 0
                 && tx_guard != usize::MAX
             {
                 let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
-                let snapped = tx_off.wrapping_add(LEAD_SAMPLES);
+                let snapped = tx_off.wrapping_add(lead_samples);
                 write_pos_cb.store(snapped, AOrdering::Release);
                 snapped
             } else {

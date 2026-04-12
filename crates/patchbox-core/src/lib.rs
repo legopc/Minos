@@ -4,6 +4,7 @@
 //! All audio processing runs here, called from the Inferno RX callback.
 
 pub mod config;
+pub mod dsp;
 pub mod matrix;
 pub mod gain;
 pub mod meters;

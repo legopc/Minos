@@ -161,7 +161,8 @@ function initWS() {
   };
   ws.onmessage = ({data}) => {
     try {
-      const {tx_rms = []} = JSON.parse(data);
+      const msg = JSON.parse(data);
+      const {tx_rms = []} = msg;
       if (zoneIdx !== null && tx_rms[zoneIdx] !== undefined) {
         const fill = el('output-meter');
         if (fill) {
@@ -170,8 +171,120 @@ function initWS() {
           fill.className = 'meter-fill' + (rms > 0.9 ? ' clip' : rms > 0.7 ? ' hot' : '');
         }
       }
+      if (msg.gr_db && msg.gr_db[zoneIdx] !== undefined) {
+        updateGrMeter(msg.gr_db[zoneIdx]);
+      }
     } catch {}
   };
+}
+
+// ── EQ Controls ────────────────────────────────────────────────────────────
+const BANDS = [
+  { label: 'Low', defaultFreq: 200, defaultGain: 0, defaultQ: 1.0 },
+  { label: 'Mid', defaultFreq: 1000, defaultGain: 0, defaultQ: 1.0 },
+  { label: 'High', defaultFreq: 5000, defaultGain: 0, defaultQ: 1.0 },
+];
+
+function renderEqBands() {
+  const container = el('eq-bands');
+  container.innerHTML = '';
+  BANDS.forEach((b, i) => {
+    container.innerHTML += `
+      <div class="band" id="band-${i}">
+        <label>${b.label} Freq <span id="eq-freq-val-${i}">200 Hz</span>
+          <input type="range" id="eq-freq-${i}" min="20" max="20000" step="10" value="${b.defaultFreq}">
+        </label>
+        <label>Gain <span id="eq-gain-val-${i}">0.0 dB</span>
+          <input type="range" id="eq-gain-${i}" min="-24" max="24" step="0.5" value="${b.defaultGain}">
+        </label>
+        <label>Q <span id="eq-q-val-${i}">1.0</span>
+          <input type="range" id="eq-q-${i}" min="0.1" max="10" step="0.1" value="${b.defaultQ}">
+        </label>
+      </div>`;
+  });
+  BANDS.forEach((_, i) => {
+    ['freq', 'gain', 'q'].forEach(param => {
+      el(`eq-${param}-${i}`).addEventListener('input', (e) => {
+        el(`eq-${param}-val-${i}`).textContent =
+          param === 'freq' ? `${e.target.value} Hz` :
+          param === 'gain' ? `${parseFloat(e.target.value).toFixed(1)} dB` :
+          parseFloat(e.target.value).toFixed(1);
+      });
+      el(`eq-${param}-${i}`).addEventListener('change', () => sendEqBand(i));
+    });
+  });
+}
+
+async function sendEqBand(i) {
+  const freq = parseFloat(el(`eq-freq-${i}`).value);
+  const gain = parseFloat(el(`eq-gain-${i}`).value);
+  const q = parseFloat(el(`eq-q-${i}`).value);
+  await apiCall('PUT', `/api/v1/zones/${zoneIdx}/eq`, { band: i, freq_hz: freq, gain_db: gain, q });
+}
+
+async function loadEq() {
+  try {
+    const data = await apiCall('GET', `/api/v1/zones/${zoneIdx}/eq`).then(r => r.json());
+    data.bands.forEach((b, i) => {
+      el(`eq-freq-${i}`).value = b.freq_hz;
+      el(`eq-gain-${i}`).value = b.gain_db;
+      el(`eq-q-${i}`).value = b.q;
+      el(`eq-freq-val-${i}`).textContent = `${b.freq_hz} Hz`;
+      el(`eq-gain-val-${i}`).textContent = `${b.gain_db.toFixed(1)} dB`;
+      el(`eq-q-val-${i}`).textContent = b.q.toFixed(1);
+    });
+    el('eq-enabled').checked = data.enabled;
+  } catch (err) {
+    console.warn('Could not load EQ settings', err);
+  }
+}
+
+// ── Limiter Controls ───────────────────────────────────────────────────────
+function initLimiterControls() {
+  const sliders = [
+    { id: 'lim-threshold', valId: 'lim-threshold-val', suffix: ' dBFS', field: 'threshold_db' },
+    { id: 'lim-attack', valId: 'lim-attack-val', suffix: ' ms', field: 'attack_ms' },
+    { id: 'lim-release', valId: 'lim-release-val', suffix: ' ms', field: 'release_ms' },
+  ];
+  sliders.forEach(s => {
+    el(s.id).addEventListener('input', (e) => {
+      el(s.valId).textContent = `${parseFloat(e.target.value).toFixed(1)}${s.suffix}`;
+    });
+    el(s.id).addEventListener('change', sendLimiter);
+  });
+  el('lim-enabled').addEventListener('change', async (e) => {
+    await apiCall('PUT', `/api/v1/zones/${zoneIdx}/limiter/enabled`, { enabled: e.target.checked });
+  });
+}
+
+async function sendLimiter() {
+  await apiCall('PUT', `/api/v1/zones/${zoneIdx}/limiter`, {
+    threshold_db: parseFloat(el('lim-threshold').value),
+    attack_ms: parseFloat(el('lim-attack').value),
+    release_ms: parseFloat(el('lim-release').value),
+  });
+}
+
+async function loadLimiter() {
+  try {
+    const data = await apiCall('GET', `/api/v1/zones/${zoneIdx}/limiter`).then(r => r.json());
+    el('lim-threshold').value = data.threshold_db;
+    el('lim-attack').value = data.attack_ms;
+    el('lim-release').value = data.release_ms;
+    el('lim-threshold-val').textContent = `${data.threshold_db.toFixed(1)} dBFS`;
+    el('lim-attack-val').textContent = `${data.attack_ms.toFixed(1)} ms`;
+    el('lim-release-val').textContent = `${data.release_ms.toFixed(1)} ms`;
+    el('lim-enabled').checked = data.enabled;
+  } catch (err) {
+    console.warn('Could not load Limiter settings', err);
+  }
+}
+
+// ── GR Meter ───────────────────────────────────────────────────────────────
+function updateGrMeter(gr_db) {
+  el('gr-db').textContent = `${gr_db.toFixed(1)} dB`;
+  const pct = Math.min(100, Math.max(0, -gr_db * 5));
+  el('gr-bar').style.width = `${pct}%`;
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
@@ -179,6 +292,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     cfg = await fetch('/api/v1/config').then(r => r.json());
     renderZone();
+    renderEqBands();
+    loadEq();
+    initLimiterControls();
+    loadLimiter();
+    el('eq-enabled').addEventListener('change', async (e) => {
+      await apiCall('PUT', `/api/v1/zones/${zoneIdx}/eq/enabled`, { enabled: e.target.checked });
+    });
     initWS();
   } catch (err) {
     el('zone-title').textContent = 'Error loading config';

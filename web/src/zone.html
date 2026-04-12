@@ -8,6 +8,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .dsp-section { margin-top: 1rem; margin-left: 1rem; margin-right: 1rem; padding: 0.5rem; border: 1px solid #444; border-radius: 4px; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-weight: bold; }
+    .toggle { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+    .toggle input { margin: 0; }
+    .eq-bands .band { margin-bottom: 0.5rem; }
+    .eq-bands label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+    .eq-bands input { flex: 1; }
+    .limiter-controls label { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; font-size: 0.85rem; }
+    .limiter-controls input { flex: 1; }
+    .gr-meter { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; margin-top: 0.3rem; }
+    .gr-bar-bg { flex: 1; height: 8px; background: #333; border-radius: 4px; overflow: hidden; }
+    .gr-bar { height: 100%; background: #e74c3c; width: 0%; transition: width 0.05s; }
+  </style>
 </head>
 <body>
   <div class="zone-view">
@@ -37,6 +51,40 @@
         <!-- Populated by zone.js -->
       </div>
     </div>
+
+    <!-- EQ Section -->
+    <section class="dsp-section" id="eq-section">
+      <div class="section-header">
+        <span>EQ</span>
+        <label class="toggle"><input type="checkbox" id="eq-enabled"> <span>On</span></label>
+      </div>
+      <div class="eq-bands" id="eq-bands">
+        <!-- 3 bands rendered by JS -->
+      </div>
+    </section>
+
+    <!-- Limiter Section -->
+    <section class="dsp-section" id="limiter-section">
+      <div class="section-header">
+        <span>Limiter</span>
+        <label class="toggle"><input type="checkbox" id="lim-enabled"> <span>On</span></label>
+      </div>
+      <div class="limiter-controls">
+        <label>Threshold <span id="lim-threshold-val">-1.0 dBFS</span>
+          <input type="range" id="lim-threshold" min="-40" max="0" step="0.5" value="-1">
+        </label>
+        <label>Attack <span id="lim-attack-val">1.0 ms</span>
+          <input type="range" id="lim-attack" min="0.1" max="50" step="0.1" value="1">
+        </label>
+        <label>Release <span id="lim-release-val">100 ms</span>
+          <input type="range" id="lim-release" min="10" max="2000" step="10" value="100">
+        </label>
+      </div>
+      <div class="gr-meter">
+        GR: <span id="gr-db">0.0 dB</span>
+        <div class="gr-bar-bg"><div class="gr-bar" id="gr-bar"></div></div>
+      </div>
+    </section>
 
     <!-- Footer: volume + mute -->
     <footer class="zone-footer">

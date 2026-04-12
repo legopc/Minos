@@ -45,3 +45,9 @@ matrix = [
 dante_name = "patchbox"
 dante_nic = "eth0"
 port = 9191
+
+# Latency tuning (samples at 48 kHz; 48 = 1 ms, 96 = 2 ms, 192 = 4 ms)
+# Reduce for lower latency on a clean, unloaded LAN.
+# Increase if you hear dropouts or clicks under load.
+rx_jitter_samples = 48
+lead_samples = 48
