@@ -659,11 +659,7 @@ async fn handle_ws(mut socket: WebSocket, s: AppState) {
 }
 
 // Static asset handlers (embedded via rust-embed)
-async fn serve_ui()       -> impl IntoResponse { serve_asset("index.html") }
-async fn serve_zone_ui()  -> impl IntoResponse { serve_asset("zone.html") }
-async fn serve_css()      -> impl IntoResponse { serve_asset("style.css") }
-async fn serve_app_js()   -> impl IntoResponse { serve_asset("app.js") }
-async fn serve_zone_js()  -> impl IntoResponse { serve_asset("zone.js") }
+async fn serve_ui() -> impl IntoResponse { serve_asset("index.html") }
 
 
 // GET /api/v1/whoami — validate token and return user info
@@ -726,14 +722,14 @@ pub fn router(state: AppState) -> Router {
     // Public routes — no auth required
     Router::new()
         .route("/", get(serve_ui))
-        .route("/zone/:name", get(serve_zone_ui))
-        .route("/style.css", get(serve_css))
-        .route("/app.js", get(serve_app_js))
-        .route("/zone.js", get(serve_zone_js))
         .route("/ws", get(ws_handler))
         .route("/api/v1/health", get(get_health))
         .route("/api/v1/login", post(auth_api::login))
         .route("/api/v1/config", get(get_config))
         .merge(protected)
+        .fallback(|req: axum::extract::Request| async move {
+            let path = req.uri().path().trim_start_matches('/').to_string();
+            serve_asset(&path)
+        })
         .with_state(state)
 }
