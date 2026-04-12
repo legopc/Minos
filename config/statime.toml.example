@@ -1,0 +1,18 @@
+loglevel = "info"
+
+sdo-id = 0
+domain = 0
+priority1 = 251
+virtual-system-clock = true
+virtual-system-clock-base = "monotonic_raw"
+usrvclock-export = true
+
+[[port]]
+interface = "enp1s0"   # ← set to your wired NIC (run: ip link show)
+network-mode = "ipv4"
+
+# "auto" uses hardware PTP if the NIC supports it (e.g. Intel I219-LM),
+# falls back to software timestamping (e.g. Realtek RTL8111) automatically.
+hardware-clock = "auto"
+
+protocol-version = "PTPv1"
