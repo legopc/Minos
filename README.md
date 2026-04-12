@@ -8,7 +8,7 @@ This patchbay is named **Minos** after the judge in Dante Alighieri's *Divine Co
 >
 > This repository is substantially AI-assisted. The Rust source code, web UI, and configuration were written with the help of an AI coding assistant. **Do not blindly run code in a production environment without understanding what it does.** Review the source before deploying.
 >
-> That said: this is being actively developed and tested against real Dante hardware. Phase 0 (routing matrix, DSP, web UI, authentication) is complete. Phase 0.5 (real Dante audio integration with Inferno AoIP) is complete. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
+> That said: this is being actively developed and tested against real Dante hardware. Phase 0 (routing matrix, DSP, web UI, authentication), Phase 0.5 (real Dante audio integration), and Phase 1 (per-output parametric EQ + brick-wall limiter, latency tuning) are all complete and running on production hardware. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
 
 ---
 
@@ -52,7 +52,7 @@ Minos is part of the **Inferno AoIP Ecosystem** — a family of open-source Dant
 |-------|-------------|--------|
 | Phase 0 | Routing matrix, gains, scenes, auth, web UI, metering | ✅ Complete |
 | Phase 0.5 | Real Dante audio via Inferno AoIP, hardware testing | ✅ Complete |
-| Phase 1 | DSP per output (EQ, limiter) | ⏳ Planned |
+| Phase 1 | Per-output DSP (3-band parametric EQ + brick-wall limiter), latency tuning, idempotent deploy script | ✅ Complete |
 | Phase 2 | Zone ownership, subscription management | ⏳ Planned |
 
 See [`docs/PROJECT.md`](docs/PROJECT.md) for the full architecture and roadmap, and [`docs/AUDIO_ENGINE.md`](docs/AUDIO_ENGINE.md) for the hardware-tested audio-path notes.
