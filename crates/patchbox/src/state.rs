@@ -2,6 +2,7 @@ use patchbox_core::config::PatchboxConfig;
 pub use patchbox_core::meters::MeterState;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use tokio::sync::RwLock;
 use crate::scenes::SceneStore;
 use crate::jwt;
@@ -15,6 +16,14 @@ pub struct AppState {
     pub scenes_path: PathBuf,
     /// JWT secret — regenerated on every server restart
     pub jwt_secret: Arc<RwLock<Vec<u8>>>,
+    /// Set to true in main.rs after DanteDevice::start_with_state() succeeds
+    pub dante_connected: Arc<AtomicBool>,
+    /// Captured at startup for uptime_secs in /health
+    pub started_at: std::time::Instant,
+    /// Incremented by the RT audio callback on every block
+    pub audio_callbacks: Arc<AtomicU64>,
+    /// Incremented when the gap-resumption resync fires (block > 2×lead_samples)
+    pub resyncs: Arc<AtomicU64>,
 }
 
 impl AppState {
@@ -30,6 +39,10 @@ impl AppState {
             scenes: Arc::new(RwLock::new(scenes)),
             scenes_path,
             jwt_secret: Arc::new(RwLock::new(jwt_secret)),
+            dante_connected: Arc::new(AtomicBool::new(false)),
+            started_at: std::time::Instant::now(),
+            audio_callbacks: Arc::new(AtomicU64::new(0)),
+            resyncs: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -47,3 +60,4 @@ impl AppState {
         store.save(&self.scenes_path)
     }
 }
+

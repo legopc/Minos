@@ -10,6 +10,7 @@ use anyhow::Result;
 use patchbox_core::config::PatchboxConfig;
 use patchbox_core::meters::MeterState;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use tokio::sync::RwLock;
 
 /// A Dante virtual device (or stub).
@@ -44,15 +45,19 @@ impl DanteDevice {
         &self,
         config: Arc<RwLock<PatchboxConfig>>,
         meters: Arc<RwLock<MeterState>>,
+        audio_callbacks: Arc<AtomicU64>,
+        resyncs: Arc<AtomicU64>,
     ) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(config, meters).await
+            self.start_real(config, meters, audio_callbacks, resyncs).await
         }
         #[cfg(not(feature = "inferno"))]
         {
             let _ = config;
             let _ = meters;
+            let _ = audio_callbacks;
+            let _ = resyncs;
             tracing::warn!(
                 name = %self.device_name,
                 rx = self.n_rx,
@@ -68,6 +73,8 @@ impl DanteDevice {
         &self,
         config: Arc<RwLock<PatchboxConfig>>,
         meters: Arc<RwLock<MeterState>>,
+        audio_callbacks: Arc<AtomicU64>,
+        resyncs: Arc<AtomicU64>,
     ) -> Result<()> {
         use inferno_aoip::device_server::{
             AtomicSample, DeviceServer, ExternalBufferParameters, Settings,
@@ -213,6 +220,8 @@ impl DanteDevice {
         // Diagnostic only: TX transmitter writes min_next_ts here after each batch.
         // Used in the 5-second alignment log to verify lead is stable; not used for write_pos.
         let current_ts_cb = Arc::clone(&current_timestamp);
+        let audio_callbacks_cb = Arc::clone(&audio_callbacks);
+        let resyncs_cb = Arc::clone(&resyncs);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
         // Per-output DSP state (EQ + limiter). Allocated once here, moved into the closure.
         // Resized defensively on first callback if n_tx differs (should not happen at runtime).
@@ -367,6 +376,7 @@ impl DanteDevice {
                 let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
                 let snapped = tx_off.wrapping_add(lead_samples);
                 write_pos_cb.store(snapped, AOrdering::Release);
+                resyncs_cb.fetch_add(1, AOrdering::Relaxed);
                 snapped
             } else {
                 write_pos
@@ -382,6 +392,7 @@ impl DanteDevice {
                 }
             }
             write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
+            audio_callbacks_cb.fetch_add(1, AOrdering::Relaxed);
 
             // Diagnostic: log ring alignment every ~2500 callbacks (≈5 s at 2ms READ_INTERVAL).
             {

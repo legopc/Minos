@@ -58,18 +58,118 @@ pub struct LimiterUpdate { pub threshold_db: f32, pub attack_ms: f32, pub releas
 #[derive(Deserialize)]
 pub struct LimiterEnabledUpdate { pub enabled: bool }
 
-#[derive(Serialize)]
-pub struct HealthResponse { status: &'static str, rx_channels: usize, tx_channels: usize, version: &'static str }
+use std::sync::atomic::Ordering as AOrdering;
 
 #[derive(Serialize)]
-pub struct MeterFrame { pub tx_rms: Vec<f32>, pub rx_rms: Vec<f32>, pub gr_db: Vec<f32> }
+pub struct HealthDante { pub name: String, pub nic: String, pub connected: bool }
 
-// GET /api/v1/config
-async fn get_config(State(s): State<AppState>) -> impl IntoResponse {
-    Json(s.config.read().await.clone())
+#[derive(Serialize)]
+pub struct HealthPtp { pub synced: bool, pub socket_path: String }
+
+#[derive(Serialize)]
+pub struct HealthAudio {
+    pub rx_channels: usize,
+    pub tx_channels: usize,
+    pub active_routes: usize,
+    pub callbacks_total: u64,
+    pub resyncs: u64,
+    pub rx_levels_rms_db: Vec<f32>,
+    pub tx_levels_rms_db: Vec<f32>,
 }
 
-// PUT /api/v1/matrix
+#[derive(Serialize)]
+pub struct HealthZone {
+    pub name: String,
+    pub index: usize,
+    pub muted: bool,
+    pub gain_db: f32,
+    pub eq_enabled: bool,
+    pub limiter_enabled: bool,
+    pub active_sources: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct HealthResponse {
+    pub status: &'static str,
+    pub version: &'static str,
+    pub uptime_secs: u64,
+    pub dante: HealthDante,
+    pub ptp: HealthPtp,
+    pub audio: HealthAudio,
+    pub zones: Vec<HealthZone>,
+}
+
+/// Convert linear amplitude to dBFS, floor at -60 dB.
+fn linear_to_db(v: f32) -> f32 {
+    if v <= 0.0 { return -60.0; }
+    (20.0 * v.log10()).max(-60.0)
+}
+
+// GET /api/v1/health
+async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let meters = s.meters.read().await;
+
+    // PTP: try connecting to the statime Unix socket with a 200ms timeout
+    let ptp_synced = {
+        let path = cfg.dante_clock_path.clone();
+        tokio::time::timeout(
+            Duration::from_millis(200),
+            tokio::net::UnixStream::connect(&path),
+        )
+        .await
+        .map(|r| r.is_ok())
+        .unwrap_or(false)
+    };
+
+    // Audio stats
+    let active_routes = cfg.matrix.iter().flatten().filter(|&&v| v).count();
+    let rx_levels_rms_db = meters.rx_rms.iter().map(|&v| linear_to_db(v)).collect();
+    let tx_levels_rms_db = meters.tx_rms.iter().map(|&v| linear_to_db(v)).collect();
+
+    // Per-zone status with active source names
+    let zones = (0..cfg.tx_channels).map(|tx| {
+        let active_sources = (0..cfg.rx_channels)
+            .filter(|&rx| cfg.matrix.get(tx).and_then(|row| row.get(rx)).copied().unwrap_or(false))
+            .map(|rx| cfg.sources.get(rx).cloned().unwrap_or_else(|| format!("Source {rx}")))
+            .collect();
+        HealthZone {
+            name: cfg.zones.get(tx).cloned().unwrap_or_else(|| format!("Zone {tx}")),
+            index: tx,
+            muted: cfg.output_muted.get(tx).copied().unwrap_or(false),
+            gain_db: cfg.output_gain_db.get(tx).copied().unwrap_or(0.0),
+            eq_enabled: cfg.per_output_eq.get(tx).map(|e| e.enabled).unwrap_or(false),
+            limiter_enabled: cfg.per_output_limiter.get(tx).map(|l| l.enabled).unwrap_or(false),
+            active_sources,
+        }
+    }).collect();
+
+    Json(HealthResponse {
+        status: "ok",
+        version: env!("CARGO_PKG_VERSION"),
+        uptime_secs: s.started_at.elapsed().as_secs(),
+        dante: HealthDante {
+            name: cfg.dante_name.clone(),
+            nic: cfg.dante_nic.clone(),
+            connected: s.dante_connected.load(AOrdering::Relaxed),
+        },
+        ptp: HealthPtp {
+            synced: ptp_synced,
+            socket_path: cfg.dante_clock_path.clone(),
+        },
+        audio: HealthAudio {
+            rx_channels: cfg.rx_channels,
+            tx_channels: cfg.tx_channels,
+            active_routes,
+            callbacks_total: s.audio_callbacks.load(AOrdering::Relaxed),
+            resyncs: s.resyncs.load(AOrdering::Relaxed),
+            rx_levels_rms_db,
+            tx_levels_rms_db,
+        },
+        zones,
+    })
+}
+
 async fn put_matrix(State(s): State<AppState>, Json(u): Json<MatrixUpdate>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if u.tx >= cfg.tx_channels || u.rx >= cfg.rx_channels {
@@ -147,13 +247,15 @@ async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
     StatusCode::OK.into_response()
 }
 
-// GET /api/v1/health
-async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
-    let cfg = s.config.read().await;
-    Json(HealthResponse { status: "ok", rx_channels: cfg.rx_channels, tx_channels: cfg.tx_channels, version: env!("CARGO_PKG_VERSION") })
+#[derive(Serialize)]
+pub struct MeterFrame { pub tx_rms: Vec<f32>, pub rx_rms: Vec<f32>, pub gr_db: Vec<f32> }
+
+// GET /api/v1/config
+async fn get_config(State(s): State<AppState>) -> impl IntoResponse {
+    Json(s.config.read().await.clone())
 }
 
-// GET /api/v1/scenes
+// PUT /api/v1/matrix
 async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
     let store = s.scenes.read().await;
     let list: Vec<&Scene> = store.scenes.values().collect();

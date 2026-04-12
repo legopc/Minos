@@ -73,9 +73,15 @@ async fn main() {
         config.tx_channels,
     );
     dante
-        .start_with_state(state.config.clone(), state.meters.clone())
+        .start_with_state(
+            state.config.clone(),
+            state.meters.clone(),
+            state.audio_callbacks.clone(),
+            state.resyncs.clone(),
+        )
         .await
         .expect("Dante device init failed");
+    state.dante_connected.store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Simulated meter task — only active when inferno feature is disabled
     #[cfg(not(feature = "inferno"))]
