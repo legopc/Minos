@@ -6,8 +6,11 @@
 # changed binaries are rebuilt and only affected services are restarted.
 #
 # Usage:
-#   Fresh node:   sudo bash scripts/install-arch.sh
-#   Update node:  sudo bash scripts/install-arch.sh          (pulls latest git first)
+#   Fresh node:         sudo bash scripts/install-arch.sh
+#   Update (on-device): sudo bash scripts/install-arch.sh
+#   Update (pre-built): sudo bash scripts/install-arch.sh --skip-build
+#       --skip-build assumes the binary already exists at target/release/patchbox
+#       (placed there by scripts/deploy.sh from a faster build host).
 #
 # After first install:
 #   Edit /etc/patchbox/config.toml — set dante_nic (ip link) and dante_name
@@ -15,6 +18,11 @@
 #   sudo systemctl restart statime patchbox
 
 set -euo pipefail
+
+SKIP_BUILD=false
+for arg in "$@"; do
+    [ "$arg" = "--skip-build" ] && SKIP_BUILD=true
+done
 
 # ── Resolve repo root (works regardless of cwd) ──────────────────────────────
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,12 +60,20 @@ pacman -S --needed --noconfirm \
     base-devel git rust clang lld pkg-config openssl pam rsync
 
 # ── 3. Build patchbox ─────────────────────────────────────────────────────────
-echo "==> Building patchbox (with inferno feature — real Dante audio)..."
-cd "$REPO_DIR"
 PATCHBOX_OLD_HASH=""
 [ -f "$PATCHBOX_BINARY" ] && PATCHBOX_OLD_HASH=$(sha256sum "$PATCHBOX_BINARY" | cut -d' ' -f1)
 
-sudo -u "$RUN_AS" cargo build --release --features patchbox-dante/inferno
+if $SKIP_BUILD; then
+    echo "==> Skipping patchbox build (--skip-build — binary pre-placed by deploy.sh)"
+    if [ ! -f "$PATCHBOX_BINARY" ]; then
+        echo "ERROR: --skip-build specified but binary not found at $PATCHBOX_BINARY" >&2
+        exit 1
+    fi
+else
+    echo "==> Building patchbox (with inferno feature — real Dante audio)..."
+    cd "$REPO_DIR"
+    sudo -u "$RUN_AS" cargo build --release --features patchbox-dante/inferno
+fi
 
 echo "    Binary: $PATCHBOX_BINARY"
 PATCHBOX_NEW_HASH=$(sha256sum "$PATCHBOX_BINARY" | cut -d' ' -f1)
@@ -67,26 +83,31 @@ $PATCHBOX_CHANGED && echo "    patchbox binary updated." || echo "    patchbox b
 
 # ── 4. Build statime ──────────────────────────────────────────────────────────
 echo "==> Setting up statime PTP daemon..."
-if [ ! -d "$STATIME_SRC/.git" ]; then
-    echo "    Cloning statime repo..."
-    sudo -u "$RUN_AS" git clone "$STATIME_REPO" "$STATIME_SRC"
+if $SKIP_BUILD && [ -f "$STATIME_BINARY" ]; then
+    echo "    Skipping statime build (--skip-build and binary already installed)."
+    STATIME_CHANGED=false
 else
-    echo "    Pulling statime repo..."
-    sudo -u "$RUN_AS" git -C "$STATIME_SRC" pull --ff-only \
-        || echo "    (git pull skipped)"
+    if [ ! -d "$STATIME_SRC/.git" ]; then
+        echo "    Cloning statime repo..."
+        sudo -u "$RUN_AS" git clone "$STATIME_REPO" "$STATIME_SRC"
+    else
+        echo "    Pulling statime repo..."
+        sudo -u "$RUN_AS" git -C "$STATIME_SRC" pull --ff-only \
+            || echo "    (git pull skipped)"
+    fi
+
+    STATIME_OLD_HASH=""
+    [ -f "$STATIME_BINARY" ] && STATIME_OLD_HASH=$(sha256sum "$STATIME_BINARY" | cut -d' ' -f1)
+
+    cd "$STATIME_SRC"
+    sudo -u "$RUN_AS" cargo build --release -p statime-linux
+    install -m 755 "$STATIME_SRC/target/release/statime" "$STATIME_BINARY"
+
+    STATIME_NEW_HASH=$(sha256sum "$STATIME_BINARY" | cut -d' ' -f1)
+    STATIME_CHANGED=false
+    [ "$STATIME_OLD_HASH" != "$STATIME_NEW_HASH" ] && STATIME_CHANGED=true
+    $STATIME_CHANGED && echo "    statime binary updated." || echo "    statime binary unchanged."
 fi
-
-STATIME_OLD_HASH=""
-[ -f "$STATIME_BINARY" ] && STATIME_OLD_HASH=$(sha256sum "$STATIME_BINARY" | cut -d' ' -f1)
-
-cd "$STATIME_SRC"
-sudo -u "$RUN_AS" cargo build --release -p statime-linux
-install -m 755 "$STATIME_SRC/target/release/statime" "$STATIME_BINARY"
-
-STATIME_NEW_HASH=$(sha256sum "$STATIME_BINARY" | cut -d' ' -f1)
-STATIME_CHANGED=false
-[ "$STATIME_OLD_HASH" != "$STATIME_NEW_HASH" ] && STATIME_CHANGED=true
-$STATIME_CHANGED && echo "    statime binary updated." || echo "    statime binary unchanged."
 
 # ── 5. Capabilities ───────────────────────────────────────────────────────────
 echo "==> Setting capabilities on patchbox binary..."
@@ -195,6 +216,10 @@ systemctl is-active --quiet patchbox && PATCHBOX_OK=true
 systemctl is-active --quiet statime  && STATIME_OK=true
 
 NODE_IP=$(ip route get 1 2>/dev/null | awk '/src/{print $7}' | head -1)
+
+echo "==> Health check..."
+curl -s "http://localhost:${PATCHBOX_PORT:-9191}/api/v1/health" | python3 -m json.tool 2>/dev/null \
+    || curl -s "http://localhost:${PATCHBOX_PORT:-9191}/api/v1/health" || true
 
 echo ""
 echo "==> Deploy complete!"
