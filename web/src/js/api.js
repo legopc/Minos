@@ -40,6 +40,7 @@ const get  = (path)        => req('GET',    path);
 const post = (path, body)  => req('POST',   path, body);
 const put  = (path, body)  => req('PUT',    path, body);
 const del  = (path)        => req('DELETE', path);
+export const patch = (path, body) => req('PUT', path, body);
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 export function login(username, password) {

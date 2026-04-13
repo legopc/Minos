@@ -180,7 +180,8 @@ async function _loadContent(blockKey, channelId, contentEl) {
   try {
     const mod = await import(`./dsp/${blockKey}.js`);
     const ch = state.channels.get(channelId) ?? state.outputs.get(channelId);
-    const params = ch?.dsp?.[blockKey] ?? {};
+    const blockData = ch?.dsp?.[blockKey] ?? {};
+    const params = { ...(blockData.params ?? {}), bypassed: blockData.bypassed ?? false, enabled: blockData.enabled ?? true };
     const accent = DSP_COLOURS[blockKey]?.fg ?? '#888';
 
     contentEl.appendChild(
@@ -207,9 +208,23 @@ function _onParamChange(channelId, block, newParams) {
     try {
       const isRx = channelId.startsWith('rx_');
       const idx = parseInt(channelId.split('_')[1], 10);
+      const base = isRx ? `/api/v1/inputs/${idx}` : `/api/v1/outputs/${idx}`;
+
+      if (block === 'flt') {
+        const promises = [];
+        if (newParams.hpf) promises.push(api.patch(`${base}/hpf`, newParams.hpf));
+        if (newParams.lpf) promises.push(api.patch(`${base}/lpf`, newParams.lpf));
+        await Promise.all(promises);
+        const ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+        if (ch?.dsp?.flt?.params) {
+          if (newParams.hpf) Object.assign(ch.dsp.flt.params.hpf, newParams.hpf);
+          if (newParams.lpf) Object.assign(ch.dsp.flt.params.lpf, newParams.lpf);
+        }
+        paramChangeDebounce.delete(key);
+        return;
+      }
 
       const blockMap = {
-        flt: 'hpf/lpf',
         peq: 'eq',
         cmp: 'compressor',
         gte: 'gate',
@@ -217,21 +232,15 @@ function _onParamChange(channelId, block, newParams) {
         dly: 'delay',
       };
       const mappedBlock = blockMap[block] || block;
-
-      let endpoint;
-      if (isRx) {
-        endpoint = `/api/v1/inputs/${idx}/${mappedBlock}`;
-      } else {
-        endpoint = `/api/v1/outputs/${idx}/${mappedBlock}`;
-      }
+      const endpoint = `${base}/${mappedBlock}`;
 
       await api.patch(endpoint, newParams);
 
       const ch = isRx
         ? state.channels.get(channelId)
         : state.outputs.get(channelId);
-      if (ch && ch.dsp) {
-        ch.dsp[block] = { ...ch.dsp[block], ...newParams };
+      if (ch && ch.dsp && ch.dsp[block]) {
+        ch.dsp[block] = { ...ch.dsp[block], params: { ...(ch.dsp[block].params ?? {}), ...newParams } };
       }
     } catch (err) {
       console.error('Parameter change failed:', err);
@@ -247,32 +256,27 @@ async function _onBypass(channelId, block, bypassed) {
   try {
     const isRx = channelId.startsWith('rx_');
     const idx = parseInt(channelId.split('_')[1], 10);
+    const base = isRx ? `/api/v1/inputs/${idx}` : `/api/v1/outputs/${idx}`;
+    const ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
 
-    const blockMap = {
-      flt: 'hpf/lpf',
-      peq: 'eq',
-      cmp: 'compressor',
-      gte: 'gate',
-      lim: 'limiter',
-      dly: 'delay',
-    };
+    if (block === 'flt') {
+      const fltParams = ch?.dsp?.flt?.params ?? {};
+      await Promise.all([
+        api.patch(`${base}/hpf`, { enabled: !bypassed, freq_hz: fltParams.hpf?.freq_hz ?? 80 }),
+        api.patch(`${base}/lpf`, { enabled: !bypassed, freq_hz: fltParams.lpf?.freq_hz ?? 18000 }),
+      ]);
+      if (ch?.dsp?.flt) ch.dsp.flt.bypassed = bypassed;
+      return;
+    }
+
+    const blockMap = { peq: 'eq', cmp: 'compressor', gte: 'gate', lim: 'limiter', dly: 'delay' };
     const mappedBlock = blockMap[block] || block;
+    const blockData = ch?.dsp?.[block] ?? {};
+    const fullParams = { ...(blockData.params ?? {}), enabled: !bypassed };
 
-    let endpoint;
-    if (isRx) {
-      endpoint = `/api/v1/inputs/${idx}/${mappedBlock}/enabled`;
-    } else {
-      endpoint = `/api/v1/outputs/${idx}/${mappedBlock}/enabled`;
-    }
+    await api.patch(`${base}/${mappedBlock}`, fullParams);
 
-    await api.patch(endpoint, { enabled: !bypassed });
-
-    const ch = isRx
-      ? state.channels.get(channelId)
-      : state.outputs.get(channelId);
-    if (ch && ch.dsp && ch.dsp[block]) {
-      ch.dsp[block].bypassed = bypassed;
-    }
+    if (ch?.dsp?.[block]) ch.dsp[block].bypassed = bypassed;
   } catch (err) {
     console.error('Bypass change failed:', err);
     toast('Error updating DSP bypass state', 'error');

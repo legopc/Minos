@@ -46,41 +46,43 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
   const hpfCheckbox = document.createElement('input');
   hpfCheckbox.type = 'checkbox';
   hpfCheckbox.className = 'dsp-toggle';
-  hpfCheckbox.checked = params.hpf_enabled || false;
+  hpfCheckbox.checked = params.hpf?.enabled ?? false;
+  const hpfFreqSlider = { value: params.hpf?.freq_hz ?? 80 };
+
+  const hpfFreqVal = valEl(fmtHz(params.hpf?.freq_hz ?? 80));
+  const hpfFreqInput = slider(20, 2000, 1, params.hpf?.freq_hz ?? 80, (e) => {
+    const v = parseFloat(e.target.value);
+    hpfFreqSlider.value = v;
+    hpfFreqVal.textContent = fmtHz(v);
+    onChange('flt', { hpf: { enabled: hpfCheckbox.checked, freq_hz: v } });
+  });
+
   hpfCheckbox.onchange = () => {
-    const updated = { ...params, hpf_enabled: hpfCheckbox.checked };
-    onChange('flt', updated);
+    onChange('flt', { hpf: { enabled: hpfCheckbox.checked, freq_hz: parseFloat(hpfFreqInput.value) } });
   };
   el.appendChild(row('HPF Enabled', hpfCheckbox));
-
-  // HPF Frequency
-  const hpfFreqVal = valEl(fmtHz(params.hpf_freq || 80));
-  const hpfFreqSlider = slider(20, 2000, 1, params.hpf_freq || 80, (e) => {
-    const v = parseFloat(e.target.value);
-    hpfFreqVal.textContent = fmtHz(v);
-    onChange('flt', { ...params, hpf_freq: v });
-  });
-  el.appendChild(row('HPF Freq', hpfFreqSlider, hpfFreqVal));
+  el.appendChild(row('HPF Freq', hpfFreqInput, hpfFreqVal));
 
   // LPF Enabled toggle
   const lpfCheckbox = document.createElement('input');
   lpfCheckbox.type = 'checkbox';
   lpfCheckbox.className = 'dsp-toggle';
-  lpfCheckbox.checked = params.lpf_enabled || false;
+  lpfCheckbox.checked = params.lpf?.enabled ?? false;
+  const lpfFreqSlider = { value: params.lpf?.freq_hz ?? 18000 };
+
+  const lpfFreqVal = valEl(fmtHz(params.lpf?.freq_hz ?? 18000));
+  const lpfFreqInput = slider(200, 20000, 10, params.lpf?.freq_hz ?? 18000, (e) => {
+    const v = parseFloat(e.target.value);
+    lpfFreqSlider.value = v;
+    lpfFreqVal.textContent = fmtHz(v);
+    onChange('flt', { lpf: { enabled: lpfCheckbox.checked, freq_hz: v } });
+  });
+
   lpfCheckbox.onchange = () => {
-    const updated = { ...params, lpf_enabled: lpfCheckbox.checked };
-    onChange('flt', updated);
+    onChange('flt', { lpf: { enabled: lpfCheckbox.checked, freq_hz: parseFloat(lpfFreqInput.value) } });
   };
   el.appendChild(row('LPF Enabled', lpfCheckbox));
-
-  // LPF Frequency
-  const lpfFreqVal = valEl(fmtHz(params.lpf_freq || 20000));
-  const lpfFreqSlider = slider(200, 20000, 10, params.lpf_freq || 20000, (e) => {
-    const v = parseFloat(e.target.value);
-    lpfFreqVal.textContent = fmtHz(v);
-    onChange('flt', { ...params, lpf_freq: v });
-  });
-  el.appendChild(row('LPF Freq', lpfFreqSlider, lpfFreqVal));
+  el.appendChild(row('LPF Freq', lpfFreqInput, lpfFreqVal));
 
   return el;
 }
