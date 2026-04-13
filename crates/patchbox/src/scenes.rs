@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct Scene {
     pub name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub is_favourite: bool,
     pub matrix: Vec<Vec<bool>>,
     pub input_gain_db: Vec<f32>,
     pub output_gain_db: Vec<f32>,
@@ -18,6 +20,7 @@ impl Scene {
         Self {
             name: name.into(),
             description,
+            is_favourite: false,
             matrix: config.matrix.clone(),
             input_gain_db: config.input_gain_db.clone(),
             output_gain_db: config.output_gain_db.clone(),

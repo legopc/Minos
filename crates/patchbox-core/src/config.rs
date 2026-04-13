@@ -303,6 +303,21 @@ impl Default for LimiterConfig {
     }
 }
 
+/// Zone grouping — a named set of TX output channels with a palette colour.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneConfig {
+    /// Stable string ID synthesised as "zone_{n}"
+    pub id: String,
+    /// Human-readable display name
+    pub name: String,
+    /// Colour palette index 0-9, maps to --zone-color-{n} CSS var
+    #[serde(default)]
+    pub colour_index: u8,
+    /// TX channel IDs belonging to this zone, e.g. ["tx_0"]
+    #[serde(default)]
+    pub tx_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchboxConfig {
     /// Number of Dante RX channels (sources in)
@@ -341,6 +356,10 @@ pub struct PatchboxConfig {
     /// Path to statime PTP clock socket (default: /tmp/ptp-usrvclock)
     #[serde(default = "default_clock_path")]
     pub dante_clock_path: String,
+    /// Zone groupings with id, name, colour_index, tx_ids.
+    /// Auto-derived from tx_channels / zones in normalize() if empty.
+    #[serde(default)]
+    pub zone_config: Vec<ZoneConfig>,
     /// HTTP server port for web UI + API
     pub port: u16,
     /// RX jitter buffer depth in samples (48000 Hz). Default 48 = 1 ms on clean LAN.
@@ -370,6 +389,7 @@ impl Default for PatchboxConfig {
             per_output_limiter: vec![LimiterConfig::default(); tx],
             input_dsp: (0..rx).map(|_| InputChannelDsp::default()).collect(),
             output_dsp: (0..tx).map(|_| OutputChannelDsp::default()).collect(),
+            zone_config: vec![],
             dante_name: "patchbox".to_string(),
             dante_nic: "eth0".to_string(),
             dante_clock_path: default_clock_path(),
@@ -427,6 +447,18 @@ impl PatchboxConfig {
                     dsp.limiter = lim.clone();
                 }
             }
+        }
+
+        // Auto-derive zone_config from legacy zones vec if not yet persisted
+        if self.zone_config.is_empty() {
+            self.zone_config = (0..self.tx_channels)
+                .map(|tx| ZoneConfig {
+                    id: format!("zone_{}", tx),
+                    name: self.zones.get(tx).cloned().unwrap_or_else(|| format!("Zone {}", tx + 1)),
+                    colour_index: (tx % 10) as u8,
+                    tx_ids: vec![format!("tx_{}", tx)],
+                })
+                .collect();
         }
     }
 }
