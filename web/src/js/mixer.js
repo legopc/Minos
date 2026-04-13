@@ -131,10 +131,10 @@ function _buildInputStrip(ch) {
   meter.className = 'strip-meter';
   const bar = document.createElement('div');
   bar.className = 'strip-meter-bar';
-  bar.id = `mix-m-${ch.id}`;
+  bar.id = `vu-bar-${ch.id}`;
   const peak = document.createElement('div');
   peak.className = 'strip-meter-peak';
-  peak.id = `mix-p-${ch.id}`;
+  peak.id = `vu-peak-${ch.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
   strip.appendChild(meter);
@@ -159,7 +159,7 @@ function _buildInputStrip(ch) {
     dbLabel.textContent = _db(db);
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
-      api.putChannel(ch.id, { input_gain_db: db }).catch(e => toast(e.message, true));
+      api.putChannel(ch.id, { gain_db: db }).catch(e => toast(e.message, true));
     }, 80);
   };
   strip.appendChild(fader);
@@ -238,10 +238,10 @@ function _buildZoneMaster(zone, zi) {
   bar.className = 'strip-meter-bar';
   // Use first tx_id meter
   const firstTx = zone.tx_ids?.[0];
-  if (firstTx) bar.id = `mix-m-${firstTx}`;
+  if (firstTx) bar.id = `vu-bar-${firstTx}`;
   const peak = document.createElement('div');
   peak.className = 'strip-meter-peak';
-  if (firstTx) peak.id = `mix-p-${firstTx}`;
+  if (firstTx) peak.id = `vu-peak-${firstTx}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
   strip.appendChild(meter);

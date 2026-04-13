@@ -57,6 +57,8 @@ function _updateGroup(data, prefix) {
     const db = _smooth(id, rawDb);
     updatePeakHold(id, db);
     _queue.set(`vu-bar-${id}`, { db, isPeak: false });
+    // Also update matrix mini-vu (rx channels only)
+    _queue.set(`vu-fill-${id}`, { db, isPeak: false, isMini: true });
     const ph = state.peakHold.get(id);
     if (ph) _queue.set(`vu-peak-${id}`, { db: ph.level, isPeak: true });
   });
@@ -64,15 +66,18 @@ function _updateGroup(data, prefix) {
 
 function _flush() {
   _pending = false;
-  _queue.forEach(({ db, isPeak }, elId) => {
+  _queue.forEach(({ db, isPeak, isMini }, elId) => {
     const el = document.getElementById(elId);
     if (!el) return;
-    if (isPeak) {
-      const pct = dbToPercent(db);
+    const pct = dbToPercent(db);
+    if (isMini) {
+      // Matrix mini-VU: horizontal fill (width %)
+      el.style.width = pct + '%';
+      el.style.background = dbToColour(db);
+    } else if (isPeak) {
       el.style.bottom = pct + '%';
       el.style.background = dbToColour(db);
     } else {
-      const pct = dbToPercent(db);
       el.style.height = pct + '%';
       el.style.background = dbToColour(db);
     }

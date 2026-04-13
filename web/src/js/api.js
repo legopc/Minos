@@ -61,7 +61,7 @@ export const putChannel      = (id, body)  => put(`/channels/${id}`, body);
 
 // Input DSP
 export const getInputDsp        = (ch)         => get(`/inputs/${ch}/dsp`);
-export const putInputGain       = (ch, db)     => put(`/inputs/${ch}/gain`, { db });
+export const putInputGain       = (ch, db)     => put(`/inputs/${ch}/gain`, { gain_db: db });
 export const putInputPolarity   = (ch, invert) => put(`/inputs/${ch}/polarity`, { invert });
 export const putInputHpf        = (ch, body)   => put(`/inputs/${ch}/hpf`, body);
 export const putInputLpf        = (ch, body)   => put(`/inputs/${ch}/lpf`, body);
@@ -78,7 +78,7 @@ export const putOutput      = (id, body)  => put(`/outputs/${id}`, body);
 
 // Output DSP
 export const getOutputDsp        = (ch)          => get(`/outputs/${ch}/dsp`);
-export const putOutputGain       = (ch, db)      => put(`/outputs/${ch}/gain`, { db });
+export const putOutputGain       = (ch, db)      => put(`/outputs/${ch}/gain`, { gain_db: db });
 export const putOutputHpf        = (ch, body)    => put(`/outputs/${ch}/hpf`, body);
 export const putOutputLpf        = (ch, body)    => put(`/outputs/${ch}/lpf`, body);
 export const putOutputEq         = (ch, body)    => put(`/outputs/${ch}/eq`, body);

@@ -211,7 +211,7 @@ function _onParamChange(channelId, block, newParams) {
     try {
       const isRx = channelId.startsWith('rx_');
       const idx = parseInt(channelId.split('_')[1], 10);
-      const base = isRx ? `/api/v1/inputs/${idx}` : `/api/v1/outputs/${idx}`;
+      const base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
 
       if (block === 'flt') {
         const promises = [];
@@ -259,7 +259,7 @@ async function _onBypass(channelId, block, bypassed) {
   try {
     const isRx = channelId.startsWith('rx_');
     const idx = parseInt(channelId.split('_')[1], 10);
-    const base = isRx ? `/api/v1/inputs/${idx}` : `/api/v1/outputs/${idx}`;
+    const base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
     const ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
 
     if (block === 'flt') {
