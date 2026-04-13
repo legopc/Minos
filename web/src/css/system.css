@@ -1,0 +1,62 @@
+/* system.css — system settings tab */
+
+#tab-system {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+.system-section {
+  max-width: 560px;
+  padding: 16px;
+}
+
+.system-section-title {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.system-table {
+  border-collapse: collapse;
+  font-size: 10px;
+  width: 100%;
+}
+
+.system-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.system-table td:first-child {
+  color: var(--text-muted);
+  width: 160px;
+}
+
+.system-table td:last-child {
+  color: var(--text-primary);
+}
+
+.system-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.system-btn {
+  font-size: 10px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.system-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
+.system-btn.danger { border-color: var(--dot-error); color: var(--dot-error); }

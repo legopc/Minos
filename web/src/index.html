@@ -3,97 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Patchbox</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+  <title>dante-patchbox</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/shell.css">
+  <link rel="stylesheet" href="/css/matrix.css">
+  <link rel="stylesheet" href="/css/mixer.css">
+  <link rel="stylesheet" href="/css/zones.css">
+  <link rel="stylesheet" href="/css/scenes.css">
+  <link rel="stylesheet" href="/css/panels.css">
+  <link rel="stylesheet" href="/css/dante.css">
+  <link rel="stylesheet" href="/css/system.css">
 </head>
 <body>
-  <!-- HEADER -->
-  <header id="app-header">
-    <div class="header-left">
-      <button class="btn-sidebar-toggle" id="btn-sidebar-toggle" title="Toggle nav">☰</button>
-      <span class="app-title">PATCHBOX</span>
-      <span class="device-name" id="device-name"></span>
-    </div>
-    <div class="header-center">
-      <span class="status-badge" id="badge-dante" data-state="unknown">DANTE</span>
-      <span class="status-badge" id="badge-ptp" data-state="unknown">PTP</span>
-    </div>
-    <div class="header-right">
-      <div class="ws-badge">
-        <span class="ws-dot" id="ws-dot"></span>
-        <span class="ws-label" id="ws-label">connecting…</span>
-      </div>
-      <span class="user-chip" id="user-chip"></span>
-      <button class="btn-logout" id="btn-logout">LOGOUT</button>
-    </div>
-  </header>
 
-  <!-- PANIC STRIP -->
-  <div class="panic-strip" id="panic-strip">
-    <button class="btn-panic" id="panic-btn">⚠ PANIC MUTE ALL</button>
-    <button class="btn-unmute-all" id="unmute-all-btn">UNMUTE ALL</button>
-    <span class="active-scene-label">Scene: <span id="active-scene-name">—</span></span>
-    <span class="mute-status" id="mute-status"></span>
+<!-- Login overlay -->
+<div id="login-page" style="display:none">
+  <div class="login-box">
+    <h2>dante-patchbox</h2>
+    <input type="text" id="login-user" placeholder="username" autocomplete="username">
+    <input type="password" id="login-pass" placeholder="password" autocomplete="current-password">
+    <button class="login-btn" id="login-btn">Sign In</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div id="app-shell">
+  <!-- Topbar -->
+  <div id="topbar">
+    <span class="topbar-logo">&#9679; dante-patchbox</span>
+    <span class="topbar-device" id="tb-device">—</span>
+    <span class="topbar-spacer"></span>
+    <span class="topbar-user" id="tb-user"></span>
   </div>
 
-  <!-- APP BODY -->
-  <div class="app-body">
-    <!-- SIDEBAR NAV -->
-    <nav class="sidebar" id="sidebar">
-      <ul class="nav-list">
-        <li class="nav-item" data-route="dashboard">
-          <span class="nav-icon">◎</span><span class="nav-label">DASHBOARD</span>
-        </li>
-        <li class="nav-item" data-route="matrix">
-          <span class="nav-icon">⊞</span><span class="nav-label">MATRIX</span>
-        </li>
-        <li class="nav-item" data-route="inputs">
-          <span class="nav-icon">↓</span><span class="nav-label">INPUTS</span>
-        </li>
-        <li class="nav-item" data-route="outputs">
-          <span class="nav-icon">↑</span><span class="nav-label">OUTPUTS</span>
-        </li>
-        <li class="nav-item" data-route="scenes">
-          <span class="nav-icon">⊡</span><span class="nav-label">SCENES</span>
-        </li>
-        <li class="nav-item" data-route="system">
-          <span class="nav-icon">⚙</span><span class="nav-label">SYSTEM</span>
-        </li>
-      </ul>
-    </nav>
-
-    <!-- MAIN CONTENT -->
-    <main class="main-content">
-      <div id="page-container">
-        <!-- pages render here dynamically -->
-        <div class="page-loading">Loading…</div>
-      </div>
-    </main>
+  <!-- Tab bar -->
+  <div id="tabbar">
+    <button class="tab-btn active" data-tab="matrix">Matrix</button>
+    <button class="tab-btn" data-tab="mixer">Mixer</button>
+    <button class="tab-btn" data-tab="scenes">Scenes</button>
+    <button class="tab-btn" data-tab="zones">Zones</button>
+    <button class="tab-btn" data-tab="dante">Dante</button>
+    <button class="tab-btn" data-tab="system">System</button>
   </div>
 
-  <!-- LOGIN OVERLAY -->
-  <div class="login-overlay" id="login-overlay" hidden>
-    <div class="login-box">
-      <h2 class="login-title">AUTHENTICATION REQUIRED</h2>
-      <div class="login-field">
-        <label for="login-username">USERNAME</label>
-        <input type="text" id="login-username" autocomplete="username" spellcheck="false">
-      </div>
-      <div class="login-field">
-        <label for="login-password">PASSWORD</label>
-        <input type="password" id="login-password" autocomplete="current-password">
-      </div>
-      <div class="login-error" id="login-error"></div>
-      <button class="login-btn" id="login-btn">AUTHENTICATE</button>
-    </div>
+  <!-- Main content area -->
+  <div id="app">
+    <div id="tab-matrix"  class="tab-content active"></div>
+    <div id="tab-mixer"   class="tab-content"></div>
+    <div id="tab-scenes"  class="tab-content"></div>
+    <div id="tab-zones"   class="tab-content"></div>
+    <div id="tab-dante"   class="tab-content"></div>
+    <div id="tab-system"  class="tab-content"></div>
+
+    <!-- Toast container -->
+    <div class="toast-container" id="toasts"></div>
   </div>
 
-  <!-- TOAST CONTAINER -->
-  <div class="toast-container" id="toast-container"></div>
+  <!-- Status bar -->
+  <div id="statusbar">
+    <span class="status-item" id="sb-ptp">
+      <span class="dot dot-offline"></span>PTP
+    </span>
+    <span class="status-sep">|</span>
+    <span class="status-item" id="sb-rate">—</span>
+    <span class="status-sep">|</span>
+    <span class="status-item" id="sb-rx">—</span>
+    <span class="status-sep">|</span>
+    <span class="status-item" id="sb-tx">—</span>
+    <span class="status-sep">|</span>
+    <span class="status-item" id="sb-zones">—</span>
+    <span class="status-sep">|</span>
+    <span class="status-item" id="sb-ws">
+      <span class="dot dot-offline"></span>WS
+    </span>
+  </div>
+</div>
 
-  <script type="module" src="/modules/router.js"></script>
+<script type="module" src="/js/main.js"></script>
 </body>
 </html>

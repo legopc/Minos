@@ -1,0 +1,474 @@
+/* mixer.css — channel strips, faders, meter bridge */
+
+#tab-mixer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mixer-scene-bar {
+  height: var(--row-h);
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.mixer-scene-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mixer-scene-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mixer-scene-btn:hover { background: var(--bg-row-hover); }
+.mixer-scene-btn.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--bg-surface);
+}
+
+/* Meter bridge */
+.mixer-meter-bridge {
+  height: 36px;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: flex-end;
+  padding: 2px 4px;
+  gap: 1px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.bridge-cell {
+  width: var(--ch-w, 56px);
+  min-width: var(--ch-w, 56px);
+  height: 28px;
+  background: var(--meter-bg);
+  border-radius: 1px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.bridge-spacer { flex: 1; border-left: 2px solid var(--border-primary); }
+.bridge-zone { border-top: 2px solid var(--zone-card-color, #444); }
+
+/* Strips + zone masters row */
+.mixer-strips {
+  flex: 1;
+  display: flex;
+  gap: 1px;
+  padding: 4px 4px 4px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.mixer-zone-masters {
+  display: flex;
+  gap: 1px;
+  padding: 4px;
+  border-left: 2px solid var(--border-primary);
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+/* Generic strip shell (input + zone master) */
+.mixer-strip,
+.mixer-zone-master {
+  width: var(--ch-w, 56px);
+  min-width: var(--ch-w, 56px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  padding: 4px 2px;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.mixer-zone-master {
+  border-top: 3px solid var(--zone-card-color, #444);
+}
+
+.strip-name,
+.zone-master-name {
+  font-size: 8px;
+  color: var(--text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  padding: 0 2px;
+}
+
+/* Vertical VU meter */
+.strip-meter {
+  width: 6px;
+  flex: 1;
+  background: var(--meter-bg);
+  border-radius: 1px;
+  position: relative;
+  min-height: 40px;
+}
+
+.strip-meter-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--vu-green);
+  border-radius: 1px;
+  transition: height 0.12s linear;
+  height: 0%;
+}
+
+.strip-meter-peak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vu-amber);
+  transition: bottom 0.05s;
+  bottom: 0%;
+}
+
+/* Fader label + fader */
+.strip-fader-label {
+  font-size: 8px;
+  color: var(--text-accent);
+  text-align: center;
+  width: 100%;
+}
+
+.strip-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  width: 20px;
+  height: 80px;
+  accent-color: var(--fader-thumb-sel);
+  cursor: pointer;
+}
+
+/* DSP badge row */
+.strip-dsp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  justify-content: center;
+  width: 100%;
+}
+
+.strip-dsp-btn {
+  font-size: 7px;
+  padding: 1px 3px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-primary);
+  color: var(--text-muted);
+  border-radius: 2px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.strip-dsp-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
+.strip-dsp-btn.active {
+  background: var(--color-accent);
+  color: var(--bg-dark);
+  border-color: var(--color-accent);
+}
+
+/* Zone route toggle buttons */
+.strip-zone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  justify-content: center;
+  width: 100%;
+}
+
+.strip-zone-btn {
+  font-size: 7px;
+  padding: 1px 4px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-primary);
+  color: var(--text-muted);
+  border-radius: 2px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strip-zone-btn:hover { background: var(--bg-row-hover); }
+.strip-zone-btn.active {
+  border-color: var(--zone-card-color, #444);
+  color: var(--zone-card-color, #888);
+  background: var(--bg-surface);
+}
+
+/* Mute button */
+.strip-mute-btn {
+  font-size: 8px;
+  padding: 2px 6px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-primary);
+  color: var(--text-muted);
+  border-radius: 2px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+}
+.strip-mute-btn.muted {
+  background: var(--mute-active);
+  color: #fff;
+  border-color: var(--mute-active);
+}
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mixer-scene-bar {
+  height: var(--row-h);
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mixer-scene-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.mixer-scene-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.mixer-scene-btn:hover { background: var(--bg-row-hover); }
+
+/* Meter bridge */
+.mixer-meter-bridge {
+  height: 40px;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: flex-end;
+  padding: 4px 8px 2px;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.mixer-bridge-pair {
+  display: flex;
+  gap: 1px;
+  align-items: flex-end;
+}
+
+.mixer-bridge-meter {
+  width: 5px;
+  height: 28px;
+  background: var(--meter-bg);
+  position: relative;
+  border-radius: 1px;
+}
+
+.mixer-bridge-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--vu-green);
+  transition: height 0.05s linear;
+  border-radius: 1px;
+}
+
+/* Strips scroll area */
+.mixer-strips-area {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+}
+
+/* Input strips */
+.mixer-input-strips {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 0 4px;
+  height: 100%;
+}
+
+.mixer-strip {
+  width: var(--ch-w);
+  min-width: var(--ch-w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  padding: 4px 2px;
+  gap: 4px;
+  position: relative;
+}
+
+.mixer-strip-name {
+  font-size: 8px;
+  color: var(--text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  padding: 0 2px;
+}
+
+/* Vertical fader */
+.mixer-fader-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+.mixer-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  width: 20px;
+  flex: 1;
+  accent-color: var(--fader-thumb-sel);
+  cursor: pointer;
+}
+
+.mixer-fader-db {
+  font-size: 8px;
+  color: var(--text-accent);
+  text-align: center;
+}
+
+/* Meter column alongside fader */
+.mixer-strip-meter {
+  width: 5px;
+  background: var(--meter-bg);
+  position: relative;
+  border-radius: 1px;
+  align-self: stretch;
+}
+
+.mixer-strip-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--vu-green);
+  transition: height 0.05s linear;
+}
+
+.mixer-strip-peak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vu-amber);
+}
+
+/* MUTE / SOLO */
+.mixer-strip-buttons {
+  display: flex;
+  gap: 2px;
+}
+
+.mixer-mute-btn, .mixer-solo-btn {
+  width: 24px;
+  height: 16px;
+  font-size: 7px;
+  border-radius: 2px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+.mixer-mute-btn.active { background: var(--mute-active); color: #fff; border-color: var(--mute-active); }
+.mixer-solo-btn.active { background: var(--solo-active); color: var(--bg-dark); border-color: var(--solo-active); }
+
+/* Zone route selector */
+.mixer-zone-sel {
+  font-size: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  border-radius: 2px;
+  width: 100%;
+  padding: 1px 2px;
+}
+
+/* Zone master strips (right side) */
+.mixer-zone-masters {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 0 4px;
+  border-left: 2px solid var(--border-primary);
+  height: 100%;
+}
+
+.mixer-zone-strip {
+  width: 56px;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  padding: 4px 2px;
+  gap: 4px;
+}
+
+.mixer-zone-label {
+  font-size: 8px;
+  color: var(--text-primary);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  border-left: 3px solid var(--zone-sep-color, #444);
+  padding-left: 3px;
+}

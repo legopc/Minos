@@ -1,0 +1,138 @@
+/* panels.css — floating DSP panel styles */
+/* Note: core panel rules are also injected by panels.js at runtime */
+
+.dsp-panel {
+  position: absolute;
+  min-width: 240px;
+  max-width: 360px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  font-family: 'IBM Plex Mono', 'Consolas', 'SF Mono', monospace;
+  font-size: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  user-select: none;
+}
+
+.dsp-panel-header {
+  display: flex;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-primary);
+  cursor: move;
+  gap: 8px;
+}
+
+.dsp-panel-title {
+  flex: 1;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.dsp-panel-close {
+  font-size: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+}
+.dsp-panel-close:hover { color: var(--text-primary); }
+
+.dsp-panel-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.dsp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--row-h);
+}
+
+.dsp-label {
+  width: 72px;
+  font-size: 9px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dsp-value {
+  width: 56px;
+  font-size: 9px;
+  color: var(--text-accent);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.dsp-slider {
+  flex: 1;
+  min-width: 80px;
+  height: 3px;
+  accent-color: var(--fader-thumb-sel);
+}
+
+.dsp-byp-btn {
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-family: inherit;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+.dsp-byp-btn.active {
+  background: var(--mute-active);
+  color: #fff;
+  border-color: var(--mute-active);
+}
+
+.dsp-toggle-btn {
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-family: inherit;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.dsp-toggle-btn.active {
+  background: var(--text-accent);
+  color: var(--bg-dark);
+  border-color: var(--text-accent);
+}
+
+.dsp-band-header {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.dsp-section-header {
+  font-size: 8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.dsp-panel-loading {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: 9px;
+  text-align: center;
+}

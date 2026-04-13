@@ -1,0 +1,29 @@
+/* dante.css — Dante device info tab */
+
+#tab-dante {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+
+.dante-info-table {
+  border-collapse: collapse;
+  font-size: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.dante-info-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dante-info-table td:first-child {
+  color: var(--text-muted);
+  width: 160px;
+}
+
+.dante-info-table td:last-child {
+  color: var(--text-primary);
+}

@@ -1,0 +1,237 @@
+/* Matrix Tab Routing Grid CSS */
+
+#tab-matrix {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.matrix-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Left Panel */
+.matrix-left {
+  width: var(--ch-w);
+  min-width: var(--ch-w);
+  flex-shrink: 0;
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.left-header {
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+}
+
+.left-rows {
+  flex: 1;
+  overflow-y: hidden;
+}
+
+/* Matrix Scroll Area */
+.matrix-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Output Header Row */
+.matrix-header {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.output-col {
+  width: var(--col-w);
+  min-width: var(--col-w);
+  flex-shrink: 0;
+  height: var(--row-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border-subtle);
+  font-size: 8px;
+  color: var(--text-muted);
+}
+
+.output-col.zone-start {
+  border-left: 2px solid var(--zone-color, #58a6ff);
+}
+
+/* Matrix Body */
+.matrix-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Matrix Row */
+.matrix-row {
+  display: flex;
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.matrix-row:hover {
+  background: var(--bg-row-hover);
+}
+
+.matrix-row.selected {
+  background: var(--bg-row-sel);
+}
+
+/* Channel Label */
+.ch-label {
+  width: var(--ch-w);
+  min-width: var(--ch-w);
+  flex-shrink: 0;
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ch-label .ch-num {
+  color: var(--text-dim);
+  font-size: 8px;
+  min-width: 14px;
+}
+
+.ch-label .ch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.ch-label .ch-vu {
+  width: 5px;
+  height: 16px;
+  background: var(--meter-bg);
+  position: relative;
+  border-radius: 1px;
+}
+
+.ch-label .ch-vu .vu-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--vu-green);
+  transition: height 0.05s;
+}
+
+/* Crosspoint Cell */
+.xp-cell {
+  width: var(--col-w);
+  min-width: var(--col-w);
+  flex-shrink: 0;
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.xp-cell:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.xp-cell .xp-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  transition: all 0.1s;
+}
+
+.xp-cell.local .xp-dot {
+  background: var(--xp-local);
+  border-color: var(--xp-local);
+  box-shadow: 0 0 6px var(--xp-local);
+}
+
+.xp-cell.dante .xp-dot {
+  background: var(--xp-dante);
+  border-color: var(--xp-dante);
+  box-shadow: 0 0 6px var(--xp-dante);
+}
+
+/* DSP Badges Row */
+.dsp-badges {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  height: var(--row-h);
+}
+
+/* Right Panel */
+.matrix-right {
+  width: 220px;
+  min-width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.right-header {
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border-primary);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.right-rows {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.right-row {
+  height: var(--row-h);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.right-row:hover {
+  background: var(--bg-row-hover);
+}
+
+.right-row.selected {
+  background: var(--bg-row-sel);
+}
+
+/* Zone Separator */
+.zone-sep {
+  border-left: 2px solid var(--zone-sep-color, #444);
+}

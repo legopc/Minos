@@ -1,0 +1,135 @@
+/* zones.css — zone card grid (Sprint 7) */
+
+#tab-zones {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.zones-toolbar {
+  height: var(--row-h);
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.zones-add-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.zones-add-btn:hover { background: var(--bg-row-hover); }
+
+.zones-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.zone-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  border-top: 3px solid var(--zone-card-color, #444);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zone-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zone-card-name {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.zone-card-edit-btn {
+  font-size: 9px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.zone-card-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.zone-source-sel {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: inherit;
+  border-radius: 2px;
+  padding: 3px 4px;
+}
+
+.zone-vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zone-vol-slider {
+  flex: 1;
+  accent-color: var(--fader-thumb-sel);
+}
+
+.zone-vol-db {
+  font-size: 9px;
+  color: var(--text-accent);
+  width: 52px;
+  text-align: right;
+}
+
+.zone-mute-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-dark);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.zone-mute-btn.active { background: var(--mute-active); color: #fff; border-color: var(--mute-active); }
+
+.zone-tx-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 8px;
+  color: var(--text-dim);
+}
+
+.zone-tx-chip {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
