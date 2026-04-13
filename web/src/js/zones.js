@@ -42,8 +42,8 @@ function _buildCard(zone) {
   card.appendChild(hdr);
 
   // Determine initial mute state: muted if ALL tx outputs are muted
-  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
-  const isMuted = txOutputs.length > 0 && txOutputs.every(o => o.muted === true);
+  const muteTxOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
+  const isMuted = muteTxOutputs.length > 0 && muteTxOutputs.every(o => o.muted === true);
 
   const muteBtn = document.createElement('button');
   muteBtn.className = 'zone-mute-btn' + (isMuted ? ' active' : '');
