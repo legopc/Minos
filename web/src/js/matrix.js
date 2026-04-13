@@ -71,22 +71,37 @@ function _buildLeft(channels) {
     const row = document.createElement('div');
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
-    row.innerHTML = `
+
+    // Top row: number + name + mini-VU
+    const top = document.createElement('div');
+    top.className = 'ch-label-top';
+    top.innerHTML = `
       <span class="ch-num">${i + 1}</span>
       <span class="ch-name" title="${_esc(ch.name ?? ch.id)}">${_esc(ch.name ?? ch.id)}</span>
       <span class="ch-vu" id="vu-rx-${ch.id}"><span class="vu-fill" id="vu-fill-${ch.id}"></span></span>
     `;
+    row.appendChild(top);
 
-    // DSP access button — opens block-picker dropdown
-    const dspBtn = document.createElement('button');
-    dspBtn.className = 'ch-dsp-btn';
-    dspBtn.title = 'DSP';
-    dspBtn.textContent = '⚙';
-    dspBtn.onclick = (e) => {
-      e.stopPropagation();
-      _toggleDspPicker(dspBtn, ch);
-    };
-    row.appendChild(dspBtn);
+    // Bottom row: inline DSP block badges
+    const dspRow = document.createElement('div');
+    dspRow.className = 'ch-dsp-inline';
+    const dsp = ch.dsp ?? {};
+    Object.keys(dsp).forEach(blk => {
+      const block = dsp[blk];
+      const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+      const badge = document.createElement('button');
+      badge.className = 'ch-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+      badge.textContent = colour.label ?? blk.toUpperCase();
+      badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+      badge.style.background = colour.bg;
+      badge.style.color = colour.fg;
+      badge.onclick = (e) => {
+        e.stopPropagation();
+        openPanel(blk, ch.id, badge);
+      };
+      dspRow.appendChild(badge);
+    });
+    row.appendChild(dspRow);
 
     rows.appendChild(row);
   });

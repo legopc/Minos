@@ -98,11 +98,11 @@
   width: var(--ch-w);
   min-width: var(--ch-w);
   flex-shrink: 0;
-  height: var(--row-h);
   display: flex;
-  align-items: center;
-  padding: 0 6px;
-  gap: 4px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px 6px;
   font-size: 11px;
   color: var(--text-secondary);
   overflow: hidden;
@@ -136,6 +136,46 @@
   right: 0;
   background: var(--vu-green);
   transition: height 0.05s;
+}
+
+.ch-label-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.ch-dsp-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  width: 100%;
+  min-height: 20px;
+}
+
+.ch-dsp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 8px;
+  font-weight: 500;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border: none;
+  min-height: 18px;
+  min-width: 24px;
+  user-select: none;
+  transition: filter 0.1s;
+}
+.ch-dsp-badge:hover {
+  filter: brightness(1.4);
+}
+.ch-dsp-badge.byp {
+  opacity: 0.3;
 }
 
 /* Crosspoint Cell */
@@ -237,20 +277,9 @@
 
 /* DSP block access per channel row */
 .ch-dsp-btn {
-  display: flex;
-  align-items: center;
-  padding: 0 3px;
-  height: 18px;
-  font-size: 10px;
-  background: var(--bg-surface);
-  color: var(--text-muted);
-  border: 1px solid var(--border-primary);
-  border-radius: 2px;
-  cursor: pointer;
-  flex-shrink: 0;
-  line-height: 1;
+  display: none !important;
 }
-.ch-dsp-btn:hover { color: var(--text-primary); border-color: var(--color-accent); }
+.ch-dsp-btn:hover { display: none !important; }
 
 /* DSP block picker dropdown */
 .dsp-picker {
