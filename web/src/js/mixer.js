@@ -2,7 +2,7 @@
 import * as st  from './state.js';
 import * as api from './api.js';
 import { openPanel } from './panels.js';
-import { toast } from './main.js';
+import { toast } from './toast.js';
 
 let _animFrame = null;
 

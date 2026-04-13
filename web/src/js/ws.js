@@ -2,8 +2,6 @@
 
 import * as st     from './state.js';
 import * as meter  from './metering.js';
-import { updateStatusBar, updateWsStatus } from './main.js';
-import { updateMetering as matrixUpdateMetering } from './matrix.js';
 
 let _ws       = null;
 let _retryMs  = 1000;
@@ -31,7 +29,7 @@ function _connect() {
   _ws.onopen = () => {
     _retryMs = 1000;
     st.setConnState('connected');
-    updateWsStatus('connected');
+    window.dispatchEvent(new CustomEvent('pb:ws-state', { detail: 'connected' }));
     // Re-subscribe if we had a filter
     if (_meterFilter) {
       _ws.send(JSON.stringify({ type: 'subscribe_metering', ids: [..._meterFilter] }));
@@ -47,7 +45,7 @@ function _connect() {
   _ws.onclose = () => {
     _ws = null;
     st.setConnState('offline');
-    updateWsStatus('offline');
+    window.dispatchEvent(new CustomEvent('pb:ws-state', { detail: 'offline' }));
     _scheduleRetry();
   };
 
@@ -72,8 +70,8 @@ function _dispatch(msg) {
     case 'metering':
       st.setMetering(msg.rx, msg.tx, msg.gr);
       meter.updateAll(msg);
-      // Also update matrix mini-VU
-      if (msg.rx) matrixUpdateMetering(msg.rx);
+      // Notify matrix tab if active
+      window.dispatchEvent(new CustomEvent('pb:metering', { detail: msg }));
       break;
 
     case 'route_update':
@@ -97,14 +95,14 @@ function _dispatch(msg) {
     case 'scene_loaded':
       if (msg.scene_id !== undefined) {
         st.setActiveScene(msg.scene_id);
-        updateStatusBar();
+        window.dispatchEvent(new CustomEvent('pb:status-update'));
       }
       break;
 
     case 'dante_status':
       if (msg.ptp_locked !== undefined) {
         st.setPtp(msg.ptp_locked, msg.ptp_offset_ns ?? 0);
-        updateStatusBar();
+        window.dispatchEvent(new CustomEvent('pb:status-update'));
       }
       break;
 
@@ -117,12 +115,11 @@ function _dispatch(msg) {
 }
 
 function _handleHello(msg) {
-  // Update system counts from hello frame
   const sys = st.state.system;
   if (msg.rx_count !== undefined) sys.rx_count = msg.rx_count;
   if (msg.tx_count !== undefined) sys.tx_count = msg.tx_count;
   if (msg.zone_count !== undefined) sys.zone_count = msg.zone_count;
-  updateStatusBar();
+  window.dispatchEvent(new CustomEvent('pb:status-update'));
 }
 
 function _refreshMatrixCell(rxId, txId) {

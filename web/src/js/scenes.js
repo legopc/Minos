@@ -1,7 +1,7 @@
 // scenes.js — Scenes tab
 import * as st  from './state.js';
 import * as api from './api.js';
-import { toast } from './main.js';
+import { toast } from './toast.js';
 
 export async function render(container) {
   container.innerHTML = '';

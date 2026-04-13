@@ -3,17 +3,11 @@
 import * as api   from './api.js';
 import * as st    from './state.js';
 import { initWs } from './ws.js';
-import { renderMatrix } from './matrix.js';
+import { toast as _toast } from './toast.js';
 
 // ── Toast system ───────────────────────────────────────────────────────────
 export function toast(msg, isError = false) {
-  const c = document.getElementById('toasts');
-  if (!c) return;
-  const el = document.createElement('div');
-  el.className = 'toast' + (isError ? ' toast-error' : '');
-  el.textContent = msg;
-  c.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  _toast(msg, isError);
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────
@@ -169,6 +163,12 @@ async function loadAll() {
 
 // ── Entry point ────────────────────────────────────────────────────────────
 window.addEventListener('pb:unauthorized', () => showLogin());
+window.addEventListener('pb:status-update', () => updateStatusBar());
+window.addEventListener('pb:ws-state', e => updateWsStatus(e.detail));
+window.addEventListener('pb:metering', e => {
+  // Forward to matrix if it's been rendered
+  import('./matrix.js').then(m => m.updateMetering?.(e.detail.rx)).catch(() => {});
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupLogin();

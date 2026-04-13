@@ -2,7 +2,7 @@
 
 import * as st  from './state.js';
 import * as api from './api.js';
-import { toast } from './main.js';
+import { toast } from './toast.js';
 
 let _container = null;
 

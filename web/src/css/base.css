@@ -36,6 +36,11 @@
   --zone-color-7:   #79c0ff;
   --zone-color-8:   #56d364;
   --zone-color-9:   #e3b341;
+  --color-accent:  #58a6ff;
+  --color-danger:  #f85149;
+  --color-ok:      #3fb950;
+  --color-warn:    #d29922;
+  --color-text-dim:#484f58;
   --row-h:   28px;
   --col-w:   28px;
   --ch-w:    72px;

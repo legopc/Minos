@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { DSP_COLOURS } from './dsp/colours.js';
 import * as api from './api.js';
-import { toast } from '../main.js';
+import { toast } from './toast.js';
 
 let zTop = 200;
 let paramChangeDebounce = new Map();
