@@ -41,6 +41,31 @@ function _buildCard(zone) {
   hdr.innerHTML = `<span class="zone-card-name">${_e(zone.name ?? zone.id)}</span>`;
   card.appendChild(hdr);
 
+  // Determine initial mute state: muted if ALL tx outputs are muted
+  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
+  const isMuted = txOutputs.length > 0 && txOutputs.every(o => o.muted === true);
+
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'zone-mute-btn' + (isMuted ? ' active' : '');
+  muteBtn.textContent = isMuted ? 'UNMUTE' : 'MUTE';
+  hdr.appendChild(muteBtn);
+
+  muteBtn.onclick = async () => {
+    const nowMuted = muteBtn.classList.contains('active');
+    const txIndices = (zone.tx_ids ?? []).map(id => parseInt(id.replace('tx_', ''), 10));
+    try {
+      for (const idx of txIndices) {
+        if (nowMuted) {
+          await api.unmuteZone(idx);
+        } else {
+          await api.muteZone(idx);
+        }
+      }
+      muteBtn.classList.toggle('active', !nowMuted);
+      muteBtn.textContent = !nowMuted ? 'UNMUTE' : 'MUTE';
+    } catch(e) { toast('Mute error: ' + e.message, true); }
+  };
+
   // Source selector
   const srcLabel = document.createElement('div');
   srcLabel.className = 'zone-card-label';

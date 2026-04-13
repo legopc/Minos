@@ -15,7 +15,7 @@ const _state = {
   soloSet:       new Set(),
   userRole:      'admin',
   connState:     'offline',
-  ptp:           { locked: false, offset_ns: 0 },
+  ptp:           { locked: null, offset_ns: 0 },
   activeSceneId: null,
   system:        {},
 };

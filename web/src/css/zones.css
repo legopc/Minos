@@ -53,6 +53,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-content: space-between;
 }
 
 .zone-card-name {
@@ -108,15 +109,28 @@
 }
 
 .zone-mute-btn {
-  font-size: 9px;
-  padding: 2px 8px;
+  min-height: 36px;
+  min-width: 72px;
+  font-size: 10px;
+  font-family: inherit;
+  letter-spacing: 0.06em;
+  background: var(--bg-input);
+  color: var(--text-muted);
   border: 1px solid var(--border-primary);
   border-radius: 2px;
-  background: var(--bg-dark);
-  color: var(--text-muted);
   cursor: pointer;
+  transition: all 0.1s;
+  flex-shrink: 0;
 }
-.zone-mute-btn.active { background: var(--mute-active); color: #fff; border-color: var(--mute-active); }
+.zone-mute-btn:hover {
+  border-color: var(--mute-active);
+  color: var(--mute-active);
+}
+.zone-mute-btn.active {
+  background: var(--mute-active);
+  color: #fff;
+  border-color: var(--mute-active);
+}
 
 .zone-tx-list {
   display: flex;

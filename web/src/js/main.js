@@ -52,8 +52,16 @@ export function updateStatusBar() {
 
   const ptpEl = document.getElementById('sb-ptp');
   if (ptpEl) {
-    ptpEl.className = 'status-item ' + (ptp.locked ? 'ptp-locked' : 'ptp-unlocked');
-    ptpEl.innerHTML = `<span class="dot ${ptp.locked ? 'dot-live' : 'dot-error'}"></span>PTP ${ptp.locked ? 'LOCKED' : 'UNLOCKED'}`;
+    let ptpClass, ptpDot, ptpText;
+    if (ptp.locked === true) {
+      ptpClass = 'ptp-locked'; ptpDot = 'dot-live'; ptpText = 'PTP LOCKED';
+    } else if (ptp.locked === false) {
+      ptpClass = 'ptp-warn'; ptpDot = 'dot-warn'; ptpText = 'PTP —';
+    } else {
+      ptpClass = ''; ptpDot = 'dot-offline'; ptpText = 'PTP —';
+    }
+    ptpEl.className = 'status-item ' + ptpClass;
+    ptpEl.innerHTML = `<span class="dot ${ptpDot}"></span>${ptpText}`;
   }
 
   const rateEl = document.getElementById('sb-rate');

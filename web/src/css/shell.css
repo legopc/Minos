@@ -9,7 +9,7 @@
 
 /* Topbar */
 #topbar {
-  height: 36px;
+  height: 48px;
   background: var(--bg-dark);
   border-bottom: 1px solid var(--border-primary);
   display: flex;
@@ -51,7 +51,7 @@
 .tab-btn {
   height: 100%;
   padding: 0 16px;
-  font-size: 10px;
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -94,14 +94,14 @@
 
 /* Status bar */
 #statusbar {
-  height: 22px;
+  height: 28px;
   background: var(--bg-dark);
   border-top: 1px solid var(--border-primary);
   display: flex;
   align-items: center;
   padding: 0 12px;
   gap: 16px;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .status-item {
@@ -117,6 +117,10 @@
 
 .status-item.ptp-unlocked {
   color: var(--dot-error);
+}
+
+.status-item.ptp-warn {
+  color: var(--color-warn);
 }
 
 .status-sep {
@@ -154,7 +158,8 @@
 }
 
 .login-box input {
-  padding: 8px;
+  height: 44px;
+  padding: 0 10px;
   border-radius: 2px;
   width: 100%;
 }
@@ -167,6 +172,7 @@
   font-size: 11px;
   font-weight: 500;
   width: 100%;
+  min-height: 44px;
   border: none;
   cursor: pointer;
 }

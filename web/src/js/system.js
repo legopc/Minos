@@ -7,33 +7,78 @@ export async function render(container) {
   // Refresh from API on tab open
   try { sys = await api.getSystem(); st.setSystem(sys); } catch (_) {}
 
-  container.innerHTML = `
-    <div style="padding:16px;display:flex;flex-direction:column;gap:16px;max-width:600px">
-      <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">System</div>
-      <table style="border-collapse:collapse;font-size:10px;width:100%">
-        <tr><td style="padding:4px 8px;color:var(--text-muted);width:160px">Hostname</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${_e(sys.hostname ?? '—')}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">Version</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${_e(sys.version ?? '—')}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">Uptime</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${_fmt_uptime(sys.uptime_s)}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">Sample Rate</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${sys.sample_rate ? (sys.sample_rate/1000).toFixed(1)+' kHz' : '—'}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">Audio Drops</td>
-            <td style="padding:4px 8px;color:${(sys.audio_drops??0)>0?'var(--dot-error)':'var(--text-primary)'}">${sys.audio_drops ?? 0}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">Dante Status</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${_e(sys.dante_status ?? '—')}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">PTP Locked</td>
-            <td style="padding:4px 8px;color:${sys.ptp_locked?'var(--dot-live)':'var(--dot-error)'}">${sys.ptp_locked?'Yes':'No'}</td></tr>
-        <tr><td style="padding:4px 8px;color:var(--text-muted)">PTP Offset</td>
-            <td style="padding:4px 8px;color:var(--text-primary)">${sys.ptp_offset_ns ?? '—'} ns</td></tr>
-      </table>
+  const _renderDanteStatus = (status) => {
+    if (status === 'connected') {
+      return `<span style="color:var(--color-ok)">connected</span>`;
+    }
+    return `<span style="color:var(--text-muted)">${_e(status ?? '—')}</span>`;
+  };
 
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="sys-export-btn" style="background:var(--bg-surface);border:1px solid var(--border-primary);color:var(--text-secondary);padding:6px 12px;border-radius:2px;font-size:10px;cursor:pointer">Export Config</button>
+  const _renderPtpStatus = (locked, offset_ns) => {
+    if (locked === true) {
+      return `<span style="color:var(--color-ok)">LOCKED</span> <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
+    }
+    if (locked === false) {
+      return `<span style="color:var(--color-warn)">Checking...</span>`;
+    }
+    return '—';
+  };
+
+  const drops = sys.audio_drops ?? 0;
+  const dropsClass = drops > 0 ? 'color:var(--color-danger)' : '';
+
+  container.innerHTML = `
+    <div class="sys-page">
+      <!-- Status card -->
+      <div class="sys-card">
+        <div class="sys-card-title">System</div>
+        <div class="sys-row"><span class="sys-lbl">Hostname</span><span class="sys-val">${_e(sys.hostname ?? '—')}</span></div>
+        <div class="sys-row"><span class="sys-lbl">Version</span><span class="sys-val">${_e(sys.version ?? '—')}</span></div>
+        <div class="sys-row"><span class="sys-lbl">Uptime</span><span class="sys-val">${_fmt_uptime(sys.uptime_s)}</span></div>
+        <div class="sys-row"><span class="sys-lbl">Sample Rate</span><span class="sys-val">${sys.sample_rate ? (sys.sample_rate/1000).toFixed(1)+' kHz' : '—'}</span></div>
+        <div class="sys-row"><span class="sys-lbl">Channels</span><span class="sys-val">${sys.rx_count ?? 0} RX / ${sys.tx_count ?? 0} TX</span></div>
+      </div>
+
+      <!-- Dante card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Dante</div>
+        <div class="sys-row"><span class="sys-lbl">Status</span><span class="sys-val sys-dante-status">${_renderDanteStatus(sys.dante_status)}</span></div>
+      </div>
+
+      <!-- Clock card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Clock / PTP</div>
+        <div class="sys-row"><span class="sys-lbl">PTP</span><span class="sys-val sys-ptp-val">${_renderPtpStatus(sys.ptp_locked, sys.ptp_offset_ns)}</span></div>
+      </div>
+
+      <!-- Audio card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Audio</div>
+        <div class="sys-row"><span class="sys-lbl">Drops</span><span class="sys-val" style="${dropsClass}">${drops}</span></div>
+        ${drops > 0 ? '<div class="sys-row"><button class="sys-btn" id="sys-reset-drops">Reset Counter</button></div>' : ''}
+      </div>
+
+      <!-- Actions card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Actions</div>
+        <div class="sys-actions">
+          <button class="sys-btn" id="sys-export-btn">Export Config</button>
+        </div>
       </div>
     </div>`;
 
+  // Wire reset drops button
+  document.getElementById('sys-reset-drops')?.addEventListener('click', async () => {
+    try {
+      const updated = await api.getSystem();
+      st.setSystem(updated);
+      render(container);
+    } catch (e) {
+      console.error('Failed to reset drops', e);
+    }
+  });
+
+  // Wire export config button
   document.getElementById('sys-export-btn')?.addEventListener('click', async () => {
     try {
       const r = await api.getConfigExport();

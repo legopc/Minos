@@ -94,6 +94,8 @@ export const getZones      = ()          => get('/zones');
 export const postZone      = (body)      => post('/zones', body);
 export const putZone       = (id, body)  => put(`/zones/${id}`, body);
 export const deleteZone    = (id)        => del(`/zones/${id}`);
+export const muteZone      = (txIdx)     => post(`/zones/${txIdx}/mute`);
+export const unmuteZone    = (txIdx)     => post(`/zones/${txIdx}/unmute`);
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 export const getRoutes     = ()                    => get('/routes');

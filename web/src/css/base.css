@@ -41,10 +41,10 @@
   --color-ok:      #3fb950;
   --color-warn:    #d29922;
   --color-text-dim:#484f58;
-  --row-h:   28px;
-  --col-w:   28px;
-  --ch-w:    72px;
-  --ch-w-out:56px;
+  --row-h:   44px;
+  --col-w:   44px;
+  --ch-w:    160px;
+  --ch-w-out:120px;
 }
 
 @font-face {
@@ -81,7 +81,7 @@ body {
   background: var(--bg-workspace);
   color: var(--text-primary);
   font-family: 'IBM Plex Mono', 'Consolas', 'SF Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 a {
@@ -128,8 +128,8 @@ input[type="range"] {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -204,10 +204,15 @@ input[type="range"] {
   background: var(--dot-error);
 }
 
+.dot-warn {
+  background: var(--color-warn);
+}
+
 /* ── Button primitives ─────────────────────────────────────────────────── */
 .btn-accent, .btn-secondary, .btn-danger {
-  font-size: 9px;
-  padding: 2px 8px;
+  font-size: 11px;
+  padding: 0 16px;
+  min-height: 36px;
   border-radius: 2px;
   cursor: pointer;
   border: 1px solid;

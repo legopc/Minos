@@ -126,6 +126,22 @@ function _buildInputStrip(ch) {
   nm.title = ch.id;
   strip.appendChild(nm);
 
+  // Mute button
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'strip-mute-btn' + (ch.enabled === false ? ' active' : '');
+  muteBtn.textContent = 'MUTE';
+  muteBtn.title = ch.enabled === false ? 'Unmute channel' : 'Mute channel';
+  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+  muteBtn.onclick = async () => {
+    const nowMuted = muteBtn.classList.contains('active');
+    try {
+      await api.putInputEnabled(chIdx, nowMuted); // nowMuted=true means currently muted → enable
+      muteBtn.classList.toggle('active', !nowMuted);
+      muteBtn.title = !nowMuted ? 'Unmute channel' : 'Mute channel';
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(muteBtn);
+
   // VU meter
   const meter = document.createElement('div');
   meter.className = 'strip-meter';
@@ -170,10 +186,10 @@ function _buildInputStrip(ch) {
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (!block.enabled || block.bypassed) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
+    if (!block.enabled || block.bypassed) btn.classList.add('byp');
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
