@@ -112,10 +112,13 @@ export function openPanel(blockKey, channelId, triggerEl) {
 
   const app = document.getElementById('app');
   const ar = app.getBoundingClientRect();
-  const br = triggerEl.getBoundingClientRect();
+  const br = (triggerEl && typeof triggerEl.getBoundingClientRect === 'function')
+    ? triggerEl.getBoundingClientRect()
+    : triggerEl;  // accept pre-captured DOMRect
   let x = Math.min(br.left - ar.left + 8, ar.width - 250);
   let y = br.bottom - ar.top + 4;
   if (y + 320 > ar.height) y = br.top - ar.top - 320;
+  y = Math.max(y, 4);  // clamp: never above #app top edge
 
   const el = buildPanelEl(blockKey, channelId, pid);
   el.style.cssText = `position:absolute;left:${x}px;top:${y}px;z-index:${++zTop}`;
@@ -125,7 +128,7 @@ export function openPanel(blockKey, channelId, triggerEl) {
     el.style.zIndex = ++zTop;
   });
 
-  triggerEl.classList.add('blk-open');
+  if (triggerEl && triggerEl.classList) triggerEl.classList.add('blk-open');
   state.openPanels.set(pid, { blockKey, channelId, el, triggerEl });
 }
 
@@ -133,7 +136,7 @@ export function closePanel(pid) {
   const p = state.openPanels.get(pid);
   if (!p) return;
   p.el.remove();
-  p.triggerEl.classList.remove('blk-open');
+  if (p.triggerEl && p.triggerEl.classList) p.triggerEl.classList.remove('blk-open');
   state.openPanels.delete(pid);
 }
 

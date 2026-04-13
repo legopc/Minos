@@ -254,6 +254,9 @@ function _toggleDspPicker(btn, ch) {
   const blocks = Object.keys(dsp);
   if (!blocks.length) return;
 
+  // Capture rect NOW while btn is still visible (hover state)
+  const btnRect = btn.getBoundingClientRect();
+
   const picker = document.createElement('div');
   picker.className = 'dsp-picker';
 
@@ -271,7 +274,7 @@ function _toggleDspPicker(btn, ch) {
       e.stopPropagation();
       picker.remove();
       _activePicker = null;
-      openPanel(blk, ch.id, btn);
+      openPanel(blk, ch.id, btnRect);
     };
     picker.appendChild(b);
   });
