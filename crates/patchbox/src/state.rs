@@ -3,7 +3,7 @@ pub use patchbox_core::meters::MeterState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use crate::scenes::SceneStore;
 use crate::jwt;
 
@@ -24,6 +24,8 @@ pub struct AppState {
     pub audio_callbacks: Arc<AtomicU64>,
     /// Incremented when the gap-resumption resync fires (block > 2×lead_samples)
     pub resyncs: Arc<AtomicU64>,
+    /// Broadcast channel — WS handler subscribes; API mutation handlers send events
+    pub ws_tx: Arc<broadcast::Sender<String>>,
 }
 
 impl AppState {
@@ -32,6 +34,7 @@ impl AppState {
         let scenes = SceneStore::load(&scenes_path);
         let meters = MeterState::new(config.rx_channels, config.tx_channels);
         let jwt_secret = jwt::generate_secret();
+        let (ws_tx, _) = broadcast::channel(256);
         Self {
             config: Arc::new(RwLock::new(config)),
             config_path,
@@ -43,6 +46,7 @@ impl AppState {
             started_at: std::time::Instant::now(),
             audio_callbacks: Arc::new(AtomicU64::new(0)),
             resyncs: Arc::new(AtomicU64::new(0)),
+            ws_tx: Arc::new(ws_tx),
         }
     }
 

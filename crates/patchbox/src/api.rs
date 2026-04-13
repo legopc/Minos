@@ -8,6 +8,7 @@ use axum::{
 };
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use tokio::time::{interval, Duration};
 
 #[derive(RustEmbed)]
 #[folder = "../../web/src/"]
@@ -31,8 +32,6 @@ fn serve_asset(path: &str) -> Response {
 use crate::state::AppState;
 use crate::auth_api;
 use crate::scenes::Scene;
-use std::time::Duration;
-use tokio::time::interval;
 
 #[derive(Deserialize)]
 pub struct MatrixUpdate { pub tx: usize, pub rx: usize, pub enabled: bool }
@@ -247,17 +246,6 @@ async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
     StatusCode::OK.into_response()
 }
 
-#[derive(Serialize)]
-pub struct MeterFrame {
-    pub tx_rms: Vec<f32>,
-    pub rx_rms: Vec<f32>,
-    pub tx_peak: Vec<f32>,
-    pub rx_peak: Vec<f32>,
-    pub tx_gr_db: Vec<f32>,
-    pub rx_gr_db: Vec<f32>,
-    pub rx_gate_open: Vec<bool>,
-}
-
 // GET /api/v1/config
 async fn get_config(State(s): State<AppState>) -> impl IntoResponse {
     Json(s.config.read().await.clone())
@@ -293,9 +281,10 @@ async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl
     let mut cfg = s.config.write().await;
     scene.apply_to_config(&mut cfg);
     drop(cfg);
-    s.scenes.write().await.active = Some(name);
+    s.scenes.write().await.active = Some(name.clone());
     let _ = s.persist().await;
     let _ = s.persist_scenes().await;
+    ws_broadcast(&s, serde_json::json!({"type":"scene_loaded","scene_id":&name,"name":&name}).to_string());
     StatusCode::OK.into_response()
 }
 
@@ -942,6 +931,7 @@ async fn put_output_resource(State(s): State<AppState>, Path(id): Path<String>, 
     }
     drop(cfg);
     let _ = s.persist().await;
+    ws_broadcast(&s, serde_json::json!({"type":"output_update","id":&id,"volume_db":body.volume_db,"muted":body.muted}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1045,6 +1035,7 @@ async fn post_route(State(s): State<AppState>, Json(body): Json<CreateRouteReque
     cfg.matrix[tx][rx] = true;
     drop(cfg);
     let _ = s.persist().await;
+    ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"dante"}).to_string());
     let route_id = format!("rx_{}|tx_{}", rx, tx);
     (StatusCode::CREATED, Json(serde_json::json!({"id": route_id, "rx_id": body.rx_id, "tx_id": body.tx_id}))).into_response()
 }
@@ -1068,6 +1059,7 @@ async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl
     cfg.matrix[tx][rx] = false;
     drop(cfg);
     let _ = s.persist().await;
+    ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":format!("rx_{}",rx),"tx_id":format!("tx_{}",tx),"state":"off","route_type":"dante"}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1250,28 +1242,128 @@ async fn get_scene_diff(State(s): State<AppState>, Path(id): Path<String>) -> im
 }
 
 // GET /ws
+// ─── WebSocket broadcast helper ──────────────────────────────────────────────
+
+/// Send an event JSON string to all connected WS clients. Errors are silently
+/// dropped (no clients = zero receivers, which is fine).
+fn ws_broadcast(s: &AppState, msg: String) {
+    let _ = s.ws_tx.send(msg);
+}
+
+// ─── WebSocket handler ────────────────────────────────────────────────────────
+
 async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, s))
 }
 
-async fn handle_ws(mut socket: WebSocket, s: AppState) {
-    let mut tick = interval(Duration::from_millis(50));
-    loop {
-        tick.tick().await;
-        let meters = s.meters.read().await;
-        let frame = MeterFrame {
-            tx_rms: meters.tx_rms.clone(),
-            rx_rms: meters.rx_rms.clone(),
-            tx_peak: meters.tx_peak.clone(),
-            rx_peak: meters.rx_peak.clone(),
-            tx_gr_db: meters.tx_gr_db.clone(),
-            rx_gr_db: meters.rx_gr_db.clone(),
-            rx_gate_open: meters.rx_gate_open.clone(),
-        };
-        drop(meters);
-        let json = match serde_json::to_string(&frame) { Ok(j) => j, Err(_) => continue };
-        if socket.send(Message::Text(json.into())).await.is_err() { break; }
+/// Per-client WS task. Splits into send + receive halves.
+async fn handle_ws(socket: WebSocket, s: AppState) {
+    use axum::extract::ws::Message;
+    use futures_util::{SinkExt, StreamExt};
+
+    let (mut sender, mut receiver) = socket.split();
+
+    // --- hello ---
+    {
+        let cfg = s.config.read().await;
+        let hello = serde_json::json!({
+            "type": "hello",
+            "version": env!("CARGO_PKG_VERSION"),
+            "rx_count": cfg.rx_channels,
+            "tx_count": cfg.tx_channels,
+            "zone_count": cfg.zone_config.len()
+        });
+        let _ = sender.send(Message::Text(hello.to_string().into())).await;
     }
+
+    // Subscribe to broadcast channel *before* spawning the send task
+    let mut rx = s.ws_tx.subscribe();
+
+    // Track which IDs the client wants metered (None = all)
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    let subscribed: Arc<Mutex<Option<Vec<String>>>> = Arc::new(Mutex::new(None));
+    let subscribed_send = subscribed.clone();
+
+    // --- Send task: metering loop + broadcast relay ---
+    let state_send = s.clone();
+    let send_task = tokio::spawn(async move {
+        let mut meter_tick = interval(Duration::from_millis(200));
+        loop {
+            tokio::select! {
+                _ = meter_tick.tick() => {
+                    let meters = state_send.meters.read().await;
+                    let filter = subscribed_send.lock().await;
+
+                    let mut rx_map = serde_json::Map::new();
+                    for (i, &v) in meters.rx_rms.iter().enumerate() {
+                        let id = format!("rx_{}", i);
+                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                            rx_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
+                        }
+                    }
+                    let mut tx_map = serde_json::Map::new();
+                    for (i, &v) in meters.tx_rms.iter().enumerate() {
+                        let id = format!("tx_{}", i);
+                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                            tx_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
+                        }
+                    }
+                    let mut gr_map = serde_json::Map::new();
+                    for (i, &v) in meters.tx_gr_db.iter().enumerate() {
+                        gr_map.insert(format!("tx_{}_lim", i), serde_json::json!(v));
+                    }
+                    for (i, &v) in meters.rx_gr_db.iter().enumerate() {
+                        gr_map.insert(format!("rx_{}_cmp", i), serde_json::json!(v));
+                    }
+                    drop(filter);
+                    drop(meters);
+
+                    let msg = serde_json::json!({
+                        "type": "metering",
+                        "rx": rx_map,
+                        "tx": tx_map,
+                        "gr": gr_map
+                    });
+                    if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(event) = rx.recv() => {
+                    if sender.send(Message::Text(event.into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // --- Receive task: handle client messages ---
+    while let Some(Ok(msg)) = receiver.next().await {
+        let text = match msg {
+            Message::Text(t) => t,
+            Message::Close(_) => break,
+            _ => continue,
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        match v.get("type").and_then(|t| t.as_str()) {
+            Some("ping") => {
+                let _ = s.ws_tx.send(serde_json::json!({"type":"pong"}).to_string());
+            }
+            Some("subscribe_metering") => {
+                if let Some(ids) = v.get("ids").and_then(|i| i.as_array()) {
+                    let list: Vec<String> = ids.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect();
+                    *subscribed.lock().await = Some(list);
+                }
+            }
+            Some("resync") => { /* no-op for now */ }
+            _ => {}
+        }
+    }
+
+    send_task.abort();
 }
 
 // Static asset handlers (embedded via rust-embed)
