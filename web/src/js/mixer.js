@@ -24,17 +24,22 @@ export function render(container) {
   bridge.id = 'mixer-bridge';
   container.appendChild(bridge);
 
-  // Strip area
+  // Row wrapper: input strips + zone masters side by side
+  const body = document.createElement('div');
+  body.className = 'mixer-body';
+  container.appendChild(body);
+
+  // Strip area (input channels)
   const strips = document.createElement('div');
   strips.className = 'mixer-strips';
   strips.id = 'mixer-strips';
-  container.appendChild(strips);
+  body.appendChild(strips);
 
   // Zone masters
   const masters = document.createElement('div');
   masters.className = 'mixer-zone-masters';
   masters.id = 'mixer-masters';
-  container.appendChild(masters);
+  body.appendChild(masters);
 
   _renderStrips(strips, bridge, masters);
 }
