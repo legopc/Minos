@@ -60,7 +60,7 @@ function bypButton(label, blockKey, currentBypassed, onBypass) {
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
-  el.className = 'dsp-panel cmp';
+  el.className = 'dsp-content cmp';
   if (params.bypassed) el.style.opacity = '0.22';
 
   // Threshold

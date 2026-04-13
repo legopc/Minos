@@ -40,7 +40,7 @@ function fmtHz(v) {
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
-  el.className = 'dsp-panel flt';
+  el.className = 'dsp-content flt';
 
   // HPF Enabled toggle
   const hpfCheckbox = document.createElement('input');

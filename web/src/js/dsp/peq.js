@@ -44,7 +44,7 @@ function fmtDb(v) {
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
-  el.className = 'dsp-panel peq';
+  el.className = 'dsp-content peq';
 
   const bands = params.bands || [
     { freq: 100, gain: 0, q: 0.7 },
