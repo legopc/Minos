@@ -1,7 +1,6 @@
 /* dante.css — Dante device info tab */
 
 #tab-dante {
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: auto;

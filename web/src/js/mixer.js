@@ -3,6 +3,7 @@ import * as st  from './state.js';
 import * as api from './api.js';
 import { openPanel } from './panels.js';
 import { toast } from './toast.js';
+import { DSP_COLOURS } from './dsp/colours.js';
 
 let _animFrame = null;
 
@@ -39,7 +40,9 @@ export function render(container) {
 }
 
 function _renderSceneBar(bar) {
-  const scenes = st.state.scenes.filter(s => s.is_favourite);
+  const scenes = Array.isArray(st.state.scenes)
+    ? st.state.scenes.filter(s => s.is_favourite)
+    : [];
   bar.innerHTML = '';
   const label = document.createElement('span');
   label.className = 'mixer-scene-label';
@@ -156,15 +159,21 @@ function _buildInputStrip(ch) {
   };
   strip.appendChild(fader);
 
-  // DSP badge row
+  // DSP badge row — spec §6.4: show only enabled+non-bypassed blocks
   const dspRow = document.createElement('div');
   dspRow.className = 'strip-dsp-row';
-  ['am', 'hpf', 'lpf', 'peq', 'gte', 'cmp'].forEach(blk => {
+  const dsp = ch.dsp ?? {};
+  Object.keys(dsp).forEach(blk => {
+    const block = dsp[blk];
+    if (!block.enabled || block.bypassed) return;
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
-    btn.textContent = _blkLabel(blk);
+    btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
+    btn.style.background = colour.bg;
+    btn.style.color = colour.fg;
     btn.onclick = () => openPanel(blk, ch.id, btn);
     dspRow.appendChild(btn);
   });
@@ -275,15 +284,22 @@ function _buildZoneMaster(zone, zi) {
   };
   strip.appendChild(muteBtn);
 
-  // DSP badge row (output DSP)
+  // DSP badge row (output DSP) — spec §6.4: show only enabled+non-bypassed
   const dspRow = document.createElement('div');
   dspRow.className = 'strip-dsp-row';
-  ['am', 'hpf', 'lpf', 'peq', 'cmp', 'lim', 'dly'].forEach(blk => {
+  const firstTxObj = firstTx ? st.state.outputs.get(firstTx) : null;
+  const outDsp = firstTxObj?.dsp ?? {};
+  Object.keys(outDsp).forEach(blk => {
+    const block = outDsp[blk];
+    if (!block.enabled || block.bypassed) return;
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
-    btn.textContent = _blkLabel(blk);
+    btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
-    // Use first tx_id for DSP
+    btn.dataset.block = blk;
+    btn.style.background = colour.bg;
+    btn.style.color = colour.fg;
     if (firstTx) btn.onclick = () => openPanel(blk, firstTx, btn);
     dspRow.appendChild(btn);
   });
@@ -313,11 +329,6 @@ export function updateMetering(rx, tx) {
 
 function _hasZoneRoute(rxId, zone) {
   return (zone.tx_ids ?? []).some(txId => st.hasRoute(rxId, txId));
-}
-
-function _blkLabel(blk) {
-  const m = { am:'POL', hpf:'HPF', lpf:'LPF', peq:'EQ', gte:'GATE', cmp:'COMP', lim:'LIM', dly:'DLY', duc:'DUC', aec:'AEC', flt:'FLT' };
-  return m[blk] ?? blk.toUpperCase();
 }
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }

@@ -1,7 +1,6 @@
 /* system.css — system settings tab */
 
 #tab-system {
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: auto;

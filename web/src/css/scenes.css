@@ -1,7 +1,6 @@
 /* scenes.css — scene list + diff view (Sprint 7) */
 
 #tab-scenes {
-  display: flex;
   height: 100%;
   overflow: hidden;
 }

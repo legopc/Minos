@@ -1,7 +1,6 @@
 /* zones.css — zone card grid (Sprint 7) */
 
 #tab-zones {
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;

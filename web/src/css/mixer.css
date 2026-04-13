@@ -1,7 +1,6 @@
 /* mixer.css — channel strips, faders, meter bridge */
 
 #tab-mixer {
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;

@@ -1,7 +1,6 @@
 /* Matrix Tab Routing Grid CSS */
 
 #tab-matrix {
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;

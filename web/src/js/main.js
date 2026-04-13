@@ -135,7 +135,8 @@ async function loadAll() {
     outputs.forEach(o  => st.setOutput(o));
     zones.forEach(z    => st.setZone(z));
     routes.forEach(r   => st.setRoute(r));
-    st.setScenes(scenes);
+    st.setScenes(Array.isArray(scenes) ? scenes : (scenes.scenes ?? []));
+    if (scenes.active) st.setActiveScene(scenes.active);
     st.setSystem(system);
     if (system.ptp_locked !== undefined) {
       st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
