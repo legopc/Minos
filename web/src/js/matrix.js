@@ -3,6 +3,8 @@
 import * as st  from './state.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
+import { openPanel } from './panels.js';
+import { DSP_COLOURS } from './dsp/colours.js';
 
 let _container = null;
 
@@ -74,6 +76,18 @@ function _buildLeft(channels) {
       <span class="ch-name" title="${_esc(ch.name ?? ch.id)}">${_esc(ch.name ?? ch.id)}</span>
       <span class="ch-vu" id="vu-rx-${ch.id}"><span class="vu-fill" id="vu-fill-${ch.id}"></span></span>
     `;
+
+    // DSP access button — opens block-picker dropdown
+    const dspBtn = document.createElement('button');
+    dspBtn.className = 'ch-dsp-btn';
+    dspBtn.title = 'DSP';
+    dspBtn.textContent = '⚙';
+    dspBtn.onclick = (e) => {
+      e.stopPropagation();
+      _toggleDspPicker(dspBtn, ch);
+    };
+    row.appendChild(dspBtn);
+
     rows.appendChild(row);
   });
   left.appendChild(rows);
@@ -223,3 +237,62 @@ function _esc(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// ── DSP block picker ────────────────────────────────────────────────────────
+let _activePicker = null;
+
+function _toggleDspPicker(btn, ch) {
+  // Close existing picker
+  if (_activePicker) {
+    _activePicker.remove();
+    _activePicker = null;
+    if (_activePicker === null && _lastBtn === btn) return;
+  }
+  _lastBtn = btn;
+
+  const dsp = ch.dsp ?? {};
+  const blocks = Object.keys(dsp);
+  if (!blocks.length) return;
+
+  const picker = document.createElement('div');
+  picker.className = 'dsp-picker';
+
+  blocks.forEach(blk => {
+    const block = dsp[blk];
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const b = document.createElement('button');
+    b.className = 'dsp-picker-btn';
+    b.style.background = colour.bg;
+    b.style.color = colour.fg;
+    const active = block.enabled && !block.bypassed;
+    b.textContent = (colour.label ?? blk.toUpperCase()) + (active ? ' ●' : '');
+    b.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+    b.onclick = (e) => {
+      e.stopPropagation();
+      picker.remove();
+      _activePicker = null;
+      openPanel(blk, ch.id, btn);
+    };
+    picker.appendChild(b);
+  });
+
+  // Position below the DSP button
+  const rect = btn.getBoundingClientRect();
+  picker.style.position = 'fixed';
+  picker.style.top = (rect.bottom + 2) + 'px';
+  picker.style.left = rect.left + 'px';
+  document.body.appendChild(picker);
+  _activePicker = picker;
+
+  // Close on outside click
+  const close = (e) => {
+    if (!picker.contains(e.target)) {
+      picker.remove();
+      _activePicker = null;
+      document.removeEventListener('click', close);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+let _lastBtn = null;

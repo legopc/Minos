@@ -234,3 +234,46 @@
 .zone-sep {
   border-left: 2px solid var(--zone-sep-color, #444);
 }
+
+/* DSP block access per channel row */
+.ch-dsp-btn {
+  display: none;
+  padding: 0 3px;
+  height: 18px;
+  font-size: 10px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.ch-label:hover .ch-dsp-btn { display: flex; align-items: center; }
+.ch-dsp-btn:hover { color: var(--text-primary); border-color: var(--color-accent); }
+
+/* DSP block picker dropdown */
+.dsp-picker {
+  z-index: 9000;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.dsp-picker-btn {
+  padding: 3px 8px;
+  font-size: 9px;
+  font-family: inherit;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.dsp-picker-btn:hover { filter: brightness(1.3); }
