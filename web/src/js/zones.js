@@ -66,10 +66,10 @@ function _buildCard(zone) {
     } catch(e) { toast('Mute error: ' + e.message, true); }
   };
 
-  // Source selector
+  // Input selector
   const srcLabel = document.createElement('div');
   srcLabel.className = 'zone-card-label';
-  srcLabel.textContent = 'Source';
+  srcLabel.textContent = 'Input';
   card.appendChild(srcLabel);
 
   const srcSel = document.createElement('select');

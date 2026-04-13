@@ -411,6 +411,12 @@ use axum::extract::Query;
 #[derive(Deserialize)] struct MutedBody { muted: bool }
 #[derive(Deserialize)] struct PolarityBody { invert: bool }
 
+#[derive(Debug, Deserialize)]
+struct AdminChannelsReq {
+    rx: usize,
+    tx: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Input DSP handlers
 // ---------------------------------------------------------------------------
@@ -1382,6 +1388,45 @@ async fn whoami(
     }
 }
 
+async fn post_admin_channels(
+    State(state): State<AppState>,
+    Json(body): Json<AdminChannelsReq>,
+) -> impl IntoResponse {
+    if body.rx < 1 || body.rx > 32 || body.tx < 1 || body.tx > 32 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "channel count out of range (1-32)"}))).into_response();
+    }
+    {
+        let mut cfg = state.config.write().await;
+        cfg.rx_channels = body.rx;
+        cfg.tx_channels = body.tx;
+        cfg.normalize();
+    }
+    if let Err(e) = state.persist().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("persist failed: {}", e)}))).into_response();
+    }
+    // Spawn restart after short delay so response can be sent first
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["restart", "patchbox"])
+            .spawn();
+    });
+    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+}
+
+async fn post_admin_restart(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let _ = state.persist().await;
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["restart", "patchbox"])
+            .spawn();
+    });
+    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+}
+
 pub fn router(state: AppState) -> Router {
     // Protected routes — require valid JWT
     let protected = Router::new()
@@ -1439,6 +1484,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/system", get(get_system))
         .route("/api/v1/system/config/export", get(get_system_config_export))
         .route("/api/v1/system/config/import", post(post_system_config_import))
+        .route("/api/v1/admin/channels", post(post_admin_channels))
+        .route("/api/v1/admin/restart", post(post_admin_restart))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required

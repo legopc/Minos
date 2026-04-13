@@ -43,7 +43,7 @@
   --color-text-dim:#484f58;
   --row-h:   64px;
   --col-w:   44px;
-  --ch-w:    160px;
+  --ch-w:    240px;
   --ch-w-out:120px;
 }
 
@@ -81,7 +81,7 @@ body {
   background: var(--bg-workspace);
   color: var(--text-primary);
   font-family: 'IBM Plex Mono', 'Consolas', 'SF Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 a {

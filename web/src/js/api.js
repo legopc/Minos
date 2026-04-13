@@ -125,3 +125,5 @@ export const putSystemConfig    = (body) => put('/system/config', body);
 export const getConfigExport    = ()     => fetch(BASE + '/system/config/export', {
   headers: _token ? { 'Authorization': `Bearer ${_token}` } : {},
 });
+export const postAdminChannels  = (rx, tx) => post('/admin/channels', { rx, tx });
+export const postAdminRestart   = ()     => post('/admin/restart', {});

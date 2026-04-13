@@ -98,15 +98,15 @@
   width: var(--ch-w);
   min-width: var(--ch-w);
   flex-shrink: 0;
+  height: var(--row-h);
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  padding: 4px 6px;
-  font-size: 11px;
-  color: var(--text-secondary);
+  flex-direction: row;
+  align-items: center;
+  padding: 0 6px;
+  gap: 6px;
   overflow: hidden;
   white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .ch-label .ch-num {
@@ -116,9 +116,13 @@
 }
 
 .ch-label .ch-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+  white-space: nowrap;
 }
 
 .ch-label .ch-vu {
@@ -138,38 +142,31 @@
   transition: height 0.05s;
 }
 
-.ch-label-top {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  overflow: hidden;
-}
-
 .ch-dsp-inline {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 3px;
-  width: 100%;
-  min-height: 20px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .ch-dsp-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 5px;
-  border-radius: 2px;
-  font-size: 8px;
-  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
   font-family: inherit;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   cursor: pointer;
   border: none;
-  min-height: 18px;
-  min-width: 24px;
+  height: 26px;
+  min-width: 36px;
   user-select: none;
   transition: filter 0.1s;
+  flex-shrink: 0;
 }
 .ch-dsp-badge:hover {
   filter: brightness(1.4);

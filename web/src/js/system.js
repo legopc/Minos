@@ -1,6 +1,7 @@
 // system.js — System tab
-import * as st  from './state.js';
-import * as api from './api.js';
+import * as st    from './state.js';
+import * as api   from './api.js';
+import { toast }  from './toast.js';
 
 export async function render(container) {
   let sys = st.state.system;
@@ -58,6 +59,14 @@ export async function render(container) {
         ${drops > 0 ? '<div class="sys-row"><button class="sys-btn" id="sys-reset-drops">Reset Counter</button></div>' : ''}
       </div>
 
+      <!-- Channel Configuration card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Channel Configuration</div>
+        <div class="sys-row"><span class="sys-lbl">RX Inputs</span><input type="number" id="cfg-rx-count" class="cfg-input" min="1" max="32" value="${sys.rx_count ?? 0}"></div>
+        <div class="sys-row"><span class="sys-lbl">TX Outputs</span><input type="number" id="cfg-tx-count" class="cfg-input" min="1" max="32" value="${sys.tx_count ?? 0}"></div>
+        <div class="sys-row"><button class="sys-btn" id="cfg-save-btn">Save & Restart</button></div>
+      </div>
+
       <!-- Actions card -->
       <div class="sys-card">
         <div class="sys-card-title">Actions</div>
@@ -75,6 +84,22 @@ export async function render(container) {
       render(container);
     } catch (e) {
       console.error('Failed to reset drops', e);
+    }
+  });
+
+  // Wire channel config save button
+  document.getElementById('cfg-save-btn')?.addEventListener('click', async () => {
+    const rx = parseInt(document.getElementById('cfg-rx-count').value, 10);
+    const tx = parseInt(document.getElementById('cfg-tx-count').value, 10);
+    if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
+      toast('Invalid channel count (1-32)', true);
+      return;
+    }
+    try {
+      await api.postAdminChannels(rx, tx);
+      _showRestartOverlay();
+    } catch(e) {
+      toast('Failed: ' + e.message, true);
     }
   });
 
@@ -102,4 +127,30 @@ function _fmt_uptime(s) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   return `${h}h ${m}m`;
+}
+
+function _showRestartOverlay() {
+  const ov = document.createElement('div');
+  ov.className = 'restart-overlay';
+  ov.innerHTML = '<div class="restart-box"><div class="restart-spinner"></div><p>Restarting…</p><p class="restart-sub">Reconnecting to Minos</p></div>';
+  document.body.appendChild(ov);
+
+  let attempts = 0;
+  const poll = setInterval(async () => {
+    attempts++;
+    if (attempts > 30) {
+      clearInterval(poll);
+      ov.querySelector('.restart-sub').textContent = 'Timed out. Please reload manually.';
+      return;
+    }
+    try {
+      const r = await fetch('/api/v1/system', {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('pb_token') }
+      });
+      if (r.ok) {
+        clearInterval(poll);
+        location.reload();
+      }
+    } catch(_) { /* still down */ }
+  }, 2000);
 }

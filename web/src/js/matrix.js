@@ -72,17 +72,27 @@ function _buildLeft(channels) {
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
 
-    // Top row: number + name + mini-VU
-    const top = document.createElement('div');
-    top.className = 'ch-label-top';
-    top.innerHTML = `
-      <span class="ch-num">${i + 1}</span>
-      <span class="ch-name" title="${_esc(ch.name ?? ch.id)}">${_esc(ch.name ?? ch.id)}</span>
-      <span class="ch-vu" id="vu-rx-${ch.id}"><span class="vu-fill" id="vu-fill-${ch.id}"></span></span>
-    `;
-    row.appendChild(top);
+    const num = document.createElement('span');
+    num.className = 'ch-num';
+    num.textContent = i + 1;
+    row.appendChild(num);
 
-    // Bottom row: inline DSP block badges
+    const name = document.createElement('span');
+    name.className = 'ch-name';
+    name.title = ch.name ?? ch.id;
+    name.textContent = ch.name ?? ch.id;
+    row.appendChild(name);
+
+    const vu = document.createElement('span');
+    vu.className = 'ch-vu';
+    vu.id = 'vu-rx-' + ch.id;
+    const vuFill = document.createElement('span');
+    vuFill.className = 'vu-fill';
+    vuFill.id = 'vu-fill-' + ch.id;
+    vu.appendChild(vuFill);
+    row.appendChild(vu);
+
+    // Inline DSP block badges
     const dspRow = document.createElement('div');
     dspRow.className = 'ch-dsp-inline';
     const dsp = ch.dsp ?? {};
@@ -202,20 +212,22 @@ function _buildBody(channels, outputs, txZoneMap) {
 // ── Crosspoint toggle ──────────────────────────────────────────────────────
 async function _toggleRoute(rxId, txId, cell) {
   const routeType = st.getRouteType(rxId, txId);
+  const prevClass = cell.className;
   try {
     if (routeType) {
-      // Remove route
+      // Optimistic: show as unrouted immediately
+      cell.className = 'xp-cell';
       const routeId = `${rxId}|${txId}`;
       await api.deleteRoute(routeId);
       st.removeRoute(rxId, txId);
-      cell.className = 'xp-cell';
     } else {
-      // Add local route
+      // Optimistic: show as routed immediately
+      cell.className = 'xp-cell local';
       const route = await api.postRoute(rxId, txId, 'local');
       st.setRoute(route);
-      cell.className = 'xp-cell local';
     }
   } catch (e) {
+    cell.className = prevClass; // revert on error
     toast('Route error: ' + e.message, true);
   }
 }
