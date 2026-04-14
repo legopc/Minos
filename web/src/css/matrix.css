@@ -94,7 +94,7 @@
 .out-name {
   position: absolute;
   bottom: 0;
-  left: 4px;
+  left: 18px;
   transform: rotate(-60deg);
   transform-origin: left bottom;
   white-space: nowrap;
@@ -111,7 +111,7 @@
 .out-rename-input {
   position: absolute;
   bottom: 0;
-  left: 4px;
+  left: 18px;
   transform: rotate(-60deg);
   transform-origin: left bottom;
   background: var(--bg-dark);
