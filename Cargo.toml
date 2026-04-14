@@ -5,3 +5,6 @@ members = [
     "crates/patchbox-dante",
     "crates/patchbox",
 ]
+
+[patch."https://github.com/legopc/inferno"]
+inferno_aoip = { path = "/tmp/inferno-check/inferno_aoip" }
