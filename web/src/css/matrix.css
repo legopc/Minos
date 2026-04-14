@@ -2,8 +2,8 @@
 
 /* Override row height for matrix tab only — two-row channel labels need more height */
 .matrix-main {
-  --row-h: 64px;
-  --ch-w: 360px;
+  --row-h: 72px;
+  --ch-w: 380px;
 }
 
 #tab-matrix {
@@ -105,9 +105,9 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: 4px;
   height: var(--row-h);
-  padding: 2px 6px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--border-subtle);
   cursor: default;
 }
@@ -122,15 +122,15 @@
 
 .ch-label .ch-num {
   color: var(--text-dim);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
-  min-width: 22px;
+  min-width: 24px;
   flex-shrink: 0;
 }
 
 .ch-label .ch-name {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-primary);
   flex: 1;
   min-width: 0;
@@ -140,13 +140,13 @@
 }
 
 .ch-label .ch-vu {
-  width: 14px;
-  height: 28px;
+  width: 22px;
+  height: 34px;
   background: var(--meter-bg);
   position: relative;
-  border-radius: 2px;
+  border-radius: 3px;
   flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 .ch-label .ch-vu .vu-fill {
   position: absolute;
@@ -173,16 +173,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
   font-family: inherit;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   cursor: pointer;
   border: none;
-  height: 22px;
-  min-width: 36px;
+  height: 28px;
+  min-width: 44px;
   user-select: none;
   transition: filter 0.1s, box-shadow 0.1s;
   flex-shrink: 0;
