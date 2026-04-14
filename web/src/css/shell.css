@@ -7,38 +7,6 @@
   overflow: hidden;
 }
 
-/* Topbar */
-#topbar {
-  height: 48px;
-  background: var(--bg-dark);
-  border-bottom: 1px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  gap: 12px;
-}
-
-.topbar-logo {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.topbar-device {
-  font-size: 11px;
-  color: var(--text-primary);
-}
-
-.topbar-spacer {
-  flex: 1;
-}
-
-.topbar-user {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
 /* Tab bar */
 #tabbar {
   height: var(--row-h);
@@ -46,6 +14,36 @@
   border-bottom: 1px solid var(--border-primary);
   display: flex;
   align-items: stretch;
+}
+
+.tabbar-spacer {
+  flex: 1;
+}
+
+.tabbar-logo {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 8px;
+}
+
+.tabbar-device {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.tabbar-sep {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
+.tabbar-user {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 12px 0 4px;
 }
 
 .tab-btn {
