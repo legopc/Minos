@@ -54,6 +54,7 @@
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.08em;
+  position: relative;
 }
 
 /* ── Output Column Headers ──────────────────────────────────────────────── */
@@ -61,11 +62,11 @@
   width: var(--col-w);
   min-width: 44px;
   flex-shrink: 0;
-  padding: 4px 2px;
+  padding: 4px 2px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: 2px;
   border-right: 1px solid var(--border-subtle);
   font-size: 11px;
@@ -83,12 +84,49 @@
 }
 
 .out-name {
-  font-size: 10px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  max-width: calc(var(--col-w) - 4px);
-  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
   white-space: nowrap;
+  max-height: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  letter-spacing: 0.03em;
+}
+
+.out-rename-input {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  background: var(--bg-dark);
+  border: 1px solid var(--color-accent);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 2px 4px;
+  outline: none;
+  width: 1.4em;
+  max-height: 140px;
+  box-sizing: border-box;
+}
+
+/* ── Label column resize handle ─────────────────────────────────────────── */
+.ch-label-resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+}
+.ch-label-resize:hover,
+.ch-label-resize.dragging {
+  background: var(--color-accent);
+  opacity: 0.5;
 }
 
 /* ── Channel Rows ───────────────────────────────────────────────────────── */
