@@ -54,7 +54,6 @@
   font-size: 10px;
   color: var(--text-muted);
   letter-spacing: 0.08em;
-  position: relative;
 }
 
 /* ── Output Column Headers ──────────────────────────────────────────────── */
@@ -62,7 +61,7 @@
   width: var(--col-w);
   min-width: 44px;
   flex-shrink: 0;
-  padding: 4px 2px 4px;
+  padding: 4px 2px 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -83,23 +82,38 @@
   color: var(--text-primary);
 }
 
+/* Angled name wrapper — gives space for the rotated text */
+.out-name-wrap {
+  width: 100%;
+  height: 100px;
+  position: relative;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
 .out-name {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  writing-mode: vertical-lr;
-  transform: rotate(180deg);
-  white-space: nowrap;
-  max-height: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: text;
   letter-spacing: 0.03em;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .out-rename-input {
-  writing-mode: vertical-lr;
-  transform: rotate(180deg);
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: rotate(-45deg);
+  transform-origin: left bottom;
   background: var(--bg-dark);
   border: 1px solid var(--color-accent);
   color: var(--text-primary);
@@ -108,25 +122,25 @@
   border-radius: 2px;
   padding: 2px 4px;
   outline: none;
-  width: 1.4em;
-  max-height: 140px;
+  width: 120px;
   box-sizing: border-box;
+  z-index: 50;
 }
 
 /* ── Label column resize handle ─────────────────────────────────────────── */
 .ch-label-resize {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
   width: 6px;
+  align-self: stretch;
   cursor: col-resize;
-  z-index: 5;
+  flex-shrink: 0;
+  margin-left: auto;
+  border-left: 1px solid var(--border-primary);
+  transition: background 0.1s;
 }
 .ch-label-resize:hover,
 .ch-label-resize.dragging {
   background: var(--color-accent);
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 /* ── Channel Rows ───────────────────────────────────────────────────────── */

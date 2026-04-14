@@ -83,8 +83,10 @@ function _buildHdrRow(outputs, txZoneMap) {
   // Corner cell (sticky top + left)
   const corner = document.createElement('div');
   corner.className = 'corner-cell';
-  corner.textContent = `${outputs.length} OUT`;
-  // Resize handle
+  const cornerLabel = document.createElement('span');
+  cornerLabel.textContent = `${outputs.length} OUT`;
+  corner.appendChild(cornerLabel);
+  // Resize handle — flex item at right edge
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'ch-label-resize';
   corner.appendChild(resizeHandle);
@@ -110,12 +112,15 @@ function _buildHdrRow(outputs, txZoneMap) {
     col.appendChild(numEl);
 
     const label = out.name ?? out.id;
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'out-name-wrap';
     const nameEl = document.createElement('span');
     nameEl.className = 'out-name';
     nameEl.title = 'Double-click to rename';
     nameEl.textContent = label;
-    nameEl.addEventListener('dblclick', e => { e.stopPropagation(); _startOutputRename(nameEl, out); });
-    col.appendChild(nameEl);
+    nameEl.addEventListener('dblclick', e => { e.stopPropagation(); _startOutputRename(nameEl, nameWrap, out); });
+    nameWrap.appendChild(nameEl);
+    col.appendChild(nameWrap);
 
     // Output DSP badges
     const outObj = st.state.outputs.get(out.id);
@@ -374,7 +379,7 @@ function _initLabelResize(handle) {
     const viewport = handle.closest('.matrix-viewport');
     if (!viewport) return;
     const startX = e.clientX;
-    const startW = parseInt(getComputedStyle(viewport).getPropertyValue('--label-w'), 10) || 380;
+    const startW = parseInt(getComputedStyle(viewport).getPropertyValue('--label-w').trim(), 10) || 380;
     handle.classList.add('dragging');
 
     const onMove = mv => {
@@ -392,19 +397,21 @@ function _initLabelResize(handle) {
 }
 
 // ── Output column rename ────────────────────────────────────────────────────
-function _startOutputRename(nameEl, out) {
+function _startOutputRename(nameEl, nameWrap, out) {
   const prev = nameEl.textContent;
   const inp = document.createElement('input');
   inp.type = 'text';
   inp.value = prev;
   inp.className = 'out-rename-input';
-  nameEl.textContent = '';
-  nameEl.appendChild(inp);
+  nameEl.style.display = 'none';
+  nameWrap.appendChild(inp);
   inp.focus();
   inp.select();
 
   const commit = async () => {
     const next = inp.value.trim() || prev;
+    inp.remove();
+    nameEl.style.display = '';
     nameEl.textContent = next;
     nameEl.title = 'Double-click to rename';
     if (next === prev) return;
@@ -424,7 +431,8 @@ function _startOutputRename(nameEl, out) {
     if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
     if (e.key === 'Escape') {
       inp.removeEventListener('blur', commit);
-      nameEl.textContent = prev;
+      inp.remove();
+      nameEl.style.display = '';
     }
   });
 }
