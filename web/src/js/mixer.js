@@ -18,12 +18,6 @@ export function render(container) {
   container.appendChild(sceneBar);
   _renderSceneBar(sceneBar);
 
-  // Meter bridge (TX peak readout row)
-  const bridge = document.createElement('div');
-  bridge.className = 'mixer-meter-bridge';
-  bridge.id = 'mixer-bridge';
-  container.appendChild(bridge);
-
   // Row wrapper: input strips + zone masters side by side
   const body = document.createElement('div');
   body.className = 'mixer-body';
@@ -41,7 +35,7 @@ export function render(container) {
   masters.id = 'mixer-masters';
   body.appendChild(masters);
 
-  _renderStrips(strips, bridge, masters);
+  _renderStrips(strips, masters);
 }
 
 function _renderSceneBar(bar) {
@@ -77,9 +71,8 @@ function _renderSceneBar(bar) {
   }
 }
 
-function _renderStrips(strips, bridge, masters) {
+function _renderStrips(strips, masters) {
   strips.innerHTML = '';
-  bridge.innerHTML = '';
   masters.innerHTML = '';
 
   const channels = st.channelList();
@@ -90,27 +83,12 @@ function _renderStrips(strips, bridge, masters) {
   channels.forEach(ch => {
     const s = _buildInputStrip(ch);
     strips.appendChild(s);
-    // Bridge meter cell
-    const bc = document.createElement('div');
-    bc.className = 'bridge-cell';
-    bc.dataset.meterId = ch.id;
-    bridge.appendChild(bc);
   });
-
-  // Spacer in bridge
-  const spacer = document.createElement('div');
-  spacer.className = 'bridge-spacer';
-  bridge.appendChild(spacer);
 
   // Zone master strips
   zones.forEach((zone, zi) => {
     const m = _buildZoneMaster(zone, zi);
     masters.appendChild(m);
-    // Zone bridge
-    const bc = document.createElement('div');
-    bc.className = 'bridge-cell bridge-zone';
-    bc.style.setProperty('--zone-card-color', st.getZoneColour(zone.colour_index ?? zi));
-    bridge.appendChild(bc);
   });
 }
 
@@ -198,6 +176,7 @@ function _buildInputStrip(ch) {
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
+    btn.dataset.ch = ch.id;
     btn.style.background = colour.bg;
     btn.style.color = colour.fg;
     btn.onclick = () => openPanel(blk, ch.id, btn);
@@ -254,16 +233,17 @@ function _buildZoneMaster(zone, zi) {
 
   // Mute button (moved to top)
   const muteBtn = document.createElement('button');
-  muteBtn.className = 'strip-mute-btn' + (zone.muted ? ' muted' : '');
+  muteBtn.className = 'strip-mute-btn' + (zone.muted ? ' active' : '');
   muteBtn.textContent = zone.muted ? 'MUTE' : 'mute';
   muteBtn.onclick = async () => {
     const nm = !zone.muted;
     try {
       for (const txId of (zone.tx_ids ?? [])) {
-        await api.putOutputMute(txId, nm);
+        const txIdx = parseInt(txId.replace('tx_', ''), 10);
+        await api.putOutputMute(txIdx, nm);
       }
       zone.muted = nm;
-      muteBtn.className = 'strip-mute-btn' + (nm ? ' muted' : '');
+      muteBtn.className = 'strip-mute-btn' + (nm ? ' active' : '');
       muteBtn.textContent = nm ? 'MUTE' : 'mute';
     } catch(e) { toast(e.message, true); }
   };
@@ -304,7 +284,10 @@ function _buildZoneMaster(zone, zi) {
     clearTimeout(ft);
     ft = setTimeout(async () => {
       for (const txId of (zone.tx_ids ?? [])) {
-        try { await api.putOutput(txId, { volume_db: db }); } catch(_){}
+        try {
+          const txIdx = parseInt(txId.replace('tx_', ''), 10);
+          await api.putOutput(txIdx, { volume_db: db });
+        } catch(_){}
       }
     }, 80);
   };
@@ -330,6 +313,7 @@ function _buildZoneMaster(zone, zi) {
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
+    if (firstTx) btn.dataset.ch = firstTx;
     btn.style.background = colour.bg;
     btn.style.color = colour.fg;
     if (firstTx) btn.onclick = () => openPanel(blk, firstTx, btn);

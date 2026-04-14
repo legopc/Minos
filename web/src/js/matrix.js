@@ -72,16 +72,20 @@ function _buildLeft(channels) {
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
 
+    // Top row: number + name + VU bar
+    const topRow = document.createElement('div');
+    topRow.className = 'ch-label-top';
+
     const num = document.createElement('span');
     num.className = 'ch-num';
     num.textContent = i + 1;
-    row.appendChild(num);
+    topRow.appendChild(num);
 
     const name = document.createElement('span');
     name.className = 'ch-name';
     name.title = ch.name ?? ch.id;
     name.textContent = ch.name ?? ch.id;
-    row.appendChild(name);
+    topRow.appendChild(name);
 
     const vu = document.createElement('span');
     vu.className = 'ch-vu';
@@ -90,9 +94,11 @@ function _buildLeft(channels) {
     vuFill.className = 'vu-fill';
     vuFill.id = 'vu-fill-' + ch.id;
     vu.appendChild(vuFill);
-    row.appendChild(vu);
+    topRow.appendChild(vu);
 
-    // Inline DSP block badges
+    row.appendChild(topRow);
+
+    // Bottom row: DSP block badges
     const dspRow = document.createElement('div');
     dspRow.className = 'ch-dsp-inline';
     const dsp = ch.dsp ?? {};
@@ -101,6 +107,8 @@ function _buildLeft(channels) {
       const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
       const badge = document.createElement('button');
       badge.className = 'ch-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+      badge.dataset.block = blk;
+      badge.dataset.ch = ch.id;
       badge.textContent = colour.label ?? blk.toUpperCase();
       badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
       badge.style.background = colour.bg;
@@ -235,6 +243,7 @@ async function _toggleRoute(rxId, txId, cell) {
       cell.className = 'xp-cell local';
       const route = await api.postRoute(rxId, txId, 'local');
       st.setRoute({ route_type: 'dante', ...route });
+      cell.className = 'xp-cell ' + (st.getRouteType(rxId, txId) ?? 'dante');
     }
   } catch (e) {
     cell.className = prevClass; // revert on error

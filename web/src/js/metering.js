@@ -71,8 +71,8 @@ function _flush() {
     if (!el) return;
     const pct = dbToPercent(db);
     if (isMini) {
-      // Matrix mini-VU: horizontal fill (width %)
-      el.style.width = pct + '%';
+      // Matrix mini-VU: vertical fill (height %)
+      el.style.height = pct + '%';
       el.style.background = dbToColour(db);
     } else if (isPeak) {
       el.style.bottom = pct + '%';

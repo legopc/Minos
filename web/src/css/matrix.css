@@ -3,7 +3,7 @@
 /* Override row height for matrix tab only — two-row channel labels need more height */
 .matrix-main {
   --row-h: 64px;
-  --ch-w: 320px;
+  --ch-w: 360px;
 }
 
 #tab-matrix {
@@ -60,9 +60,9 @@
 }
 
 .output-col {
-  flex: 1 0 var(--col-w);
+  flex: 1 1 var(--col-w);
   min-width: var(--col-w);
-  flex-shrink: 0;
+  max-width: 100px;
   height: var(--row-h);
   display: flex;
   flex-direction: column;
@@ -100,16 +100,24 @@
   background: var(--bg-row-sel);
 }
 
-/* Channel Label */
+/* Channel Label — two-row layout: top = num+name+vu, bottom = DSP badges */
 .ch-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: var(--row-h);
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: default;
+}
+
+.ch-label-top {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  height: var(--row-h);
-  padding: 0 6px;
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: default;
+  min-width: 0;
 }
 
 .ch-label .ch-num {
@@ -125,7 +133,7 @@
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
-  min-width: 72px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,17 +141,19 @@
 
 .ch-label .ch-vu {
   width: 14px;
-  height: calc(var(--row-h) - 12px);
+  height: 28px;
   background: var(--meter-bg);
   position: relative;
   border-radius: 2px;
   flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .ch-label .ch-vu .vu-fill {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
+  height: 0%;
   background: var(--vu-green);
   transition: height 0.05s;
   border-radius: 2px;
@@ -154,23 +164,25 @@
   align-items: center;
   flex-wrap: nowrap;
   gap: 3px;
-  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
 }
 
 .ch-dsp-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 7px;
+  padding: 1px 5px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   font-family: inherit;
   letter-spacing: 0.05em;
   cursor: pointer;
   border: none;
-  height: 30px;
-  min-width: 44px;
+  height: 22px;
+  min-width: 36px;
   user-select: none;
   transition: filter 0.1s, box-shadow 0.1s;
   flex-shrink: 0;
@@ -210,9 +222,9 @@
 
 /* Crosspoint Cell */
 .xp-cell {
-  flex: 1 0 var(--col-w);
+  flex: 1 1 44px;
+  max-width: 120px;
   min-width: var(--col-w);
-  flex-shrink: 0;
   height: var(--row-h);
   display: flex;
   align-items: center;
@@ -226,8 +238,8 @@
 }
 
 .xp-cell .xp-dot {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   background: transparent;
   border: 1px solid var(--border-primary);

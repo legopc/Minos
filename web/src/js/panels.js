@@ -269,6 +269,13 @@ async function _onBypass(channelId, block, bypassed) {
         api.patch(`${base}/lpf`, { enabled: !bypassed, freq_hz: fltParams.lpf?.freq_hz ?? 18000 }),
       ]);
       if (ch?.dsp?.flt) ch.dsp.flt.bypassed = bypassed;
+      // Sync badge DOM for flt block
+      const shouldByp = bypassed || !ch.dsp.flt.enabled;
+      document.querySelectorAll(
+        '[data-block="' + block + '"][data-ch="' + channelId + '"]'
+      ).forEach(function(el) {
+        el.classList.toggle('byp', shouldByp);
+      });
       return;
     }
 
@@ -280,6 +287,13 @@ async function _onBypass(channelId, block, bypassed) {
     await api.patch(`${base}/${mappedBlock}`, fullParams);
 
     if (ch?.dsp?.[block]) ch.dsp[block].bypassed = bypassed;
+    // Sync badge DOM for other blocks
+    const shouldByp = bypassed || !ch.dsp[block].enabled;
+    document.querySelectorAll(
+      '[data-block="' + block + '"][data-ch="' + channelId + '"]'
+    ).forEach(function(el) {
+      el.classList.toggle('byp', shouldByp);
+    });
   } catch (err) {
     console.error('Bypass change failed:', err);
     toast('Error updating DSP bypass state', 'error');

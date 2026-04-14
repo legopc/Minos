@@ -109,16 +109,11 @@ async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let meters = s.meters.read().await;
 
-    // PTP: try connecting to the statime Unix socket with a 200ms timeout
+    // PTP: check whether the statime clock socket exists (it's a DGRAM socket,
+    // so UnixStream::connect cannot be used — existence of the file is sufficient)
     let ptp_synced = {
         let path = cfg.dante_clock_path.clone();
-        tokio::time::timeout(
-            Duration::from_millis(200),
-            tokio::net::UnixStream::connect(&path),
-        )
-        .await
-        .map(|r| r.is_ok())
-        .unwrap_or(false)
+        std::path::Path::new(&path).exists()
     };
 
     // Audio stats
@@ -1135,15 +1130,8 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let zone_count = cfg.zone_config.len();
     let rx_count = cfg.rx_channels;
     let tx_count = cfg.tx_channels;
-    let clock_path = cfg.dante_clock_path.clone();
+    let ptp_locked = std::path::Path::new(&cfg.dante_clock_path).exists();
     drop(cfg);
-    let ptp_locked = tokio::time::timeout(
-        Duration::from_millis(200),
-        tokio::net::UnixStream::connect(&clock_path),
-    )
-    .await
-    .map(|r| r.is_ok())
-    .unwrap_or(false);
     let dante_status = if s.dante_connected.load(AOrdering::Relaxed) { "connected" } else { "disconnected" }.to_string();
     Json(SystemResponse {
         version: env!("CARGO_PKG_VERSION"),
