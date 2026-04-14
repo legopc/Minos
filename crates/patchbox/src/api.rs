@@ -1369,6 +1369,67 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
 // Static asset handlers (embedded via rust-embed)
 async fn serve_ui() -> impl IntoResponse { serve_asset("index.html") }
 
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "css"   => "text/css; charset=utf-8",
+        "js"    => "application/javascript; charset=utf-8",
+        "html"  => "text/html; charset=utf-8",
+        "svg"   => "image/svg+xml",
+        "woff2" => "font/woff2",
+        "woff"  => "font/woff",
+        "ico"   => "image/x-icon",
+        "png"   => "image/png",
+        _       => "application/octet-stream",
+    }
+}
+
+/// Dev mode: serve a file from disk with no-cache headers.
+/// Falls back to index.html for unmatched paths (SPA routing).
+async fn dev_asset(dev_dir: String, req: axum::extract::Request) -> Response {
+    let uri_path = req.uri().path().trim_start_matches('/');
+    let file_path = if uri_path.is_empty() {
+        std::path::PathBuf::from(&dev_dir).join("index.html")
+    } else {
+        std::path::PathBuf::from(&dev_dir).join(uri_path)
+    };
+
+    match tokio::fs::read(&file_path).await {
+        Ok(bytes) => {
+            let mime = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(mime_for_ext)
+                .unwrap_or("application/octet-stream");
+            (
+                [
+                    (header::CONTENT_TYPE, mime),
+                    (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate"),
+                ],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(_) => {
+            // SPA fallback: serve index.html for any path that isn't a known file
+            let index = std::path::PathBuf::from(&dev_dir).join("index.html");
+            match tokio::fs::read(&index).await {
+                Ok(bytes) => (
+                    [
+                        (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                        (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate"),
+                    ],
+                    bytes,
+                )
+                    .into_response(),
+                Err(e) => {
+                    tracing::error!("DEV: failed to read index.html from {dev_dir}: {e}");
+                    StatusCode::NOT_FOUND.into_response()
+                }
+            }
+        }
+    }
+}
+
 
 // GET /api/v1/whoami — validate token and return user info
 async fn whoami(
@@ -1483,16 +1544,27 @@ pub fn router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required
-    Router::new()
-        .route("/", get(serve_ui))
+    let mut app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/api/v1/health", get(get_health))
         .route("/api/v1/login", post(auth_api::login))
         .route("/api/v1/config", get(get_config))
-        .merge(protected)
-        .fallback(|req: axum::extract::Request| async move {
-            let path = req.uri().path().trim_start_matches('/').to_string();
-            serve_asset(&path)
-        })
-        .with_state(state)
+        .merge(protected);
+
+    if let Ok(dev_dir) = std::env::var("PATCHBOX_DEV_ASSETS") {
+        tracing::warn!("⚡ DEV MODE: serving assets from disk at {dev_dir}");
+        app = app.fallback(move |req: axum::extract::Request| {
+            let dir = dev_dir.clone();
+            async move { dev_asset(dir, req).await }
+        });
+    } else {
+        app = app
+            .route("/", get(serve_ui))
+            .fallback(|req: axum::extract::Request| async move {
+                let path = req.uri().path().trim_start_matches('/').to_string();
+                serve_asset(&path)
+            });
+    }
+
+    app.with_state(state)
 }
