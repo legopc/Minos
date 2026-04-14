@@ -72,20 +72,16 @@ function _buildLeft(channels) {
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
 
-    // Wrap num+name+vu in mainRow
-    const mainRow = document.createElement('div');
-    mainRow.className = 'ch-label-main';
-
     const num = document.createElement('span');
     num.className = 'ch-num';
     num.textContent = i + 1;
-    mainRow.appendChild(num);
+    row.appendChild(num);
 
     const name = document.createElement('span');
     name.className = 'ch-name';
     name.title = ch.name ?? ch.id;
     name.textContent = ch.name ?? ch.id;
-    mainRow.appendChild(name);
+    row.appendChild(name);
 
     const vu = document.createElement('span');
     vu.className = 'ch-vu';
@@ -94,11 +90,9 @@ function _buildLeft(channels) {
     vuFill.className = 'vu-fill';
     vuFill.id = 'vu-fill-' + ch.id;
     vu.appendChild(vuFill);
-    mainRow.appendChild(vu);
+    row.appendChild(vu);
 
-    row.appendChild(mainRow);
-
-    // Inline DSP block badges (sibling of mainRow)
+    // Inline DSP block badges
     const dspRow = document.createElement('div');
     dspRow.className = 'ch-dsp-inline';
     const dsp = ch.dsp ?? {};
@@ -170,6 +164,16 @@ function _buildHeader(outputs, txZoneMap) {
     `;
     col.style.flexDirection = 'column';
     col.style.alignItems = 'center';
+
+    // Add output VU bar
+    const vuWrap = document.createElement('div');
+    vuWrap.className = 'out-vu-wrap';
+    const vuFill = document.createElement('div');
+    vuFill.className = 'out-vu-fill';
+    vuFill.id = `vu-out-${out.id}`;
+    vuWrap.appendChild(vuFill);
+    col.appendChild(vuWrap);
+
     hdr.appendChild(col);
   });
 
@@ -239,15 +243,25 @@ async function _toggleRoute(rxId, txId, cell) {
 }
 
 // ── Metering update (called from ws.js) ───────────────────────────────────
-export function updateMetering(rxData) {
-  if (!rxData) return;
-  Object.entries(rxData).forEach(([id, db]) => {
-    const fill = document.getElementById(`vu-fill-${id}`);
-    if (!fill) return;
-    const pct = _dbToPercent(db);
-    fill.style.height = pct + '%';
-    fill.style.background = _dbToColour(db);
-  });
+export function updateMetering(rxData, txData) {
+  if (rxData) {
+    Object.entries(rxData).forEach(([id, db]) => {
+      const fill = document.getElementById(`vu-fill-${id}`);
+      if (!fill) return;
+      const pct = _dbToPercent(db);
+      fill.style.height = pct + '%';
+      fill.style.background = _dbToColour(db);
+    });
+  }
+  if (txData) {
+    Object.entries(txData).forEach(([id, db]) => {
+      const fill = document.getElementById(`vu-out-${id}`);
+      if (!fill) return;
+      const pct = _dbToPercent(db);
+      fill.style.width = pct + '%';
+      fill.style.background = _dbToColour(db);
+    });
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

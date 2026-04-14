@@ -2,7 +2,8 @@
 
 /* Override row height for matrix tab only — two-row channel labels need more height */
 .matrix-main {
-  --row-h: 96px;
+  --row-h: 64px;
+  --ch-w: 320px;
 }
 
 #tab-matrix {
@@ -70,6 +71,7 @@
   border-right: 1px solid var(--border-subtle);
   font-size: 11px;
   color: var(--text-muted);
+  position: relative;
 }
 
 .output-col.zone-start {
@@ -101,19 +103,13 @@
 /* Channel Label */
 .ch-label {
   display: flex;
-  flex-direction: column;
-  height: var(--row-h);
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: default;
-}
-
-.ch-label-main {
-  display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  height: var(--row-h);
   padding: 0 6px;
-  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: default;
 }
 
 .ch-label .ch-num {
@@ -129,21 +125,20 @@
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
+  min-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
 }
 
 .ch-label .ch-vu {
-  width: 10px;
-  height: 28px;
+  width: 14px;
+  height: calc(var(--row-h) - 12px);
   background: var(--meter-bg);
   position: relative;
-  border-radius: 1px;
+  border-radius: 2px;
   flex-shrink: 0;
 }
-
 .ch-label .ch-vu .vu-fill {
   position: absolute;
   bottom: 0;
@@ -151,14 +146,14 @@
   right: 0;
   background: var(--vu-green);
   transition: height 0.05s;
+  border-radius: 2px;
 }
 
 .ch-dsp-inline {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 3px;
-  padding: 0 4px 4px 4px;
   flex-shrink: 0;
 }
 
@@ -188,6 +183,29 @@
 }
 .ch-dsp-badge:not(.byp) {
   box-shadow: 0 0 5px currentColor;
+}
+
+/* Output column VU bar */
+.out-vu-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 4px;
+  right: 4px;
+  height: 6px;
+  background: var(--meter-bg);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.out-vu-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: var(--vu-green);
+  border-radius: 1px;
+  transition: width 0.05s linear;
 }
 
 /* Crosspoint Cell */

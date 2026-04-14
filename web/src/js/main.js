@@ -176,7 +176,7 @@ window.addEventListener('pb:status-update', () => updateStatusBar());
 window.addEventListener('pb:ws-state', e => updateWsStatus(e.detail));
 window.addEventListener('pb:metering', e => {
   // Forward to matrix if it's been rendered
-  import('./matrix.js').then(m => m.updateMetering?.(e.detail.rx)).catch(() => {});
+  import('./matrix.js').then(m => m.updateMetering?.(e.detail.rx, e.detail.tx)).catch(() => {});
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
