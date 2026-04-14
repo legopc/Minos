@@ -1,69 +1,64 @@
 /* Matrix Tab Routing Grid CSS */
 
-/* Override row height for matrix tab only — two-row channel labels need more height */
-.matrix-main {
-  --row-h: 72px;
-  --ch-w: 380px;
-}
-
+/* ── Custom Properties ──────────────────────────────────────────────────── */
 #tab-matrix {
+  --label-w: 380px;
+  --col-w:   68px;
+  --row-h:   72px;
+  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-.matrix-main {
-  display: flex;
+/* ── Single Scroll Viewport ─────────────────────────────────────────────── */
+.matrix-viewport {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
 }
 
-/* Left Panel */
-.matrix-left {
-  width: var(--ch-w);
-  min-width: var(--ch-w);
+/* ── Content Sizer ──────────────────────────────────────────────────────── */
+/* --num-cols is set via JS: grid.style.setProperty('--num-cols', N) */
+.matrix-grid {
+  width: calc(var(--label-w) + var(--num-cols, 8) * var(--col-w));
+  min-width: 100%;
+}
+
+/* ── Header Row (sticky top) ────────────────────────────────────────────── */
+.matrix-hdr-row {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-dark);
+  border-bottom: 2px solid var(--border-primary);
+}
+
+/* ── Corner Cell (sticky top + left) ───────────────────────────────────── */
+.corner-cell {
+  position: sticky;
+  left: 0;
+  z-index: 30;
+  width: var(--label-w);
+  min-width: var(--label-w);
   flex-shrink: 0;
   background: var(--bg-dark);
   border-right: 1px solid var(--border-primary);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
 }
 
-.left-header {
-  height: var(--row-h);
-  border-bottom: 1px solid var(--border-primary);
-  flex-shrink: 0;
-}
-
-.left-rows {
-  flex: 1;
-  overflow-y: hidden;
-}
-
-/* Matrix Scroll Area */
-.matrix-scroll {
-  flex: 1;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Output Header Row */
-.matrix-header {
-  display: flex;
-  flex-shrink: 0;
-  background: var(--bg-dark);
-  border-bottom: 1px solid var(--border-primary);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.output-col {
-  flex: 1 1 60px;
+/* ── Output Column Headers ──────────────────────────────────────────────── */
+.out-hdr {
+  width: var(--col-w);
   min-width: 44px;
-  max-width: 80px;
-  min-height: var(--row-h);
+  flex-shrink: 0;
   padding: 4px 2px;
   display: flex;
   flex-direction: column;
@@ -73,52 +68,58 @@
   border-right: 1px solid var(--border-subtle);
   font-size: 11px;
   color: var(--text-muted);
-  position: relative;
 }
 
-.output-col.zone-start {
+.out-hdr.zone-start {
   border-left: 2px solid var(--zone-color, #58a6ff);
 }
 
-/* Matrix Body */
-.matrix-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.out-num {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
-/* Matrix Row */
-.matrix-row {
+.out-name {
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  max-width: calc(var(--col-w) - 4px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Channel Rows ───────────────────────────────────────────────────────── */
+.xp-row {
   display: flex;
   height: var(--row-h);
+  align-items: stretch;
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.matrix-row:hover {
+.xp-row:hover {
   background: var(--bg-row-hover);
 }
 
-.matrix-row.selected {
-  background: var(--bg-row-sel);
-}
-
-/* Channel Label — two-row layout: top = num+name+vu, bottom = DSP badges */
+/* ── Channel Label (sticky left) ───────────────────────────────────────── */
 .ch-label {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  width: var(--label-w);
+  min-width: var(--label-w);
+  flex-shrink: 0;
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-primary);
   display: flex;
   align-items: center;
-  height: var(--row-h);
   padding: 0 8px;
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 5px;
   cursor: default;
 }
 
-.ch-label-top {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  min-width: 0;
+.xp-row:hover .ch-label {
+  background: color-mix(in srgb, var(--bg-dark) 85%, var(--bg-row-hover));
 }
 
 .ch-label .ch-num {
@@ -143,13 +144,15 @@
 
 .ch-label .ch-vu {
   width: 22px;
-  height: 34px;
-  background: var(--meter-bg);
+  height: 38px;
+  background: rgba(255, 255, 255, 0.06);
   position: relative;
   border-radius: 3px;
   flex-shrink: 0;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  margin-left: auto;
 }
+
 .ch-label .ch-vu .vu-fill {
   position: absolute;
   bottom: 0;
@@ -161,61 +164,55 @@
   border-radius: 2px;
 }
 
-.ch-dsp-inline {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 3px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  min-width: 0;
-}
-
+/* ── DSP Badge (shared input + output) ─────────────────────────────────── */
 .ch-dsp-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-family: inherit;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   cursor: pointer;
   border: none;
-  height: 28px;
-  min-width: 44px;
+  height: 26px;
+  min-width: 36px;
   user-select: none;
   transition: filter 0.1s, box-shadow 0.1s;
   flex-shrink: 0;
 }
+
 .ch-dsp-badge:hover {
   filter: brightness(1.4);
 }
+
 .ch-dsp-badge.byp {
   opacity: 0.3;
 }
+
 .ch-dsp-badge:not(.byp) {
   box-shadow: 0 0 5px currentColor;
 }
 
-/* Output DSP badges — compact variant for narrow header columns */
+/* Output DSP badges — compact for narrow column headers */
 .out-dsp-badge {
-  height: 20px !important;
-  min-width: 28px !important;
+  height: 18px !important;
+  min-width: 26px !important;
   font-size: 9px !important;
   padding: 1px 3px !important;
-  margin: 0 !important;
 }
 
-/* Output column VU bar */
+/* ── Output Column VU bar ───────────────────────────────────────────────── */
 .out-vu-wrap {
   width: 100%;
-  height: 6px;
-  background: var(--meter-bg);
+  height: 5px;
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 1px;
   overflow: hidden;
   margin-top: auto;
+  position: relative;
 }
 
 .out-vu-fill {
@@ -229,12 +226,11 @@
   transition: width 0.05s linear;
 }
 
-/* Crosspoint Cell */
+/* ── Crosspoint Cell ────────────────────────────────────────────────────── */
 .xp-cell {
-  flex: 1 1 60px;
+  width: var(--col-w);
   min-width: 44px;
-  max-width: 80px;
-  height: var(--row-h);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -267,72 +263,7 @@
   box-shadow: 0 0 10px 2px var(--xp-dante);
 }
 
-/* DSP Badges Row */
-.dsp-badges {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  padding: 0 4px;
-  height: var(--row-h);
-}
-
-/* Right Panel */
-.matrix-right {
-  width: 220px;
-  min-width: 220px;
-  flex-shrink: 0;
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-primary);
-  display: flex;
-  flex-direction: column;
-}
-
-.right-header {
-  height: var(--row-h);
-  border-bottom: 1px solid var(--border-primary);
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.right-rows {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.right-row {
-  height: var(--row-h);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 9px;
-  cursor: pointer;
-}
-
-.right-row:hover {
-  background: var(--bg-row-hover);
-}
-
-.right-row.selected {
-  background: var(--bg-row-sel);
-}
-
-/* Zone Separator */
-.zone-sep {
-  border-left: 2px solid var(--zone-sep-color, #444);
-}
-
-/* DSP block access per channel row */
-.ch-dsp-btn {
-  display: none !important;
-}
-.ch-dsp-btn:hover { display: none !important; }
-
-/* DSP block picker dropdown */
+/* ── DSP block picker dropdown ──────────────────────────────────────────── */
 .dsp-picker {
   z-index: 9000;
   background: var(--bg-surface);
@@ -356,4 +287,7 @@
   text-align: left;
   white-space: nowrap;
 }
-.dsp-picker-btn:hover { filter: brightness(1.3); }
+
+.dsp-picker-btn:hover {
+  filter: brightness(1.3);
+}

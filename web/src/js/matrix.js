@@ -11,6 +11,12 @@ let _container = null;
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
   _container = container;
+
+  // Preserve scroll position across re-renders
+  const vp = container.querySelector('.matrix-viewport');
+  const prevScrollX = vp?.scrollLeft ?? 0;
+  const prevScrollY = vp?.scrollTop  ?? 0;
+
   _container.innerHTML = '';
   _container.className = 'tab-content active';
   _container.id = 'tab-matrix';
@@ -24,22 +30,35 @@ export function render(container) {
     return;
   }
 
-  const wrap = document.createElement('div');
-  wrap.className = 'matrix-main';
-
   // Build output→zone lookup
   const txZoneMap = new Map();
   zones.forEach(zone => {
     (zone.tx_ids ?? []).forEach(txId => txZoneMap.set(txId, zone));
   });
 
-  // Order outputs: group by zone, then ungrouped
   const orderedOutputs = _orderOutputsByZone(outputs, zones);
 
-  wrap.appendChild(_buildLeft(channels, outputs));
-  wrap.appendChild(_buildScrollArea(channels, orderedOutputs, zones, txZoneMap));
+  // Single scroll container wraps everything
+  const viewport = document.createElement('div');
+  viewport.className = 'matrix-viewport';
 
-  _container.appendChild(wrap);
+  const grid = document.createElement('div');
+  grid.className = 'matrix-grid';
+  grid.style.setProperty('--num-cols', orderedOutputs.length);
+
+  grid.appendChild(_buildHdrRow(orderedOutputs, txZoneMap));
+  channels.forEach((ch, i) => grid.appendChild(_buildRow(ch, i, orderedOutputs, txZoneMap)));
+
+  viewport.appendChild(grid);
+  _container.appendChild(viewport);
+
+  // Restore scroll position after paint
+  if (prevScrollX || prevScrollY) {
+    requestAnimationFrame(() => {
+      viewport.scrollLeft = prevScrollX;
+      viewport.scrollTop  = prevScrollY;
+    });
+  }
 }
 
 // ── Column ordering ────────────────────────────────────────────────────────
@@ -56,96 +75,16 @@ function _orderOutputsByZone(outputs, zones) {
   return ordered;
 }
 
-// ── Left panel (channel names + mini VU) ──────────────────────────────────
-function _buildLeft(channels) {
-  const left = document.createElement('div');
-  left.className = 'matrix-left';
+// ── Header row: corner + output column headers ────────────────────────────
+function _buildHdrRow(outputs, txZoneMap) {
+  const row = document.createElement('div');
+  row.className = 'matrix-hdr-row';
 
-  const hdr = document.createElement('div');
-  hdr.className = 'left-header';
-  left.appendChild(hdr);
-
-  const rows = document.createElement('div');
-  rows.className = 'left-rows';
-  channels.forEach((ch, i) => {
-    const row = document.createElement('div');
-    row.className = 'ch-label';
-    row.dataset.chId = ch.id;
-
-    // Single row: number + name + DSP badges + VU bar
-    const topRow = document.createElement('div');
-    topRow.className = 'ch-label-top';
-
-    const num = document.createElement('span');
-    num.className = 'ch-num';
-    num.textContent = i + 1;
-    topRow.appendChild(num);
-
-    const name = document.createElement('span');
-    name.className = 'ch-name';
-    name.title = ch.name ?? ch.id;
-    name.textContent = ch.name ?? ch.id;
-    topRow.appendChild(name);
-
-    // DSP badges inline, to the right of the name
-    const dsp = ch.dsp ?? {};
-    Object.keys(dsp).forEach(blk => {
-      const block = dsp[blk];
-      const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
-      const badge = document.createElement('button');
-      badge.className = 'ch-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
-      badge.dataset.block = blk;
-      badge.dataset.ch = ch.id;
-      badge.textContent = colour.label ?? blk.toUpperCase();
-      badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
-      badge.style.background = colour.bg;
-      badge.style.color = colour.fg;
-      badge.onclick = (e) => {
-        e.stopPropagation();
-        openPanel(blk, ch.id, badge);
-      };
-      topRow.appendChild(badge);
-    });
-
-    const vu = document.createElement('span');
-    vu.className = 'ch-vu';
-    vu.id = 'vu-rx-' + ch.id;
-    const vuFill = document.createElement('span');
-    vuFill.className = 'vu-fill';
-    vuFill.id = 'vu-fill-' + ch.id;
-    vu.appendChild(vuFill);
-    topRow.appendChild(vu);
-
-    row.appendChild(topRow);
-
-    rows.appendChild(row);
-  });
-  left.appendChild(rows);
-  return left;
-}
-
-// ── Scroll area (output headers + crosspoint grid) ────────────────────────
-function _buildScrollArea(channels, outputs, zones, txZoneMap) {
-  const scroll = document.createElement('div');
-  scroll.className = 'matrix-scroll';
-  scroll.id = 'matrix-scroll';
-
-  scroll.appendChild(_buildHeader(outputs, txZoneMap));
-  scroll.appendChild(_buildBody(channels, outputs, txZoneMap));
-
-  // Sync left panel scroll with body scroll
-  scroll.addEventListener('scroll', () => {
-    const leftRows = document.querySelector('.left-rows');
-    if (leftRows) leftRows.scrollTop = scroll.scrollTop;
-  });
-
-  return scroll;
-}
-
-// ── Output header row ──────────────────────────────────────────────────────
-function _buildHeader(outputs, txZoneMap) {
-  const hdr = document.createElement('div');
-  hdr.className = 'matrix-header';
+  // Corner cell (sticky top + left)
+  const corner = document.createElement('div');
+  corner.className = 'corner-cell';
+  corner.textContent = `${outputs.length} OUT`;
+  row.appendChild(corner);
 
   let prevZoneId = null;
   outputs.forEach((out, i) => {
@@ -154,25 +93,22 @@ function _buildHeader(outputs, txZoneMap) {
     prevZoneId = zone?.id ?? null;
 
     const col = document.createElement('div');
-    col.className = 'output-col' + (isZoneStart ? ' zone-start' : '');
+    col.className = 'out-hdr' + (isZoneStart ? ' zone-start' : '');
     col.dataset.outId = out.id;
     if (isZoneStart && zone) {
-      col.style.setProperty('--zone-sep-color', st.getZoneColour(zone.colour_index ?? 0));
+      col.style.setProperty('--zone-color', st.getZoneColour(zone.colour_index ?? 0));
     }
 
-    // Number
     const numEl = document.createElement('span');
-    numEl.style.cssText = 'font-size:13px;font-weight:700;color:var(--text-primary)';
+    numEl.className = 'out-num';
     numEl.textContent = i + 1;
     col.appendChild(numEl);
 
-    // Abbreviated name
     const label = out.name ?? out.id;
-    const abbr  = label.length > 6 ? label.slice(0, 6) : label;
     const nameEl = document.createElement('span');
-    nameEl.style.cssText = 'font-size:11px;color:var(--text-secondary);overflow:hidden;max-width:72px;text-overflow:ellipsis;white-space:nowrap';
+    nameEl.className = 'out-name';
     nameEl.title = label;
-    nameEl.textContent = abbr;
+    nameEl.textContent = label.length > 7 ? label.slice(0, 7) : label;
     col.appendChild(nameEl);
 
     // Output DSP badges
@@ -193,7 +129,6 @@ function _buildHeader(outputs, txZoneMap) {
       col.appendChild(badge);
     });
 
-    // Output VU bar at bottom
     const vuWrap = document.createElement('div');
     vuWrap.className = 'out-vu-wrap';
     const vuFill = document.createElement('div');
@@ -202,49 +137,87 @@ function _buildHeader(outputs, txZoneMap) {
     vuWrap.appendChild(vuFill);
     col.appendChild(vuWrap);
 
-    hdr.appendChild(col);
+    row.appendChild(col);
   });
 
-  return hdr;
+  return row;
 }
 
-// ── Crosspoint grid ────────────────────────────────────────────────────────
-function _buildBody(channels, outputs, txZoneMap) {
-  const body = document.createElement('div');
-  body.className = 'matrix-body';
+// ── Channel row: sticky label + crosspoint cells ───────────────────────────
+function _buildRow(ch, idx, outputs, txZoneMap) {
+  const row = document.createElement('div');
+  row.className = 'xp-row';
+  row.dataset.rxId = ch.id;
 
-  channels.forEach(ch => {
-    const row = document.createElement('div');
-    row.className = 'matrix-row';
-    row.dataset.rxId = ch.id;
+  // Channel label — sticky left
+  const label = document.createElement('div');
+  label.className = 'ch-label';
+  label.dataset.chId = ch.id;
 
-    let prevZoneId = null;
-    outputs.forEach(out => {
-      const zone = txZoneMap.get(out.id);
-      const isZoneStart = zone && zone.id !== prevZoneId;
-      prevZoneId = zone?.id ?? null;
+  const num = document.createElement('span');
+  num.className = 'ch-num';
+  num.textContent = idx + 1;
+  label.appendChild(num);
 
-      const routeType = st.getRouteType(ch.id, out.id);
-      const cell = document.createElement('div');
-      cell.className = 'xp-cell' + (routeType ? ' ' + routeType : '');
-      cell.dataset.rxId = ch.id;
-      cell.dataset.txId = out.id;
-      if (isZoneStart && zone) {
-        cell.style.borderLeft = `2px solid ${st.getZoneColour(zone.colour_index ?? 0)}`;
-      }
+  const name = document.createElement('span');
+  name.className = 'ch-name';
+  name.title = ch.name ?? ch.id;
+  name.textContent = ch.name ?? ch.id;
+  label.appendChild(name);
 
-      const dot = document.createElement('div');
-      dot.className = 'xp-dot';
-      cell.appendChild(dot);
-
-      cell.addEventListener('click', () => _toggleRoute(ch.id, out.id, cell));
-      row.appendChild(cell);
-    });
-
-    body.appendChild(row);
+  // DSP badges inline to the right of name
+  const dsp = ch.dsp ?? {};
+  Object.keys(dsp).forEach(blk => {
+    const block = dsp[blk];
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const badge = document.createElement('button');
+    badge.className = 'ch-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+    badge.dataset.block = blk;
+    badge.dataset.ch = ch.id;
+    badge.textContent = colour.label ?? blk.toUpperCase();
+    badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+    badge.style.background = colour.bg;
+    badge.style.color = colour.fg;
+    badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, ch.id, badge); };
+    label.appendChild(badge);
   });
 
-  return body;
+  const vu = document.createElement('span');
+  vu.className = 'ch-vu';
+  vu.id = 'vu-rx-' + ch.id;
+  const vuFill = document.createElement('span');
+  vuFill.className = 'vu-fill';
+  vuFill.id = 'vu-fill-' + ch.id;
+  vu.appendChild(vuFill);
+  label.appendChild(vu);
+
+  row.appendChild(label);
+
+  // Crosspoint cells
+  let prevZoneId = null;
+  outputs.forEach(out => {
+    const zone = txZoneMap.get(out.id);
+    const isZoneStart = zone && zone.id !== prevZoneId;
+    prevZoneId = zone?.id ?? null;
+
+    const routeType = st.getRouteType(ch.id, out.id);
+    const cell = document.createElement('div');
+    cell.className = 'xp-cell' + (routeType ? ' ' + routeType : '');
+    cell.dataset.rxId = ch.id;
+    cell.dataset.txId = out.id;
+    if (isZoneStart && zone) {
+      cell.style.borderLeft = `2px solid ${st.getZoneColour(zone.colour_index ?? 0)}`;
+    }
+
+    const dot = document.createElement('div');
+    dot.className = 'xp-dot';
+    cell.appendChild(dot);
+
+    cell.addEventListener('click', () => _toggleRoute(ch.id, out.id, cell));
+    row.appendChild(cell);
+  });
+
+  return row;
 }
 
 // ── Crosspoint toggle ──────────────────────────────────────────────────────
