@@ -596,3 +596,33 @@
   border-radius: 2px;
   padding: 1px 2px;
 }
+
+/* Solo button: full width like mute */
+.mixer-solo-btn {
+  width: 100% !important;
+  min-height: 36px;
+}
+
+/* VU scale label column */
+.strip-vu-scale {
+  position: relative;
+  width: 18px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+.strip-vu-scale span {
+  position: absolute;
+  right: 2px;
+  font-size: 6px;
+  color: var(--text-muted);
+  transform: translateY(50%);
+  white-space: nowrap;
+  line-height: 1;
+  opacity: 0.75;
+}
+/* 0 dBFS tick is red */
+.strip-vu-scale span:first-child {
+  color: var(--vu-red, #e05050);
+  opacity: 1;
+  font-weight: bold;
+}

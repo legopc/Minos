@@ -162,16 +162,6 @@ function _buildInputStrip(ch) {
   meter.appendChild(bar);
   meter.appendChild(peak);
 
-  // VU scale tick marks
-  const _scaleMks = document.createElement('div');
-  _scaleMks.className = 'strip-meter-scale';
-  [0, -6, -12, -18, -30].forEach(db => {
-    const tk = document.createElement('span');
-    tk.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
-    _scaleMks.appendChild(tk);
-  });
-  meter.appendChild(_scaleMks);
-
   // Gain fader label
   const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
   const dbLabel = document.createElement('div');
@@ -223,6 +213,16 @@ function _buildInputStrip(ch) {
   // Fader + meter side by side
   const fmWrap = document.createElement('div');
   fmWrap.className = 'mixer-fader-meter-wrap';
+  // Scale labels column (left of meter)
+  const scaleCol = document.createElement('div');
+  scaleCol.className = 'strip-vu-scale';
+  [0, -6, -12, -18, -30].forEach(db => {
+    const lbl = document.createElement('span');
+    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
+    lbl.textContent = db === 0 ? '0' : String(db);
+    scaleCol.appendChild(lbl);
+  });
+  fmWrap.appendChild(scaleCol);
   fmWrap.appendChild(meter);
   fmWrap.appendChild(fader);
   strip.appendChild(fmWrap);
@@ -362,6 +362,15 @@ function _buildOutputMaster(out) {
   // Fader + meter side by side
   const fmWrap = document.createElement('div');
   fmWrap.className = 'mixer-fader-meter-wrap';
+  const scaleColOut = document.createElement('div');
+  scaleColOut.className = 'strip-vu-scale';
+  [0, -6, -12, -18, -30].forEach(db => {
+    const lbl = document.createElement('span');
+    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
+    lbl.textContent = db === 0 ? '0' : String(db);
+    scaleColOut.appendChild(lbl);
+  });
+  fmWrap.appendChild(scaleColOut);
   fmWrap.appendChild(meter);
   fmWrap.appendChild(fader);
   strip.appendChild(fmWrap);

@@ -249,10 +249,21 @@ export function updateMetering(rxData, txData) {
   if (rxData) {
     Object.entries(rxData).forEach(([id, db]) => {
       const fill = document.getElementById(`vu-fill-${id}`);
-      if (!fill) return;
+      if (fill) {
+        const pct = _dbToPercent(db);
+        fill.style.height = pct + '%';
+        fill.style.background = _dbToColour(db);
+      }
+      // Crosspoint dot glow: active routes light up proportional to signal level
       const pct = _dbToPercent(db);
-      fill.style.height = pct + '%';
-      fill.style.background = _dbToColour(db);
+      const alpha = Math.max(0.08, pct / 100);
+      document.querySelectorAll(`.xp-cell[data-rx-id="${id}"]`).forEach(cell => {
+        if (!cell.classList.contains('local') && !cell.classList.contains('dante')) return;
+        const dot = cell.querySelector('.xp-dot');
+        if (!dot) return;
+        dot.style.background = `rgba(40, 210, 80, ${alpha})`;
+        dot.style.boxShadow = pct > 15 ? `0 0 ${Math.max(2, Math.round(pct / 18))}px rgba(40,210,80,0.55)` : '';
+      });
     });
   }
   if (txData) {

@@ -128,7 +128,10 @@ impl PerInputDsp {
     /// RT-safe: no allocations, no locks.
     #[inline]
     pub fn process_block(&mut self, buf: &mut [f32]) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            for s in buf.iter_mut() { *s = 0.0; }
+            return;
+        }
         if self.invert_polarity {
             for s in buf.iter_mut() { *s = -*s; }
         }
