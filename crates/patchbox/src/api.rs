@@ -1130,9 +1130,10 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let zone_count = cfg.zone_config.len();
     let rx_count = cfg.rx_channels;
     let tx_count = cfg.tx_channels;
-    let ptp_locked = std::path::Path::new(&cfg.dante_clock_path).exists();
     drop(cfg);
-    let dante_status = if s.dante_connected.load(AOrdering::Relaxed) { "connected" } else { "disconnected" }.to_string();
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+    let ptp_locked = dante_connected;
+    let dante_status = if dante_connected { "connected" } else { "disconnected" }.to_string();
     Json(SystemResponse {
         version: env!("CARGO_PKG_VERSION"),
         hostname: get_hostname(),
