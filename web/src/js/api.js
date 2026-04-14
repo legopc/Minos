@@ -33,6 +33,8 @@ async function req(method, path, body) {
     throw new Error(`${r.status}: ${txt}`);
   }
   if (r.status === 204) return null;
+  const _ct = r.headers.get('content-type') ?? '';
+  if (!_ct.includes('json')) return null;
   return r.json();
 }
 

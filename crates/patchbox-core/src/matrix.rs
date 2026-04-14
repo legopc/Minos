@@ -114,7 +114,7 @@ impl PerInputDsp {
 
     /// Sync coefficients from config. RT-safe: pure arithmetic, no allocation.
     pub fn sync(&mut self, cfg: &InputChannelDsp, sample_rate: f32) {
-        self.enabled = true; // InputChannelDsp has no top-level enabled flag
+        self.enabled = cfg.enabled; // sync enabled from config
         self.gain_linear = 10f32.powf(cfg.gain_db / 20.0);
         self.invert_polarity = cfg.polarity;
         self.hpf.sync(&cfg.hpf, sample_rate);

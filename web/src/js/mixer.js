@@ -6,6 +6,7 @@ import { toast } from './toast.js';
 import { DSP_COLOURS } from './dsp/colours.js';
 
 let _animFrame = null;
+let _soloSet = new Set();
 
 export function render(container) {
   container.innerHTML = '';
@@ -119,6 +120,36 @@ function _buildInputStrip(ch) {
   };
   strip.appendChild(muteBtn);
 
+  // Solo button (client-side visual dim only)
+  const soloBtn = document.createElement('button');
+  soloBtn.className = 'mixer-solo-btn';
+  soloBtn.id = `solo-${ch.id}`;
+  soloBtn.textContent = 'S';
+  soloBtn.title = 'Solo';
+  soloBtn.onclick = () => {
+    if (_soloSet.has(ch.id)) { _soloSet.delete(ch.id); soloBtn.classList.remove('active'); }
+    else { _soloSet.add(ch.id); soloBtn.classList.add('active'); }
+    _applySoloVisual();
+  };
+  strip.appendChild(soloBtn);
+
+  // Polarity invert (Ø) button
+  const initInvert = !!(ch.dsp?.polarity?.invert);
+  const polBtn = document.createElement('button');
+  polBtn.className = 'mixer-polarity-btn' + (initInvert ? ' active' : '');
+  polBtn.textContent = 'Ø';
+  polBtn.title = 'Invert polarity';
+  polBtn.dataset.invert = initInvert ? '1' : '0';
+  polBtn.onclick = async () => {
+    const newInvert = polBtn.dataset.invert !== '1';
+    try {
+      await api.putInputPolarity(chIdx, newInvert);
+      polBtn.dataset.invert = newInvert ? '1' : '0';
+      polBtn.classList.toggle('active', newInvert);
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(polBtn);
+
   // VU meter
   const meter = document.createElement('div');
   meter.className = 'strip-meter';
@@ -130,6 +161,16 @@ function _buildInputStrip(ch) {
   peak.id = `vu-peak-${ch.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
+
+  // VU scale tick marks
+  const _scaleMks = document.createElement('div');
+  _scaleMks.className = 'strip-meter-scale';
+  [0, -6, -12, -18, -30].forEach(db => {
+    const tk = document.createElement('span');
+    tk.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
+    _scaleMks.appendChild(tk);
+  });
+  meter.appendChild(_scaleMks);
 
   // Gain fader label
   const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
@@ -153,6 +194,30 @@ function _buildInputStrip(ch) {
     fTimer = setTimeout(() => {
       api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
     }, 80);
+  };
+
+  // Double-click dB label to type exact value
+  dbLabel.ondblclick = () => {
+    const curDb = st.sliderToDb(+fader.value);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
+    inp.min = -30; inp.max = 12; inp.step = 0.1;
+    inp.className = 'strip-fader-entry';
+    dbLabel.replaceWith(inp);
+    inp.focus(); inp.select();
+    const commit = () => {
+      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
+      fader.value = st.dbToSlider(db);
+      dbLabel.textContent = _db(db);
+      inp.replaceWith(dbLabel);
+      api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
+    };
+    inp.onblur = commit;
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') inp.replaceWith(dbLabel);
+    };
   };
 
   // Fader + meter side by side
@@ -349,3 +414,15 @@ function _hasZoneRoute(rxId, zone) {
 }
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
+
+function _applySoloVisual() {
+  const strips = document.querySelectorAll('.mixer-strip');
+  if (_soloSet.size === 0) {
+    strips.forEach(s => s.classList.remove('solo-dimmed'));
+  } else {
+    strips.forEach(s => {
+      const id = s.id.replace('strip-', '');
+      s.classList.toggle('solo-dimmed', !_soloSet.has(id));
+    });
+  }
+}

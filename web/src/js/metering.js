@@ -66,7 +66,7 @@ function _updateGroup(data, prefix) {
 
 function _flush() {
   _pending = false;
-  _queue.forEach(({ db, isPeak, isMini }, elId) => {
+  _queue.forEach(({ db, isPeak, isMini, isZone }, elId) => {
     const el = document.getElementById(elId);
     if (!el) return;
     const pct = dbToPercent(db);

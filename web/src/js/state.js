@@ -64,16 +64,42 @@ export function getRouteType(rxId, txId) {
 }
 
 // Fader math (§12.5) — slider range 0–1000
+// 4-segment pro taper: Mute→-30dB→-10dB→0dB→+12dB; unity at 87.5%
+const _F_MUTE = 25;
+const _F_S1 = 325, _F_S2 = 875, _F_S3 = 1000;
+const _F_D1L = -30, _F_D1H = -10, _F_D2H = 0, _F_D3H = 12;
+
 export function sliderToDb(v) {
-  if (v <= 0)   return -Infinity;
-  if (v <= 833) return (v / 833) * 60 - 60;
-  return ((v - 833) / 167) * 12;
+  v = Math.round(Math.max(0, Math.min(_F_S3, v)));
+  if (v <= _F_MUTE) return -Infinity;
+  if (v <= _F_S1) {
+    const t = (v - _F_MUTE) / (_F_S1 - _F_MUTE);
+    return _F_D1L + t * (_F_D1H - _F_D1L);
+  }
+  if (v <= _F_S2) {
+    const t = (v - _F_S1) / (_F_S2 - _F_S1);
+    return _F_D1H + t * (_F_D2H - _F_D1H);
+  }
+  const t = (v - _F_S2) / (_F_S3 - _F_S2);
+  return _F_D2H + t * (_F_D3H - _F_D2H);
 }
 
 export function dbToSlider(db) {
-  if (!isFinite(db) || db <= -60) return 0;
-  if (db <= 0) return Math.round((db + 60) / 60 * 833);
-  return Math.round(833 + (db / 12) * 167);
+  if (!isFinite(db) && db < 0) return 0;
+  if (db < _F_D1L) return 0;
+  if (db <= _F_D1H) {
+    const t = (db - _F_D1L) / (_F_D1H - _F_D1L);
+    return Math.round(_F_MUTE + t * (_F_S1 - _F_MUTE));
+  }
+  if (db <= _F_D2H) {
+    const t = (db - _F_D1H) / (_F_D2H - _F_D1H);
+    return Math.round(_F_S1 + t * (_F_S2 - _F_S1));
+  }
+  if (db <= _F_D3H) {
+    const t = (db - _F_D2H) / (_F_D3H - _F_D2H);
+    return Math.round(_F_S2 + t * (_F_S3 - _F_S2));
+  }
+  return _F_S3;
 }
 
 export function formatDb(db) {

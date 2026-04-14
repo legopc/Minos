@@ -543,3 +543,56 @@
   width: 12px;
   flex-shrink: 0;
 }
+
+/* === Recovered sprint features === */
+:root { --solo-active: #e6b800; }
+
+.mixer-strip.solo-dimmed { opacity: 0.28; transition: opacity 0.15s; }
+
+.mixer-polarity-btn {
+  width: 100%;
+  min-height: 36px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.mixer-polarity-btn:hover { border-color: var(--color-accent); color: var(--text-primary); }
+.mixer-polarity-btn.active {
+  background: var(--color-accent);
+  color: var(--bg-dark);
+  border-color: var(--color-accent);
+}
+
+.strip-meter-scale {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.strip-meter-scale span {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: rgba(255,255,255,0.20);
+  display: block;
+}
+/* Clip indicator at top (0 dBFS) */
+.strip-meter-scale span:first-child {
+  background: rgba(255,80,80,0.45);
+}
+
+.strip-fader-entry {
+  width: 100%;
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg-input);
+  color: var(--text-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  padding: 1px 2px;
+}
