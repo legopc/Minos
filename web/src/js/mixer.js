@@ -77,7 +77,6 @@ function _renderStrips(strips, masters) {
 
   const channels = st.channelList();
   const outputs  = st.outputList();
-  const zones    = st.zoneList();
 
   // Input strips
   channels.forEach(ch => {
@@ -85,9 +84,9 @@ function _renderStrips(strips, masters) {
     strips.appendChild(s);
   });
 
-  // Zone master strips
-  zones.forEach((zone, zi) => {
-    const m = _buildZoneMaster(zone, zi);
+  // Output master strips (one per output, replaces zone-based iteration)
+  outputs.forEach(out => {
+    const m = _buildOutputMaster(out);
     masters.appendChild(m);
   });
 }
@@ -220,54 +219,58 @@ function _buildInputStrip(ch) {
   return strip;
 }
 
-function _buildZoneMaster(zone, zi) {
-  const color = st.getZoneColour(zone.colour_index ?? zi);
+function _buildOutputMaster(out) {
+  const txIdx = parseInt(out.id.replace('tx_', ''), 10);
+  const color = st.getZoneColour(out.zone_colour_index ?? 0);
+
   const strip = document.createElement('div');
-  strip.className = 'mixer-zone-master';
+  strip.className = 'mixer-output-strip';
+  strip.id = `strip-${out.id}`;
   strip.style.setProperty('--zone-card-color', color);
 
+  // Name
   const nm = document.createElement('div');
   nm.className = 'zone-master-name';
-  nm.textContent = zone.name ?? zone.id;
+  nm.textContent = out.name ?? out.id;
+  nm.title = out.id + (out.zone_id ? ` (${out.zone_id})` : '');
   strip.appendChild(nm);
 
-  // Mute button (moved to top)
+  // Mute button — reads live state from st.state.outputs
   const muteBtn = document.createElement('button');
-  muteBtn.className = 'strip-mute-btn' + (zone.muted ? ' active' : '');
-  muteBtn.textContent = zone.muted ? 'MUTE' : 'mute';
+  const curOut = st.state.outputs.get(out.id);
+  const initMuted = curOut?.muted ?? false;
+  muteBtn.className = 'strip-mute-btn' + (initMuted ? ' active' : '');
+  muteBtn.textContent = initMuted ? 'MUTE' : 'mute';
   muteBtn.onclick = async () => {
-    const nm = !zone.muted;
+    const liveOut = st.state.outputs.get(out.id);
+    const nowMuted = liveOut?.muted ?? false;
+    const newMuted = !nowMuted;
     try {
-      for (const txId of (zone.tx_ids ?? [])) {
-        const txIdx = parseInt(txId.replace('tx_', ''), 10);
-        await api.putOutputMute(txIdx, nm);
-      }
-      zone.muted = nm;
-      muteBtn.className = 'strip-mute-btn' + (nm ? ' active' : '');
-      muteBtn.textContent = nm ? 'MUTE' : 'mute';
+      await api.putOutputMute(txIdx, newMuted);
+      st.setOutput({ ...liveOut, muted: newMuted });
+      muteBtn.classList.toggle('active', newMuted);
+      muteBtn.textContent = newMuted ? 'MUTE' : 'mute';
     } catch(e) { toast(e.message, true); }
   };
   strip.appendChild(muteBtn);
 
   // Volume label
-  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
-  const avgVol = txOutputs.length ? txOutputs.reduce((a,o) => a + (o.volume_db ?? 0), 0) / txOutputs.length : 0;
+  const vol = curOut?.volume_db ?? out.volume_db ?? 0;
   const volLabel = document.createElement('div');
   volLabel.className = 'strip-fader-label';
-  volLabel.textContent = _db(avgVol);
+  volLabel.id = `mix-lbl-${out.id}`;
+  volLabel.textContent = _db(vol);
   strip.appendChild(volLabel);
 
-  // Meter
+  // VU meter
   const meter = document.createElement('div');
   meter.className = 'strip-meter';
   const bar = document.createElement('div');
   bar.className = 'strip-meter-bar';
-  // Use first tx_id meter
-  const firstTx = zone.tx_ids?.[0];
-  if (firstTx) bar.id = `vu-bar-${firstTx}`;
+  bar.id = `vu-bar-${out.id}`;
   const peak = document.createElement('div');
   peak.className = 'strip-meter-peak';
-  if (firstTx) peak.id = `vu-peak-${firstTx}`;
+  peak.id = `vu-peak-${out.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
 
@@ -276,19 +279,18 @@ function _buildZoneMaster(zone, zi) {
   fader.type = 'range';
   fader.className = 'strip-fader';
   fader.min = 0; fader.max = 1000; fader.step = 1;
-  fader.value = st.dbToSlider(avgVol);
+  fader.value = st.dbToSlider(vol);
   let ft;
   fader.oninput = () => {
     const db = st.sliderToDb(+fader.value);
     volLabel.textContent = _db(db);
     clearTimeout(ft);
     ft = setTimeout(async () => {
-      for (const txId of (zone.tx_ids ?? [])) {
-        try {
-          const txIdx = parseInt(txId.replace('tx_', ''), 10);
-          await api.putOutput(txIdx, { volume_db: db });
-        } catch(_){}
-      }
+      try {
+        await api.putOutputGain(txIdx, db);
+        const liveOut = st.state.outputs.get(out.id);
+        if (liveOut) st.setOutput({ ...liveOut, volume_db: db });
+      } catch(e) { toast(e.message, true); }
     }, 80);
   };
 
@@ -299,24 +301,23 @@ function _buildZoneMaster(zone, zi) {
   fmWrap.appendChild(fader);
   strip.appendChild(fmWrap);
 
-  // DSP badge row (output DSP) — spec §6.4: show only enabled+non-bypassed
+  // DSP badge row
   const dspRow = document.createElement('div');
   dspRow.className = 'strip-dsp-row';
-  const firstTxObj = firstTx ? st.state.outputs.get(firstTx) : null;
-  const outDsp = firstTxObj?.dsp ?? {};
+  const outDsp = out.dsp ?? curOut?.dsp ?? {};
   Object.keys(outDsp).forEach(blk => {
     const block = outDsp[blk];
-    if (!block.enabled || block.bypassed) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
+    if (!block.enabled || block.bypassed) btn.classList.add('byp');
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
-    if (firstTx) btn.dataset.ch = firstTx;
+    btn.dataset.ch = out.id;
     btn.style.background = colour.bg;
     btn.style.color = colour.fg;
-    if (firstTx) btn.onclick = () => openPanel(blk, firstTx, btn);
+    btn.onclick = () => openPanel(blk, out.id, btn);
     dspRow.appendChild(btn);
   });
   strip.appendChild(dspRow);
@@ -326,11 +327,11 @@ function _buildZoneMaster(zone, zi) {
 
 export function updateMetering(rx, tx) {
   if (!rx && !tx) return;
-  const update = (map, prefix) => {
+  const update = (map) => {
     if (!map) return;
     Object.entries(map).forEach(([id, db]) => {
-      const bar  = document.getElementById(`${prefix}-m-${id}`);
-      const peak = document.getElementById(`${prefix}-p-${id}`);
+      const bar  = document.getElementById(`vu-bar-${id}`);
+      const peak = document.getElementById(`vu-peak-${id}`);
       if (!bar) return;
       const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
       bar.style.height = pct + '%';
@@ -339,8 +340,8 @@ export function updateMetering(rx, tx) {
       }
     });
   };
-  update(rx, 'mix');
-  update(tx, 'mix');
+  update(rx);
+  update(tx);
 }
 
 function _hasZoneRoute(rxId, zone) {

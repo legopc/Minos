@@ -147,16 +147,26 @@
   width: 100%;
 }
 
+/*
+ * Vertical fader inside .mixer-fader-meter-wrap (flex-direction: row).
+ * Track length = physical height. Parent has flex:1 in a column strip
+ * so it gets a definite height. align-self:stretch + height:100% ensures
+ * the <input> fills the cross-axis. Auto margins are removed because
+ * they override stretch on the cross-axis.
+ */
 .strip-fader {
   writing-mode: vertical-lr;
   direction: rtl;
   -webkit-appearance: none;
   appearance: none;
   width: 36px;
-  height: 100px;
+  height: 100%;
+  min-height: 0;
   background: transparent;
   cursor: pointer;
-  margin: 4px auto;
+  margin: 0;
+  align-self: stretch;
+  flex-shrink: 1;
 }
 
 .strip-fader::-webkit-slider-thumb {
@@ -479,9 +489,10 @@
   height: 100%;
 }
 
-.mixer-zone-strip {
+.mixer-zone-strip,
+.mixer-output-strip {
   flex: 1 1 0;
-  min-width: 90px;
+  min-width: 100px;
   max-width: 200px;
   display: flex;
   flex-direction: column;
@@ -490,6 +501,10 @@
   border-right: 1px solid var(--border-subtle);
   padding: 4px 2px;
   gap: 4px;
+}
+
+.mixer-output-strip {
+  border-top: 3px solid var(--zone-card-color, #444);
 }
 
 .mixer-zone-label {
@@ -512,12 +527,15 @@
   gap: 3px;
   align-items: stretch;
   width: 100%;
-  min-height: 0;
+  min-height: 60px;
+  overflow: hidden;
 }
 
 .mixer-fader-meter-wrap .strip-fader,
 .mixer-fader-meter-wrap .mixer-fader {
   flex: 1;
+  height: 100%;
+  min-height: 0;
 }
 
 .mixer-fader-meter-wrap .strip-meter,
