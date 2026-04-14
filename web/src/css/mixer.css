@@ -258,17 +258,15 @@
 }
 
 .strip-dsp-btn {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 10px;
+  font-size: 12px;
+  padding: 4px 8px;
   background: var(--bg-dark);
   border: 1px solid var(--border-primary);
   color: var(--text-muted);
   border-radius: 2px;
   cursor: pointer;
-  letter-spacing: 0.05em;
-  min-height: 64px;
-  width: 100%;
+  letter-spacing: 0.03em;
+  min-height: 36px;
 }
 .strip-dsp-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
 .strip-dsp-btn.active {
