@@ -14,7 +14,7 @@
 .matrix-viewport {
   --label-w: 380px;
   --col-w:   68px;
-  --row-h:   72px;
+  --row-h:   50px;
   flex: 1;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
@@ -146,7 +146,7 @@
 
 .ch-label .ch-vu {
   width: 22px;
-  height: 38px;
+  height: 30px;
   background: rgba(255, 255, 255, 0.06);
   position: relative;
   border-radius: 3px;
@@ -245,8 +245,8 @@
 }
 
 .xp-cell .xp-dot {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
   background: transparent;
   border: 1px solid var(--border-primary);

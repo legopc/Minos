@@ -97,11 +97,13 @@ function _buildInputStrip(ch) {
   strip.className = 'mixer-strip';
   strip.id = `strip-${ch.id}`;
 
-  // Name
+  // Name (double-click to rename)
   const nm = document.createElement('div');
   nm.className = 'strip-name';
   nm.textContent = ch.name ?? ch.id;
-  nm.title = ch.id;
+  nm.title = 'Double-click to rename';
+  nm.style.cursor = 'text';
+  nm.addEventListener('dblclick', () => _startRename(nm, ch));
   strip.appendChild(nm);
 
   // Mute button
@@ -434,4 +436,44 @@ function _applySoloVisual() {
       s.classList.toggle('solo-dimmed', !_soloSet.has(id));
     });
   }
+}
+
+// ── Inline channel rename ──────────────────────────────────────────────────
+function _startRename(nameEl, ch) {
+  const prev = nameEl.textContent;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = prev;
+  inp.className = 'strip-rename-input';
+  nameEl.textContent = '';
+  nameEl.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  const commit = async () => {
+    const next = inp.value.trim() || prev;
+    nameEl.textContent = next;
+    if (next === prev) return;
+    try {
+      await api.putChannel(ch.id, { name: next });
+      // Update state
+      const cur = st.state.channels.get(ch.id);
+      if (cur) st.setChannel({ ...cur, name: next });
+      // Update matrix DOM if rendered
+      document.querySelectorAll(`.ch-label[data-ch-id="${ch.id}"] .ch-name`).forEach(el => {
+        el.textContent = next;
+        el.title = next;
+      });
+      toast(`Renamed to "${next}"`);
+    } catch (e) {
+      nameEl.textContent = prev;
+      toast('Rename failed: ' + e.message, true);
+    }
+  };
+
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') { inp.removeEventListener('blur', commit); nameEl.textContent = prev; }
+  });
 }

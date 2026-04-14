@@ -108,6 +108,19 @@
   padding: 0 2px;
 }
 
+.strip-rename-input {
+  width: 100%;
+  background: var(--bg-dark);
+  border: 1px solid var(--color-accent);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: center;
+  border-radius: 2px;
+  padding: 2px 4px;
+  outline: none;
+  box-sizing: border-box;
+}
+
 /* Vertical VU meter */
 .strip-meter {
   width: 12px;
@@ -253,7 +266,7 @@
   border-radius: 2px;
   cursor: pointer;
   letter-spacing: 0.03em;
-  min-height: 36px;
+  min-height: 48px;
 }
 .strip-dsp-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
 .strip-dsp-btn.active {
