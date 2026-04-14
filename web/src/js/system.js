@@ -20,7 +20,7 @@ export async function render(container) {
       return `<span style="color:var(--color-ok)">LOCKED</span> <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
     }
     if (locked === false) {
-      return `<span style="color:var(--color-warn)">Checking...</span>`;
+      return `<span style="color:var(--color-warn)">—</span>`;
     }
     return '—';
   };

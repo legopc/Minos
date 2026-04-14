@@ -1043,7 +1043,12 @@ async fn post_route(State(s): State<AppState>, Json(body): Json<CreateRouteReque
     let _ = s.persist().await;
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"dante"}).to_string());
     let route_id = format!("rx_{}|tx_{}", rx, tx);
-    (StatusCode::CREATED, Json(serde_json::json!({"id": route_id, "rx_id": body.rx_id, "tx_id": body.tx_id}))).into_response()
+    (StatusCode::CREATED, Json(serde_json::json!({
+        "id": route_id,
+        "rx_id": body.rx_id,
+        "tx_id": body.tx_id,
+        "route_type": "dante"
+    }))).into_response()
 }
 
 // DELETE /api/v1/routes/:id — id is "rx_N|tx_M" (| may be URL-encoded as %7C)

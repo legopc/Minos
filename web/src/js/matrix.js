@@ -72,16 +72,20 @@ function _buildLeft(channels) {
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
 
+    // Wrap num+name+vu in mainRow
+    const mainRow = document.createElement('div');
+    mainRow.className = 'ch-label-main';
+
     const num = document.createElement('span');
     num.className = 'ch-num';
     num.textContent = i + 1;
-    row.appendChild(num);
+    mainRow.appendChild(num);
 
     const name = document.createElement('span');
     name.className = 'ch-name';
     name.title = ch.name ?? ch.id;
     name.textContent = ch.name ?? ch.id;
-    row.appendChild(name);
+    mainRow.appendChild(name);
 
     const vu = document.createElement('span');
     vu.className = 'ch-vu';
@@ -90,9 +94,11 @@ function _buildLeft(channels) {
     vuFill.className = 'vu-fill';
     vuFill.id = 'vu-fill-' + ch.id;
     vu.appendChild(vuFill);
-    row.appendChild(vu);
+    mainRow.appendChild(vu);
 
-    // Inline DSP block badges
+    row.appendChild(mainRow);
+
+    // Inline DSP block badges (sibling of mainRow)
     const dspRow = document.createElement('div');
     dspRow.className = 'ch-dsp-inline';
     const dsp = ch.dsp ?? {};
@@ -157,10 +163,10 @@ function _buildHeader(outputs, txZoneMap) {
 
     // Short label: number + abbreviated name
     const label = out.name ?? out.id;
-    const abbr  = label.length > 4 ? label.slice(0, 4) : label;
+    const abbr  = label.length > 6 ? label.slice(0, 6) : label;
     col.innerHTML = `
-      <span style="font-size:8px;color:var(--text-dim)">${i + 1}</span>
-      <span style="font-size:7px;color:var(--text-muted);overflow:hidden;max-width:26px;text-overflow:ellipsis;white-space:nowrap" title="${_esc(label)}">${_esc(abbr)}</span>
+      <span style="font-size:13px;font-weight:700;color:var(--text-primary)">${i + 1}</span>
+      <span style="font-size:11px;color:var(--text-secondary);overflow:hidden;max-width:52px;text-overflow:ellipsis;white-space:nowrap" title="${_esc(label)}">${_esc(abbr)}</span>
     `;
     col.style.flexDirection = 'column';
     col.style.alignItems = 'center';
@@ -224,7 +230,7 @@ async function _toggleRoute(rxId, txId, cell) {
       // Optimistic: show as routed immediately
       cell.className = 'xp-cell local';
       const route = await api.postRoute(rxId, txId, 'local');
-      st.setRoute(route);
+      st.setRoute({ route_type: 'dante', ...route });
     }
   } catch (e) {
     cell.className = prevClass; // revert on error

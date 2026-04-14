@@ -153,7 +153,6 @@ function _buildInputStrip(ch) {
   peak.id = `vu-peak-${ch.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
-  strip.appendChild(meter);
 
   // Gain fader label
   const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
@@ -178,7 +177,13 @@ function _buildInputStrip(ch) {
       api.putChannel(ch.id, { gain_db: db }).catch(e => toast(e.message, true));
     }, 80);
   };
-  strip.appendChild(fader);
+
+  // Fader + meter side by side
+  const fmWrap = document.createElement('div');
+  fmWrap.className = 'mixer-fader-meter-wrap';
+  fmWrap.appendChild(meter);
+  fmWrap.appendChild(fader);
+  strip.appendChild(fmWrap);
 
   // DSP badge row — spec §6.4: show only enabled+non-bypassed blocks
   const dspRow = document.createElement('div');
@@ -222,7 +227,7 @@ function _buildInputStrip(ch) {
         } else {
           for (const txId of (zone.tx_ids ?? [])) {
             const r = await api.postRoute(ch.id, txId, 'local');
-            st.setRoute(r);
+            st.setRoute({ route_type: 'dante', ...r });
           }
         }
         btn.dataset.active = active ? '0' : '1';
@@ -247,6 +252,31 @@ function _buildZoneMaster(zone, zi) {
   nm.textContent = zone.name ?? zone.id;
   strip.appendChild(nm);
 
+  // Mute button (moved to top)
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'strip-mute-btn' + (zone.muted ? ' muted' : '');
+  muteBtn.textContent = zone.muted ? 'MUTE' : 'mute';
+  muteBtn.onclick = async () => {
+    const nm = !zone.muted;
+    try {
+      for (const txId of (zone.tx_ids ?? [])) {
+        await api.putOutputMute(txId, nm);
+      }
+      zone.muted = nm;
+      muteBtn.className = 'strip-mute-btn' + (nm ? ' muted' : '');
+      muteBtn.textContent = nm ? 'MUTE' : 'mute';
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(muteBtn);
+
+  // Volume label
+  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
+  const avgVol = txOutputs.length ? txOutputs.reduce((a,o) => a + (o.volume_db ?? 0), 0) / txOutputs.length : 0;
+  const volLabel = document.createElement('div');
+  volLabel.className = 'strip-fader-label';
+  volLabel.textContent = _db(avgVol);
+  strip.appendChild(volLabel);
+
   // Meter
   const meter = document.createElement('div');
   meter.className = 'strip-meter';
@@ -260,16 +290,8 @@ function _buildZoneMaster(zone, zi) {
   if (firstTx) peak.id = `vu-peak-${firstTx}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
-  strip.appendChild(meter);
 
-  // Volume
-  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
-  const avgVol = txOutputs.length ? txOutputs.reduce((a,o) => a + (o.volume_db ?? 0), 0) / txOutputs.length : 0;
-  const volLabel = document.createElement('div');
-  volLabel.className = 'strip-fader-label';
-  volLabel.textContent = _db(avgVol);
-  strip.appendChild(volLabel);
-
+  // Fader
   const fader = document.createElement('input');
   fader.type = 'range';
   fader.className = 'strip-fader';
@@ -286,24 +308,13 @@ function _buildZoneMaster(zone, zi) {
       }
     }, 80);
   };
-  strip.appendChild(fader);
 
-  // Mute
-  const muteBtn = document.createElement('button');
-  muteBtn.className = 'strip-mute-btn' + (zone.muted ? ' muted' : '');
-  muteBtn.textContent = zone.muted ? 'MUTE' : 'mute';
-  muteBtn.onclick = async () => {
-    const nm = !zone.muted;
-    try {
-      for (const txId of (zone.tx_ids ?? [])) {
-        await api.putOutputMute(txId, nm);
-      }
-      zone.muted = nm;
-      muteBtn.className = 'strip-mute-btn' + (nm ? ' muted' : '');
-      muteBtn.textContent = nm ? 'MUTE' : 'mute';
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(muteBtn);
+  // Fader + meter side by side
+  const fmWrap = document.createElement('div');
+  fmWrap.className = 'mixer-fader-meter-wrap';
+  fmWrap.appendChild(meter);
+  fmWrap.appendChild(fader);
+  strip.appendChild(fmWrap);
 
   // DSP badge row (output DSP) — spec §6.4: show only enabled+non-bypassed
   const dspRow = document.createElement('div');

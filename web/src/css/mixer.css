@@ -19,13 +19,13 @@
 }
 
 .mixer-scene-label {
-  font-size: 9px;
+  font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .mixer-scene-btn {
-  font-size: 9px;
+  font-size: 12px;
   padding: 2px 8px;
   border: 1px solid var(--border-primary);
   border-radius: 2px;
@@ -120,7 +120,7 @@
 
 .strip-name,
 .zone-master-name {
-  font-size: 8px;
+  font-size: 13px;
   color: var(--text-muted);
   text-align: center;
   overflow: hidden;
@@ -132,7 +132,7 @@
 
 /* Vertical VU meter */
 .strip-meter {
-  width: 6px;
+  width: 12px;
   flex: 1;
   background: var(--meter-bg);
   border-radius: 1px;
@@ -163,7 +163,7 @@
 
 /* Fader label + fader */
 .strip-fader-label {
-  font-size: 8px;
+  font-size: 11px;
   color: var(--text-accent);
   text-align: center;
   width: 100%;
@@ -189,14 +189,15 @@
 }
 
 .strip-dsp-btn {
-  font-size: 7px;
-  padding: 1px 3px;
+  font-size: 11px;
+  padding: 2px 6px;
   background: var(--bg-dark);
   border: 1px solid var(--border-primary);
   color: var(--text-muted);
   border-radius: 2px;
   cursor: pointer;
   letter-spacing: 0.03em;
+  min-height: 26px;
 }
 .strip-dsp-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
 .strip-dsp-btn.active {
@@ -237,8 +238,8 @@
 /* Mute button */
 .strip-mute-btn {
   width: 100%;
-  min-height: 32px;
-  font-size: 10px;
+  min-height: 44px;
+  font-size: 13px;
   font-family: inherit;
   letter-spacing: 0.06em;
   background: var(--bg-input);
@@ -358,7 +359,7 @@
 }
 
 .mixer-strip-name {
-  font-size: 8px;
+  font-size: 13px;
   color: var(--text-muted);
   text-align: center;
   overflow: hidden;
@@ -389,14 +390,14 @@
 }
 
 .mixer-fader-db {
-  font-size: 8px;
+  font-size: 11px;
   color: var(--text-accent);
   text-align: center;
 }
 
 /* Meter column alongside fader */
 .mixer-strip-meter {
-  width: 5px;
+  width: 12px;
   background: var(--meter-bg);
   position: relative;
   border-radius: 1px;
@@ -427,15 +428,19 @@
 }
 
 .mixer-mute-btn, .mixer-solo-btn {
-  width: 24px;
-  height: 16px;
-  font-size: 7px;
+  width: 36px;
+  height: 40px;
+  font-size: 12px;
   border-radius: 2px;
   border: 1px solid var(--border-primary);
   background: var(--bg-dark);
   color: var(--text-muted);
   cursor: pointer;
   letter-spacing: 0.05em;
+}
+.mixer-solo-btn {
+  height: 32px;
+  font-size: 11px;
 }
 .mixer-mute-btn.active { background: var(--mute-active); color: #fff; border-color: var(--mute-active); }
 .mixer-solo-btn.active { background: var(--solo-active); color: var(--bg-dark); border-color: var(--solo-active); }
@@ -474,7 +479,7 @@
 }
 
 .mixer-zone-label {
-  font-size: 8px;
+  font-size: 13px;
   color: var(--text-primary);
   text-align: center;
   overflow: hidden;
@@ -483,4 +488,26 @@
   width: 100%;
   border-left: 3px solid var(--zone-sep-color, #444);
   padding-left: 3px;
+}
+
+/* Fader + meter horizontal flex wrapper */
+.mixer-fader-meter-wrap {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  gap: 3px;
+  align-items: stretch;
+  width: 100%;
+  min-height: 0;
+}
+
+.mixer-fader-meter-wrap .strip-fader,
+.mixer-fader-meter-wrap .mixer-fader {
+  flex: 1;
+}
+
+.mixer-fader-meter-wrap .strip-meter,
+.mixer-fader-meter-wrap .mixer-strip-meter {
+  width: 12px;
+  flex-shrink: 0;
 }

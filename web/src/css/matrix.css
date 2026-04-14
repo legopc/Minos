@@ -1,5 +1,10 @@
 /* Matrix Tab Routing Grid CSS */
 
+/* Override row height for matrix tab only — two-row channel labels need more height */
+.matrix-main {
+  --row-h: 96px;
+}
+
 #tab-matrix {
   flex-direction: column;
   height: 100%;
@@ -95,24 +100,28 @@
 
 /* Channel Label */
 .ch-label {
-  width: var(--ch-w);
-  min-width: var(--ch-w);
-  flex-shrink: 0;
-  height: var(--row-h);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: default;
+}
+
+.ch-label-main {
+  display: flex;
   align-items: center;
-  padding: 0 6px;
   gap: 6px;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--text-secondary);
+  flex: 1;
+  padding: 0 6px;
+  min-width: 0;
 }
 
 .ch-label .ch-num {
   color: var(--text-dim);
-  font-size: 10px;
-  min-width: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  min-width: 22px;
+  flex-shrink: 0;
 }
 
 .ch-label .ch-name {
@@ -123,14 +132,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .ch-label .ch-vu {
-  width: 5px;
-  height: 16px;
+  width: 10px;
+  height: 28px;
   background: var(--meter-bg);
   position: relative;
   border-radius: 1px;
+  flex-shrink: 0;
 }
 
 .ch-label .ch-vu .vu-fill {
@@ -145,27 +156,28 @@
 .ch-dsp-inline {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 3px;
+  padding: 0 4px 4px 4px;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .ch-dsp-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 3px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   font-family: inherit;
   letter-spacing: 0.05em;
   cursor: pointer;
   border: none;
-  height: 26px;
-  min-width: 36px;
+  height: 30px;
+  min-width: 44px;
   user-select: none;
-  transition: filter 0.1s;
+  transition: filter 0.1s, box-shadow 0.1s;
   flex-shrink: 0;
 }
 .ch-dsp-badge:hover {
@@ -173,6 +185,9 @@
 }
 .ch-dsp-badge.byp {
   opacity: 0.3;
+}
+.ch-dsp-badge:not(.byp) {
+  box-shadow: 0 0 5px currentColor;
 }
 
 /* Crosspoint Cell */

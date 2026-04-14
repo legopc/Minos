@@ -35,7 +35,7 @@
 }
 
 .topbar-user {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -101,7 +101,7 @@
   align-items: center;
   padding: 0 12px;
   gap: 16px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .status-item {
@@ -178,7 +178,7 @@
 }
 
 .login-error {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dot-error);
 }
 
@@ -200,7 +200,7 @@
   color: var(--text-secondary);
   padding: 8px 12px;
   border-radius: 2px;
-  font-size: 10px;
+  font-size: 11px;
   animation: toast-in 0.15s ease;
   max-width: 280px;
 }
