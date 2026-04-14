@@ -161,8 +161,9 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
 
   const name = document.createElement('span');
   name.className = 'ch-name';
-  name.title = ch.name ?? ch.id;
+  name.title = 'Double-click to rename';
   name.textContent = ch.name ?? ch.id;
+  name.addEventListener('dblclick', e => { e.stopPropagation(); _startRename(name, ch); });
   label.appendChild(name);
 
   // DSP badges inline to the right of name
@@ -359,3 +360,49 @@ function _toggleDspPicker(btn, ch) {
 }
 
 let _lastBtn = null;
+
+// ── Inline channel rename ──────────────────────────────────────────────────
+function _startRename(nameEl, ch) {
+  const prev = nameEl.textContent;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = prev;
+  inp.className = 'ch-rename-input';
+  nameEl.textContent = '';
+  nameEl.style.overflow = 'visible';
+  nameEl.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  const commit = async () => {
+    const next = inp.value.trim() || prev;
+    nameEl.textContent = next;
+    nameEl.style.overflow = '';
+    nameEl.title = 'Double-click to rename';
+    if (next === prev) return;
+    try {
+      await api.putChannel(ch.id, { name: next });
+      const cur = st.state.channels.get(ch.id);
+      if (cur) st.setChannel({ ...cur, name: next });
+      // Update mixer strip name if rendered
+      document.querySelectorAll(`#strip-${ch.id} .strip-name`).forEach(el => {
+        el.textContent = next;
+      });
+      toast(`Renamed to "${next}"`);
+    } catch (e) {
+      nameEl.textContent = prev;
+      nameEl.style.overflow = '';
+      toast('Rename failed: ' + e.message, true);
+    }
+  };
+
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') {
+      inp.removeEventListener('blur', commit);
+      nameEl.textContent = prev;
+      nameEl.style.overflow = '';
+    }
+  });
+}
