@@ -1,18 +1,20 @@
 /* Matrix Tab Routing Grid CSS */
 
-/* ── Custom Properties ──────────────────────────────────────────────────── */
+/* ── Layout when active ─────────────────────────────────────────────────── */
+/* Do NOT set display here — let .tab-content / .tab-content.active control
+   visibility. Setting display:flex on #tab-matrix (ID specificity 1,0,0)
+   would override .tab-content { display:none } (0,1,0) and break tab hiding. */
 #tab-matrix {
-  --label-w: 380px;
-  --col-w:   68px;
-  --row-h:   72px;
-  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-/* ── Single Scroll Viewport ─────────────────────────────────────────────── */
+/* ── Custom Properties (on viewport so they're scoped to the matrix) ─────── */
 .matrix-viewport {
+  --label-w: 380px;
+  --col-w:   68px;
+  --row-h:   72px;
   flex: 1;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
