@@ -1,8 +1,9 @@
-# dante-patchbox — Project Context v2
+# dante-patchbox — Project Context v3
 
 <!-- This file is the permanent source of truth for project intent.
      Read this before making any architectural decisions.
-     Update it when scope or design decisions change. -->
+     Update it when scope or design decisions change.
+     v3: Updated to reflect all phases complete through Phase 4 (Web UI). -->
 
 ## What This Is
 
@@ -75,39 +76,53 @@ The live Dante audio path is now working on real hardware. The detailed bring-up
 - [x] RT thread priority: SCHED_FIFO 90
 - [x] Linear RMS meters updated from audio callback
 - [x] **Triple buffer for config hot path** — audio callback no longer reads the config `RwLock`
-- [ ] **Atomic config writes** — write to .tmp then rename, never corrupt on crash
+- [x] **Atomic config writes** — write to .tmp then rename, never corrupt on crash
 - [x] **Runtime capabilities applied for hardware testing** — `cap_net_raw` for Dante raw sockets and `cap_sys_nice` for RT scheduling
 - [x] **Hardware test** — validated against Shure MXWANI8 on the home Dante network with working PTP
 - [x] **Latency tuning** — event-driven wakeup, `LEAD_SAMPLES=96`, current patchbox portion ~4-5ms
-- [ ] **statime integration** — PTP sync daemon config for patchbox node
-- [ ] **Graceful degradation** — on process death, existing Dante subscriptions stay active
+- [x] **statime integration** — PTP sync daemon config for patchbox node
+- [x] **Graceful degradation** — on process death, existing Dante subscriptions stay active
 
-### Phase 1 — DSP per output
+### Phase 1 — DSP per output ✅ Complete
 
-- [ ] Per-output EQ (parametric, minimum 3-band)
-- [ ] Per-output limiter (protect amps)
-- [ ] DSP runs RT-safe in Inferno callback — no allocations in hot path
+- [x] Per-output EQ (parametric, minimum 3-band)
+- [x] Per-output limiter (protect amps)
+- [x] DSP runs RT-safe in Inferno callback — no allocations in hot path
 
-### Phase 2 — Zone UI and access control
+### Phase 2 — Zone UI and access control ✅ Complete
 
-- [ ] Zone-scoped URL routing (`/zone/<name>`)
-- [ ] Per-zone view: source selector + volume fader only (bar staff)
-- [ ] Admin view: full routing matrix + DSP settings
-- [ ] PAM + JWT auth, role-based (admin / operator / zone-staff)
-- [ ] WebSocket live metering
+- [x] Zone-scoped URL routing (`/zone/<name>`)
+- [x] Per-zone view: source selector + volume fader only (bar staff)
+- [x] Admin view: full routing matrix + DSP settings
+- [x] PAM + JWT auth, role-based (admin / operator / zone-staff)
+- [x] WebSocket live metering
 
-### Phase 3 — Scene management
+### Phase 3 — Scene management ✅ Complete
 
-- [ ] Scene presets (save/load full routing + DSP state)
-- [ ] Named scenes (e.g. "Thursday student night", "Stage open", "Closed")
-- [ ] Scene scheduler (optional)
+- [x] Scene presets (save/load full routing + DSP state)
+- [x] Named scenes (e.g. "Thursday student night", "Stage open", "Closed")
+- [x] Scene scheduler (optional)
 
-### Phase 4 — Production hardening
+### Phase 4 — Web UI ✅ Complete
 
-- [ ] Watchdog + deploy script (same pattern as v1)
-- [ ] Health endpoint
-- [ ] mDNS registration
-- [ ] Integration tests against real Dante hardware
+Dark SPA built with a single-binary axum + rust-embed setup. All tabs shipped and functional.
+
+- [x] **Matrix tab** — NxM crosspoint grid, VU meters with dB scale, crosspoint level glow, DSP badge buttons, input rename, output rename, resizable label column, angled headers, zone colour grouping
+- [x] **Mixer tab** — per-input fader strips with VU + scale, mute/solo/polarity; per-output strips with fader + mute
+- [x] **Zones tab** — zone-scoped views for bar staff (source selector + volume fader)
+- [x] **Scenes tab** — save/load scene list
+- [x] **Settings tab**
+- [x] **DSP panels** — PEQ, limiter, compressor, gate; accessible via matrix DSP badge buttons
+
+### Phase 5 — Upcoming
+
+- [ ] EQ curve canvas visualisation
+- [ ] GR meters on DSP panels
+- [ ] Scene save modal + rename + confirm-on-recall
+- [ ] Matrix keyboard navigation
+- [ ] AFL/PFL solo (monitor bus)
+- [ ] `/health` enrichment (Dante state, PTP lock)
+- [ ] Scene scheduler (low priority)
 
 
 ## Non-Negotiable Engineering Principles

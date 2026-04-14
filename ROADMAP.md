@@ -16,32 +16,28 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 
 ---
 
-## Upcoming
+## UI Sprint History
 
-### `/health` endpoint — richer diagnostics
-**Status:** ⏳ Basic endpoint exists (`GET /api/v1/health`) — returns `status`, version, channel counts. Dante connection state and PTP lock not yet exposed.
-
-| Deliverable | Notes |
+| Sprint | Delivered |
 |---|---|
-| Dante connection status | Is the Inferno device up and subscribed? |
-| PTP lock state | Is statime synced? Read from `/tmp/ptp-usrvclock` socket |
-| Active route count | How many matrix routes are non-zero |
-
-Low effort, high value for monitoring and inferno-central integration.
-
----
-
-### Scene scheduler
-**Status:** ⏳ Planned — low priority
-
-Time-based auto-recall of scenes (e.g. "Stage open at 20:00"). Scenes themselves work; scheduler does not exist yet.
+| **Sprint 1** | Dark SPA shell, Matrix tab skeleton, Mixer tab skeleton, WebSocket VU backbone |
+| **Sprint 2** | Monitor bus backend, RT-safe solo/mute/polarity in DSP callback |
+| **Sprint 3** | Matrix crosspoint level glow (orange/amber dots), VU meters with dB scale markings (0/−10/−20/−40 dBFS), solo/mute/polarity buttons on input strips (mixer), DSP badge buttons on matrix rows |
+| **Sprint 4** | Input channel rename (double-click ch-name in matrix), output column rename (double-click angled header), resizable input label column (drag right edge, 8 px hit zone), angled output column headers (−60 deg, left-aligned origin), DSP badge sizing (matrix vs mixer distinction) |
 
 ---
 
-### inferno-central integration
-**Status:** ⏳ Waiting on inferno-central
+## Upcoming Backlog
 
-Patchbox nodes can be identified by querying `/api/v1/health` — no additional mDNS record needed (Inferno already advertises the node on Dante mDNS).
+| Item | Description | Priority |
+|---|---|---|
+| EQ curve canvas | Visual frequency response curve on parametric EQ panel | Medium |
+| GR meters | Gain reduction meters on compressor/limiter/gate DSP panels | Medium |
+| Scene modal | Save-as dialog, rename, confirm-on-recall | Medium |
+| Matrix keyboard nav | Arrow keys to move focus, Enter to toggle crosspoint | Low |
+| AFL/PFL solo | Monitor bus routing to dedicated output (backend + UI) | Medium |
+| `/health` enrichment | Add Dante connection state, PTP lock status, active route count | Low |
+| Scene scheduler | Time-based auto-recall (e.g. "Stage open at 20:00") | Low |
 
 ---
 

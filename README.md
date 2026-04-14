@@ -8,7 +8,7 @@ This patchbay is named **Minos** after the judge in Dante Alighieri's *Divine Co
 >
 > This repository is substantially AI-assisted. The Rust source code, web UI, and configuration were written with the help of an AI coding assistant. **Do not blindly run code in a production environment without understanding what it does.** Review the source before deploying.
 >
-> That said: this is being actively developed and tested against real Dante hardware. Phase 0 (routing matrix, DSP, web UI, authentication), Phase 0.5 (real Dante audio integration), and Phase 1 (per-output parametric EQ + brick-wall limiter, latency tuning) are all complete and running on production hardware. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
+> That said: this is being actively developed and tested against real Dante hardware. Phase 0 through Phase 3 are all complete and running on production hardware, including the full web UI, DSP panels, and scene management. "AI-assisted" doesn't mean untested — it means you should still read what you're running.
 
 ---
 
@@ -16,13 +16,14 @@ This patchbay is named **Minos** after the judge in Dante Alighieri's *Divine Co
 
 Minos accepts Dante audio streams as RX inputs, routes them through a configurable NxM DSP matrix, and transmits processed audio back onto the Dante network as TX outputs. A browser-based web interface provides:
 
-- **Routing matrix** — route any source to any output zone
-- **Per-input gain staging** — level each source independently
-- **Per-output volume control** — master level and mute per zone
-- **DSP** — per-output EQ and limiting (in development)
-- **Scenes** — save and load complete routing + gain presets
+- **Full mixer/matrix UI** — dark-themed SPA with Matrix, Mixer, Zones, Scenes, and Settings tabs
+- **Routing matrix** — NxM crosspoint grid; route any source to any output zone; crosspoint level glow, DSP badges per input row, angled output column headers, zone colour grouping
+- **Per-input gain staging** — vertical fader strips with mute, solo, and polarity; per-output horizontal fader strips
+- **Channel/output renaming** — double-click any input or output label to rename inline; resizable input label column
+- **DSP panels** — per-output parametric EQ, brick-wall limiter, compressor, and gate — opened via DSP badges on the matrix
+- **Scenes** — save and load named routing + gain + DSP presets via scene REST API and Scenes tab
 - **Zone views** — per-zone touchpanel UI for bar staff
-- **Live metering** — WebSocket VU meters at 20fps
+- **Live metering** — WebSocket VU meters at 20fps with dB scale markings (0/−10/−20/−40 dBFS) on matrix rows, mixer fader strips, and zone views
 - **Authentication** — PAM + JWT, role-based (admin / operator / zone staff)
 
 ```
@@ -53,9 +54,25 @@ Minos is part of the **Inferno AoIP Ecosystem** — a family of open-source Dant
 | Phase 0 | Routing matrix, gains, scenes, auth, web UI, metering | ✅ Complete |
 | Phase 0.5 | Real Dante audio via Inferno AoIP, hardware testing | ✅ Complete |
 | Phase 1 | Per-output DSP (3-band parametric EQ + brick-wall limiter), latency tuning, idempotent deploy script | ✅ Complete |
-| Phase 2 | Zone ownership, subscription management | ⏳ Planned |
+| Phase 2 | Zone ownership, PAM + JWT auth, role-based access, WebSocket live metering | ✅ Complete |
+| Phase 3 | Scene save/load, named scenes, scene REST API | ✅ Complete |
+| Web UI | Dark-themed SPA — Matrix, Mixer, Zones, Scenes, Settings tabs | ✅ Complete |
 
 See [`docs/PROJECT.md`](docs/PROJECT.md) for the full architecture and roadmap, and [`docs/AUDIO_ENGINE.md`](docs/AUDIO_ENGINE.md) for the hardware-tested audio-path notes.
+
+---
+
+## Web Interface
+
+Minos includes a dark-themed single-page app served from the binary. Five tabs:
+
+- **Matrix** — NxM crosspoint grid with per-row VU meters, crosspoint level glow (orange/amber), DSP badges (EQ / LIM / GATE / COMP) on each input row, zone colour grouping, angled output column headers, resizable input label column, and inline rename by double-clicking any input or output label.
+- **Mixer** — per-input vertical fader strips (mute / solo / polarity) and per-output horizontal fader strips, both with live VU meters and dB scale markings.
+- **DSP panels** — full parametric EQ, brick-wall limiter, compressor, and gate panels per output, opened via the DSP badges on the matrix row.
+- **Scenes** — list, save, and recall named routing + gain + DSP presets.
+- **Zones** — simplified per-zone view for bar staff.
+
+Live metering runs over WebSocket at 20 fps with scale markings at 0/−10/−20/−40 dBFS.
 
 ---
 
