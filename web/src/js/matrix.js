@@ -203,6 +203,35 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
   vu.appendChild(vuFill);
   label.appendChild(vu);
 
+  // Right-edge resize affordance on every label cell
+  label.addEventListener('mousedown', e => {
+    const r = label.getBoundingClientRect();
+    if (e.clientX >= r.right - 8) {
+      e.preventDefault();
+      const viewport = label.closest('.matrix-viewport');
+      if (!viewport) return;
+      const startX = e.clientX;
+      const startW = parseInt(getComputedStyle(viewport).getPropertyValue('--label-w').trim(), 10) || 380;
+      label.classList.add('resizing');
+      const onMove = mv => {
+        const newW = Math.max(120, startW + (mv.clientX - startX));
+        viewport.style.setProperty('--label-w', newW + 'px');
+      };
+      const onUp = () => {
+        label.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+  });
+  label.addEventListener('mousemove', e => {
+    const r = label.getBoundingClientRect();
+    label.style.cursor = e.clientX >= r.right - 8 ? 'col-resize' : '';
+  });
+  label.addEventListener('mouseleave', () => { label.style.cursor = ''; });
+
   row.appendChild(label);
 
   // Crosspoint cells
