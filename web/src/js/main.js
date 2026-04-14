@@ -80,6 +80,14 @@ export function updateStatusBar() {
 
   const devEl = document.getElementById('tb-device');
   if (devEl && sys.hostname) devEl.textContent = sys.hostname;
+
+  const dropsEl = document.getElementById('sb-drops');
+  if (dropsEl) {
+    const drops = sys.audio_drops ?? 0;
+    dropsEl.textContent = `Drops: ${drops}`;
+    dropsEl.title = `Audio sample drops since last restart${sys.uptime_s ? ' · Uptime: ' + _fmtUptime(sys.uptime_s) : ''}`;
+    dropsEl.className = 'status-item' + (drops > 0 ? ' drops-warn' : '');
+  }
 }
 
 export function updateWsStatus(state) {
@@ -87,6 +95,26 @@ export function updateWsStatus(state) {
   if (!el) return;
   const on = state === 'connected';
   el.innerHTML = `<span class="dot ${on ? 'dot-live' : 'dot-offline'}"></span>WS`;
+}
+
+function _fmtUptime(s) {
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+}
+
+// Poll /api/v1/system every 30s to keep audio_drops + uptime fresh
+let _sysPollTimer = null;
+function _startSystemPoll() {
+  if (_sysPollTimer) return;
+  _sysPollTimer = setInterval(async () => {
+    try {
+      const system = await api.getSystem();
+      st.setSystem(system);
+      if (system.ptp_locked !== undefined) st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
+      updateStatusBar();
+    } catch (_) {}
+  }, 30000);
 }
 
 // ── Login flow ─────────────────────────────────────────────────────────────
@@ -162,6 +190,7 @@ async function loadAll() {
 
     // Start WebSocket
     initWs();
+    _startSystemPoll();
 
   } catch (e) {
     if (e.message !== '401') {

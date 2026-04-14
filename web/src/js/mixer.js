@@ -151,7 +151,7 @@ function _buildInputStrip(ch) {
     dbLabel.textContent = _db(db);
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
-      api.putChannel(ch.id, { gain_db: db }).catch(e => toast(e.message, true));
+      api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
     }, 80);
   };
 

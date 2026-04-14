@@ -72,7 +72,7 @@ function _buildLeft(channels) {
     row.className = 'ch-label';
     row.dataset.chId = ch.id;
 
-    // Top row: number + name + VU bar
+    // Single row: number + name + DSP badges + VU bar
     const topRow = document.createElement('div');
     topRow.className = 'ch-label-top';
 
@@ -87,20 +87,7 @@ function _buildLeft(channels) {
     name.textContent = ch.name ?? ch.id;
     topRow.appendChild(name);
 
-    const vu = document.createElement('span');
-    vu.className = 'ch-vu';
-    vu.id = 'vu-rx-' + ch.id;
-    const vuFill = document.createElement('span');
-    vuFill.className = 'vu-fill';
-    vuFill.id = 'vu-fill-' + ch.id;
-    vu.appendChild(vuFill);
-    topRow.appendChild(vu);
-
-    row.appendChild(topRow);
-
-    // Bottom row: DSP block badges
-    const dspRow = document.createElement('div');
-    dspRow.className = 'ch-dsp-inline';
+    // DSP badges inline, to the right of the name
     const dsp = ch.dsp ?? {};
     Object.keys(dsp).forEach(blk => {
       const block = dsp[blk];
@@ -117,9 +104,19 @@ function _buildLeft(channels) {
         e.stopPropagation();
         openPanel(blk, ch.id, badge);
       };
-      dspRow.appendChild(badge);
+      topRow.appendChild(badge);
     });
-    row.appendChild(dspRow);
+
+    const vu = document.createElement('span');
+    vu.className = 'ch-vu';
+    vu.id = 'vu-rx-' + ch.id;
+    const vuFill = document.createElement('span');
+    vuFill.className = 'vu-fill';
+    vuFill.id = 'vu-fill-' + ch.id;
+    vu.appendChild(vuFill);
+    topRow.appendChild(vu);
+
+    row.appendChild(topRow);
 
     rows.appendChild(row);
   });
@@ -163,17 +160,40 @@ function _buildHeader(outputs, txZoneMap) {
       col.style.setProperty('--zone-sep-color', st.getZoneColour(zone.colour_index ?? 0));
     }
 
-    // Short label: number + abbreviated name
+    // Number
+    const numEl = document.createElement('span');
+    numEl.style.cssText = 'font-size:13px;font-weight:700;color:var(--text-primary)';
+    numEl.textContent = i + 1;
+    col.appendChild(numEl);
+
+    // Abbreviated name
     const label = out.name ?? out.id;
     const abbr  = label.length > 6 ? label.slice(0, 6) : label;
-    col.innerHTML = `
-      <span style="font-size:13px;font-weight:700;color:var(--text-primary)">${i + 1}</span>
-      <span style="font-size:11px;color:var(--text-secondary);overflow:hidden;max-width:52px;text-overflow:ellipsis;white-space:nowrap" title="${_esc(label)}">${_esc(abbr)}</span>
-    `;
-    col.style.flexDirection = 'column';
-    col.style.alignItems = 'center';
+    const nameEl = document.createElement('span');
+    nameEl.style.cssText = 'font-size:11px;color:var(--text-secondary);overflow:hidden;max-width:72px;text-overflow:ellipsis;white-space:nowrap';
+    nameEl.title = label;
+    nameEl.textContent = abbr;
+    col.appendChild(nameEl);
 
-    // Add output VU bar
+    // Output DSP badges
+    const outObj = st.state.outputs.get(out.id);
+    const outDsp = outObj?.dsp ?? {};
+    Object.keys(outDsp).forEach(blk => {
+      const block = outDsp[blk];
+      const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+      const badge = document.createElement('button');
+      badge.className = 'ch-dsp-badge out-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+      badge.dataset.block = blk;
+      badge.dataset.ch = out.id;
+      badge.textContent = colour.label ?? blk.toUpperCase();
+      badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+      badge.style.background = colour.bg;
+      badge.style.color = colour.fg;
+      badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, out.id, badge); };
+      col.appendChild(badge);
+    });
+
+    // Output VU bar at bottom
     const vuWrap = document.createElement('div');
     vuWrap.className = 'out-vu-wrap';
     const vuFill = document.createElement('div');

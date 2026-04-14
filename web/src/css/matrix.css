@@ -60,14 +60,16 @@
 }
 
 .output-col {
-  flex: 1 1 var(--col-w);
-  min-width: var(--col-w);
-  max-width: 100px;
-  height: var(--row-h);
+  flex: 1 1 60px;
+  min-width: 44px;
+  max-width: 80px;
+  min-height: var(--row-h);
+  padding: 4px 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 2px;
   border-right: 1px solid var(--border-subtle);
   font-size: 11px;
   color: var(--text-muted);
@@ -103,11 +105,9 @@
 /* Channel Label — two-row layout: top = num+name+vu, bottom = DSP badges */
 .ch-label {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  align-items: center;
   height: var(--row-h);
-  padding: 4px 8px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border-subtle);
   cursor: default;
 }
@@ -116,7 +116,8 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -132,8 +133,9 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -197,16 +199,23 @@
   box-shadow: 0 0 5px currentColor;
 }
 
+/* Output DSP badges — compact variant for narrow header columns */
+.out-dsp-badge {
+  height: 20px !important;
+  min-width: 28px !important;
+  font-size: 9px !important;
+  padding: 1px 3px !important;
+  margin: 0 !important;
+}
+
 /* Output column VU bar */
 .out-vu-wrap {
-  position: absolute;
-  bottom: 0;
-  left: 4px;
-  right: 4px;
+  width: 100%;
   height: 6px;
   background: var(--meter-bg);
   border-radius: 1px;
   overflow: hidden;
+  margin-top: auto;
 }
 
 .out-vu-fill {
@@ -222,9 +231,9 @@
 
 /* Crosspoint Cell */
 .xp-cell {
-  flex: 1 1 44px;
-  max-width: 120px;
-  min-width: var(--col-w);
+  flex: 1 1 60px;
+  min-width: 44px;
+  max-width: 80px;
   height: var(--row-h);
   display: flex;
   align-items: center;

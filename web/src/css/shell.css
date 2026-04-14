@@ -123,6 +123,11 @@
   color: var(--color-warn);
 }
 
+.status-item.drops-warn {
+  color: var(--vu-red);
+  font-weight: 700;
+}
+
 .status-sep {
   color: var(--text-dim);
   margin: 0 4px;
