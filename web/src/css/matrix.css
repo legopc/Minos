@@ -216,10 +216,10 @@
 
 /* Output DSP badges — compact for narrow column headers */
 .out-dsp-badge {
-  height: 18px !important;
-  min-width: 26px !important;
-  font-size: 9px !important;
-  padding: 1px 3px !important;
+  height: 32px !important;
+  min-width: 48px !important;
+  font-size: 12px !important;
+  padding: 4px 6px !important;
 }
 
 /* ── Output Column VU bar ───────────────────────────────────────────────── */
