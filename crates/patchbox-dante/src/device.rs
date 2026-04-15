@@ -203,6 +203,14 @@ impl DanteDevice {
         let initial_cfg = config.read().await.clone();
         let (mut tb_input, mut tb_output) = triple_buffer(&initial_cfg);
 
+        // Monitor audio triple-buffer (RT → ALSA writer)
+        let (mut mon_tb_input, mon_tb_output) = triple_buffer(&[0.0f32; patchbox_core::matrix::MAX_FRAMES]);
+        let mon_tb_output_arc = Arc::new(std::sync::Mutex::new(mon_tb_output));
+        let mon_nframes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mon_active  = Arc::new(AtomicBool::new(false));
+        let mon_active_cb  = mon_active.clone();
+        let mon_nframes_cb = mon_nframes.clone();
+
         // Background task: push config updates into triple buffer every 10ms
         // Also manages ALSA monitor writer lifecycle — spawns/restarts on device change.
         let config_ref = config.clone();
@@ -305,14 +313,6 @@ impl DanteDevice {
         let panic_reset_ts_cb = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let panic_count_inner    = Arc::clone(&panic_count_cb);
         let panic_reset_ts_inner = Arc::clone(&panic_reset_ts_cb);
-
-        // Monitor audio triple-buffer (RT → ALSA writer)
-        let (mut mon_tb_input, mon_tb_output) = triple_buffer(&[0.0f32; patchbox_core::matrix::MAX_FRAMES]);
-        let mon_tb_output_arc = Arc::new(std::sync::Mutex::new(mon_tb_output));
-        let mon_nframes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let mon_active  = Arc::new(AtomicBool::new(false));
-        let mon_active_cb  = mon_active.clone();
-        let mon_nframes_cb = mon_nframes.clone();
 
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use std::panic::{self, AssertUnwindSafe};
