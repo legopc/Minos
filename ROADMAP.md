@@ -31,86 +31,108 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 
 ## Upcoming Backlog
 
-### ✅ Critical — All Complete
-
-| Item | Evidence |
-|---|---|
-| Config fsync on write | `state.rs` — `f.sync_all()` + parent dir fsync after atomic rename |
-| Persist error propagation | `api.rs` — `persist_or_500!` macro returns `500 + {"error":…, "in_memory":true}` |
-| RT callback panic guard | `device.rs` — `catch_unwind` + circuit breaker (>3 panics/60s → drop SCHED_FIFO) |
+> Full implementation specs for all items below are in [GAP_ANALYSIS.md](../GAP_ANALYSIS.md).
+> Effort estimates are from that document.
 
 ---
 
-### ✅ High — All Complete
+### Sprint 1 — Core Mixer Capabilities (~12–14 days)
 
-| Item | Evidence |
-|---|---|
-| JWT secret persisted to disk | `jwt.rs:65` — loads/creates `/etc/patchbox/jwt.key` |
-| JWT refresh flow | `auth_api.rs:66` — `/api/v1/auth/refresh` endpoint registered |
-| Input Gain Badge | `api.rs:699` — `input_dsp_to_value()` emits `"am"` block |
-| Parameter ramping (zipper noise) | `matrix.rs:17–198` — `RampState` + per-sample `gain_ramp.tick()` |
-| Denormal protection | `device.rs:570–578` — MXCSR FTZ+DAZ via inline asm |
-| Offline UI banner | `ws.js:47` + `main.js:221–235` + `#offline-banner` in HTML |
-| Destructive action modals | `modal.js` — full `confirmModal()` impl; no `window.confirm()` in codebase |
-| Config validation on load | `config.rs:535` — `validate()` called before use in `main.rs:34` |
-| WS zombie connection cleanup | `api.rs:1936` — `send_task.abort()` on connection drop |
-| **Internal submix buses** | ✅ Complete — Sprint 5 |
-| **AFL/PFL solo** | ✅ Complete — Sprint F |
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| Input Gain Badge fix | ✅ | — | `input_dsp_to_value()` emits `"am"` block — done |
+| Internal submix buses | ✅ | — | Complete — Sprint 5 |
+| Per-crosspoint gain | ⬜ | 3–4 days | Replace boolean matrix with f32 dB gain per crosspoint. Backward compat: `true→0.0`, `false→-∞`. Scroll/shift-click to adjust. Crosspoint `RampState` for zipper-free changes. |
+| DC blocker on inputs | ⬜ | 2 hrs | Fixed 0.5 Hz 1st-order HPF on every input, always on, before all other DSP. Removes phantom DC offset. |
 
 ---
 
-### 🟡 Medium — UI/UX Improvements
+### Sprint 2 — Signal Generators + Metering (~8–9 days)
 
-| Item | Status | Description |
-|---|---|---|
-| Scene modal | ⬜ | Save-as dialog, rename in-place, confirm-on-recall with diff preview |
-| EQ curve canvas | ⬜ | Visual frequency response curve rendered on parametric EQ panel |
-| GR meters | ⬜ | Gain reduction meters on limiter/compressor/gate DSP panels |
-| Clipping detection + indicator | ⬜ | Post-limiter clip counter per output channel; persistent badge showing "CLIPPED ×3"; resets manually |
-| Crosspoint pending state | ✅ | `matrix.js` — `_pendingCrosspoints` map + CSS `pending` class guards double-click |
-| Persistent peak hold on meters | ✅ | `mixer.js` — `strip-meter-peak-hold` elements per strip with hold line |
-| DSP panel overflow fix | ✅ | Panels constrained to viewport — no off-screen rendering |
-| Fader edit affordance | ⬜ | Double-click to type exact dB value is undiscoverable; add tooltip or pencil icon on dB label |
-| Keyboard shortcuts | ✅↗ | Core shortcuts implemented; can be expanded (e.g. `?` help overlay, additional bindings) |
-| API retry on transient failure | ✅ | `api.js:47–55` — `reqWithRetry` with 3× exponential backoff on GET/PUT |
-| Empty matrix state | ✅ | Hint shown when no routes exist |
-| Config backup/restore UI | ⬜ | Add scheduled backup endpoint + restore from list of last 10 backups in System tab |
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| Signal generators | ⬜ | 4–5 days | Built-in sine/pink noise/white noise generators as virtual input rows. No-alloc RT: xorshift64 PRNG + Voss-McCartney pink. REST API + matrix/mixer UI rows. |
+| GR meters | ⬜ | 1.5 days | Gain reduction meters on compressor/limiter/gate DSP panels. Backend already computes `last_gr_db` — add to WS frames + frontend meter bar. |
+| Clipping detection + indicator | ⬜ | 1 day | Post-limiter clip counter per output. Red CLIP badge on strip and matrix header. `POST /api/v1/outputs/:ch/reset-clip`. |
+| EQ curve canvas | ⬜ | 1.5 days | HTML5 canvas frequency response curve (20 Hz–20 kHz, log scale) computed from biquad transfer functions. Pure frontend, no backend changes. |
+| Peak hold refinement | ⬜ | 0.5 days | Backend: include true peak (max abs sample) alongside RMS in WS metering frames. Frontend already has hold-line display. |
 
 ---
 
-### 🟢 Audio / DSP Improvements
+### Sprint 3 — AEC + VCA Groups + Scene Crossfade (~16–20 days)
 
-| Item | Description |
-|---|---|
-| DC blocker on inputs | 1st-order HPF at ~0.5 Hz removes phantom power DC offset accumulation |
-| Scene recall crossfade | Ramp gain/EQ/compression changes over configurable time (0–5000ms) instead of instant snap |
-| True peak + LUFS metering | 3× oversampled true peak detector + EBU R128 block-based LUFS for broadcast/streaming |
-| Gate look-ahead | 1–5ms look-ahead buffer in GateExpander prevents gate chop on fast transients |
-| Compressor look-ahead + sidechain | 0–20ms look-ahead + optional HPF sidechain filter + dry/wet parallel compression blend |
-| Per-channel delay compensation | Track DSP latency per chain; auto-align shorter channels to longest for phase coherence |
-| Variable sample rate | `SAMPLE_RATE` hardcoded to 48kHz; parameterise for 44.1k/96k support |
-| Stereo width / M/S processing | Optional M/S matrix on output pairs with width_pct (0–200%) + correlation metering |
-| Dither on output | Triangular dither before bit-depth downsampling (24→16 bit) for quiet-signal quality |
-| De-esser | Frequency-selective gate variant: sidechain HPF (4–8kHz) triggers attenuation of full band |
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| AEC via `aec3` crate | ⬜ | 4–5 days | Acoustic echo cancellation per input using the `aec3` crate (pure Rust WebRTC AEC3 port). Feature-gated (`--features aec`). 480-sample accumulator to bridge Dante block size to AEC frame size. Reference signal = assigned zone TX output. |
+| VCA groups | ⬜ | 4.5 days | Groups of inputs or outputs controlled by a single gain offset fader. Proportional level control — not audio summing. VCA `RampState` for smooth transitions. Fader strips in Mixer tab. |
+| Scene recall crossfade | ⬜ | 4–6 days | Configurable ramp time (0–5000 ms) on scene load. Uses existing `RampState`; routes fade in/out via gain rather than instant crosspoint toggle. |
+| Stereo link | ⬜ | 3–4 days | Link adjacent channel pairs with ganged gain/mute/solo and pan control. EQ/dynamics linkable or independent. |
 
 ---
 
-### ⚪ Low / Future
+### Sprint 4 — Automixer + Feedback Suppression (~13–20 days)
 
-| Item | Description |
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| Gain-sharing automixer | ⬜ | 3–4 days | Dugan-style: total system gain constant; each mic's gain proportional to its level vs. sum of all. New `dsp/automixer.rs`, sits between input DSP and matrix routing. |
+| Gating automixer | ⬜ | 4–5 days | NOM-based attenuation variant. Shares infrastructure with gain-sharing. Adds `off_attenuation_db`, `hold_time_ms`, `last_mic_hold`. |
+| Automixer UI | ⬜ | 1–2 days | Panel showing NOM count, per-channel gate/gain state, threshold visualization. |
+| Feedback suppression | ⬜ | 5–8 days | Automatic notch filters: detect sustained single-frequency peaks via FFT/Goertzel, insert narrow notch (Q≈30–50). Up to 12 notches per channel with configurable auto-release. |
+
+---
+
+### Sprint 5 — DSP Extras + Touch (~11–15 days)
+
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| Dynamic EQ | ⬜ | 3–5 days | EQ band that only engages above threshold. Combination of compression + equalization per band. |
+| De-esser | ⬜ | 2–3 days | Frequency-selective compressor with HPF sidechain (4–8 kHz). Attenuates sibilance on vocal channels. |
+| Dither on output | ⬜ | 1 day | Triangular dither before 24→16 bit conversion at end of `PerOutputDsp::process_block()`. |
+| Multi-touch fader control | ⬜ | 2 days | Replace mouse events with pointer events in `mixer.js`. Track multiple simultaneous touches by `pointerId`. |
+| Custom zone panels | ⬜ | 3–4 days | Configurable per-zone touchpanel layout. Operator defines visible/locked controls for bar staff. |
+
+---
+
+### Sprint 6 — System Admin + Polish (~14–18 days)
+
+| Item | Status | Est. | Description |
+|---|---|---|---|
+| Scene modal | ⬜ | 2 days | Save-as dialog, rename in-place (`PATCH /api/v1/scenes/:name`), confirm-on-recall with diff preview. |
+| Config backup/restore UI | ⬜ | 2 days | Export/import already exist; add `GET /api/v1/system/backups` list + restore endpoint. UI in System tab. |
+| Responsive / mobile layout | ⬜ | 3–4 days | Matrix and mixer views usable on tablets. Touch-friendly hit targets. |
+| Audit logging | ⬜ | 1–2 days | Structured JSON log `{timestamp, user, action, endpoint, summary}` → `/var/log/patchbox-audit.log` via tracing. |
+| Prometheus metrics | ⬜ | 1–1.5 days | `/metrics` — `audio_callbacks_total`, `resyncs_total`, `ws_clients_active`, `config_write_duration_ms`, `ptp_offset_ns`. |
+| PTP health accuracy | ⬜ | 0.5 days | Report actual clock offset + lock duration from statime, not just socket existence. |
+| Config schema versioning | ⬜ | 1 day | `schema_version` field + migration functions; reject future-version configs with helpful error. |
+| Bulk mutations API | ⬜ | 1–2 days | `POST /api/v1/bulk-update` — batch route/gain/DSP in one transaction. Reduces 1024 calls to 1 for full repatch. |
+| Scene scheduler | ⬜ | 2–3 days | Time-based auto-recall (e.g. "Stage open at 20:00", "Background at 02:00"). |
+| API rate limiting | ⬜ | 0.5 days | 100 req/s per IP on public endpoints; 429 + Retry-After on breach. |
+
+---
+
+### ✅ Completed — All Sprints Prior
+
+| Item | Completed |
 |---|---|
-| Bulk mutations API | `POST /api/v1/bulk-update` — batch route/gain changes in one transaction; reduces 1024 calls to 1 for 32×32 full repatch |
-| Prometheus metrics endpoint | `/metrics` — `audio_callbacks_total`, `resyncs_total`, `ws_clients_active`, `config_write_duration_ms` |
-| Audit log | Structured JSON log of who changed what route/config and when; write to `/var/log/patchbox-audit.log` |
-| Config schema versioning | `schema_version` field + migration functions; reject future-version configs with helpful error |
-| Rate limiting | 100 req/s per IP on public endpoints; 429 + Retry-After on breach |
-| PTP health accuracy | `ptp_locked` currently just checks socket exists; poll actual clock offset + add `ptp_offset_ns` to health response |
-| API response consistency | Standardise all mutations to `204 No Content`; all errors to `{error, code}` JSON |
-| Scene scheduler | Time-based auto-recall (e.g. "Stage open at 20:00") |
-| Matrix keyboard nav | Arrow keys move crosspoint focus, Enter toggles route |
-| Dynamic EQ | Frequency-dependent compression on a PEQ band; 1-band variant for output de-essing |
-| Input insert sends | Post-compressor send/return point for aux effects or external hardware inserts |
-| Integration tests for persistence | Test atomic write race conditions, corruption recovery, config upgrade paths |
+| Config fsync + persist error propagation | Pre-sprint |
+| RT callback panic guard + circuit breaker | Pre-sprint |
+| JWT secret persistence + token refresh | Pre-sprint |
+| Parameter ramping (anti-zipper) | Pre-sprint |
+| Denormal protection (FTZ/DAZ) | Pre-sprint |
+| Offline UI banner | Pre-sprint |
+| Destructive action modals | Pre-sprint |
+| Config validation on load | Pre-sprint |
+| WS zombie connection cleanup | Pre-sprint |
+| Crosspoint pending state | Pre-sprint |
+| Persistent peak hold (frontend) | Pre-sprint |
+| API retry with exponential backoff | Pre-sprint |
+| DSP panel overflow fix | Pre-sprint |
+| Keyboard shortcuts (core) | Pre-sprint |
+| Empty matrix state hint | Pre-sprint |
+| Fader edit affordance | Pre-sprint |
+| Input Gain Badge | Sprint 1 |
+| Internal submix buses | Sprint 5 |
+| AFL/PFL solo monitor | Sprint F |
 
 ---
 
