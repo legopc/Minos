@@ -20,29 +20,39 @@
   flex: 1;
 }
 
-.tabbar-logo {
+.tabbar-logo,
+.tabbar-device,
+.tabbar-sep,
+.tabbar-user {
+  display: flex;
+  align-items: center;
+  height: 100%;
   font-size: 11px;
-  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.tabbar-logo {
+  color: var(--text-muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-weight: 600;
   padding: 0 8px;
 }
 
 .tabbar-device {
-  font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-primary);
+  font-weight: 600;
   padding: 0 4px;
 }
 
 .tabbar-sep {
-  font-size: 11px;
   color: var(--text-dim);
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 .tabbar-user {
-  font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  font-weight: 500;
   padding: 0 12px 0 4px;
 }
 

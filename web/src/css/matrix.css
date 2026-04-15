@@ -49,12 +49,170 @@
   background: var(--bg-dark);
   border-right: 1px solid var(--border-primary);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 0.08em;
+  flex-direction: row;   /* inner column + resize handle side by side */
+  align-items: stretch;
+  padding: 0;
 }
+
+.corner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Corner inner column ────────────────────────────────────────────────── */
+.corner-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── Corner filter row ──────────────────────────────────────────────────── */
+.corner-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.corner-filter-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-surface, #1a1a1a);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-family: inherit;
+  padding: 3px 6px;
+  outline: none;
+}
+.corner-filter-input:focus {
+  border-color: var(--color-accent);
+}
+.corner-filter-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+/* ── Corner action buttons row ──────────────────────────────────────────── */
+.corner-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.corner-btn {
+  font-size: 9px;
+  font-family: inherit;
+  padding: 2px 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  background: var(--bg-surface, #222);
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.corner-btn:hover {
+  background: var(--bg-row-hover, #2a2a2a);
+  color: var(--text-primary);
+  border-color: var(--color-accent);
+}
+.corner-btn.active {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.corner-btn.pending {
+  border-color: #f59e0b;
+  color: #f59e0b;
+  animation: corner-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes corner-pulse {
+  from { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+  to   { box-shadow: 0 0 6px 2px rgba(245,158,11,0.4); }
+}
+
+.corner-lock-btn {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 5px;
+}
+
+/* ── Corner status row ──────────────────────────────────────────────────── */
+.corner-status-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.corner-stat {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.corner-stat.danger {
+  color: var(--vu-red, #ef4444);
+  font-weight: 600;
+}
+
+/* ── Unrouted row highlight ─────────────────────────────────────────────── */
+.xp-row.unrouted-highlight .ch-label {
+  background: color-mix(in srgb, #ef444412 80%, var(--bg-dark));
+}
+.xp-row.unrouted-highlight {
+  background: #ef444408;
+}
+
+.corner-dims {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.corner-routes,
+.corner-routes-label,
+.corner-routes-bar,
+.corner-routes-fill,
+.corner-routes-total { display: none; }
+
+.corner-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.corner-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.corner-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.corner-dot-local { background: var(--xp-local); }
+.corner-dot-dante { background: var(--xp-dante); }
 
 /* ── Output Column Headers ──────────────────────────────────────────────── */
 .out-hdr {
@@ -170,6 +328,21 @@
   padding: 0 8px;
   gap: 5px;
   cursor: default;
+  overflow: hidden;
+}
+
+.ch-label::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: var(--signal-pct, 0%);
+  background: var(--signal-color, var(--vu-green));
+  transition: width 0.08s linear;
+  border-radius: 0 1px 1px 0;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .xp-row:hover .ch-label {
@@ -250,8 +423,9 @@
   height: 38px;
   min-width: 52px;
   user-select: none;
-  transition: filter 0.1s, box-shadow 0.1s;
+  transition: filter 0.1s;
   flex-shrink: 0;
+  position: relative;
 }
 
 .ch-dsp-badge:hover {
@@ -259,11 +433,11 @@
 }
 
 .ch-dsp-badge.byp {
-  opacity: 0.3;
+  opacity: 0.35;
 }
 
 .ch-dsp-badge:not(.byp) {
-  box-shadow: 0 0 5px currentColor;
+  border-bottom: 2px solid currentColor;
 }
 
 /* Output DSP badges — compact for narrow column headers */

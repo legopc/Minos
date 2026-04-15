@@ -254,6 +254,7 @@
   cursor: pointer;
   letter-spacing: 0.03em;
   min-height: 36px;
+  position: relative;
 }
 .strip-dsp-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
 .strip-dsp-btn.active {
@@ -317,7 +318,11 @@
 }
 
 .strip-dsp-btn.byp {
-  opacity: 0.3;
+  opacity: 0.35;
+}
+
+.strip-dsp-btn:not(.byp) {
+  border-bottom: 2px solid currentColor;
 }
 
 .mixer-scene-bar {

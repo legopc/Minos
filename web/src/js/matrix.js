@@ -8,6 +8,12 @@ import { DSP_COLOURS } from './dsp/colours.js';
 
 let _container = null;
 
+// ── Corner cell module-level state ────────────────────────────────────────
+let _locked   = false;
+let _soloMode = null;   // null | 'pending' | {channelId, savedRoutes}
+let _copyMode = null;   // null | 'pick-src' | {src}
+const _clipMap = new Map(); // chId -> bool (currently clipping)
+
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
   _container = container;
@@ -83,10 +89,199 @@ function _buildHdrRow(outputs, txZoneMap) {
   // Corner cell (sticky top + left)
   const corner = document.createElement('div');
   corner.className = 'corner-cell';
-  const cornerLabel = document.createElement('span');
-  cornerLabel.textContent = `${outputs.length} OUT`;
-  corner.appendChild(cornerLabel);
-  // Resize handle — flex item at right edge
+
+  const inputs = st.channelList();
+
+  // Inner content column — resize handle stays outside at right edge
+  const inner = document.createElement('div');
+  inner.className = 'corner-inner';
+
+  // ── Dims ──────────────────────────────────────────────────────────────
+  const dimsEl = document.createElement('span');
+  dimsEl.className = 'corner-dims';
+  dimsEl.textContent = `${inputs.length} IN × ${outputs.length} OUT`;
+  inner.appendChild(dimsEl);
+
+  // ── Filter input ──────────────────────────────────────────────────────
+  const filterRow = document.createElement('div');
+  filterRow.className = 'corner-filter-row';
+  const filterInput = document.createElement('input');
+  filterInput.type = 'text';
+  filterInput.className = 'corner-filter-input';
+  filterInput.placeholder = 'filter channels…';
+  filterInput.addEventListener('input', () => {
+    const q = filterInput.value.toLowerCase();
+    const grid = corner.closest('.matrix-grid');
+    if (!grid) return;
+    grid.querySelectorAll('.xp-row').forEach(xpRow => {
+      const lbl  = xpRow.querySelector('.ch-label');
+      const name = (lbl?.querySelector('.ch-name')?.textContent ?? '').toLowerCase();
+      const id   = (lbl?.dataset.chId ?? '').toLowerCase();
+      xpRow.style.display = (!q || name.includes(q) || id.includes(q)) ? '' : 'none';
+    });
+  });
+  filterRow.appendChild(filterInput);
+  inner.appendChild(filterRow);
+
+  // ── Action buttons ─────────────────────────────────────────────────────
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'corner-actions-row';
+
+  // Clear all routes
+  const btnClear = document.createElement('button');
+  btnClear.className = 'corner-btn';
+  btnClear.textContent = '✕ clear';
+  btnClear.title = 'Clear all routes';
+  btnClear.addEventListener('click', async () => {
+    if (!confirm('Clear ALL routes?')) return;
+    const routes = st.routeList().slice();
+    for (const r of routes) {
+      try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
+    }
+    render(_container);
+  });
+  actionsRow.appendChild(btnClear);
+
+  // 1:1 patch
+  const btn1to1 = document.createElement('button');
+  btn1to1.className = 'corner-btn';
+  btn1to1.textContent = '1:1';
+  btn1to1.title = 'Auto-patch inputs to outputs 1-to-1';
+  btn1to1.addEventListener('click', async () => {
+    const chs  = st.channelList();
+    const outs = _orderOutputsByZone(st.outputList(), st.zoneList());
+    for (let i = 0; i < Math.min(chs.length, outs.length); i++) {
+      const rxId = chs[i].id;
+      const txId = outs[i].id;
+      if (!st.getRouteType(rxId, txId)) {
+        try {
+          const route = await api.postRoute(rxId, txId, 'local');
+          st.setRoute({ route_type: 'local', ...route });
+        } catch (_) {}
+      }
+    }
+    render(_container);
+  });
+  actionsRow.appendChild(btn1to1);
+
+  // Snapshot
+  const btnSnap = document.createElement('button');
+  btnSnap.className = 'corner-btn';
+  btnSnap.textContent = '📷 snap';
+  btnSnap.title = 'Save route snapshot';
+  btnSnap.addEventListener('click', async () => {
+    try {
+      await api.postScene('snap-' + Date.now());
+      toast('Snapshot saved');
+    } catch (e) { toast('Snapshot failed: ' + e.message, true); }
+  });
+  actionsRow.appendChild(btnSnap);
+
+  // Solo toggle
+  const isSoloed   = typeof _soloMode === 'object' && _soloMode !== null;
+  const isSoloPend = _soloMode === 'pending';
+  const btnSolo = document.createElement('button');
+  btnSolo.className = 'corner-btn corner-btn-solo' +
+    (isSoloed || isSoloPend ? ' active' : '') +
+    (isSoloPend ? ' pending' : '');
+  btnSolo.textContent = isSoloed ? 'un-solo' : 'solo';
+  btnSolo.title = isSoloed ? 'Restore all routes' :
+    isSoloPend ? 'Pick a channel (or click to cancel)' : 'Solo a channel';
+  btnSolo.addEventListener('click', async () => {
+    if (typeof _soloMode === 'object' && _soloMode !== null) {
+      await _restoreSolo();
+    } else if (_soloMode === 'pending') {
+      _soloMode = null; _refreshCornerButtons();
+    } else {
+      _soloMode = 'pending'; _refreshCornerButtons();
+    }
+  });
+  actionsRow.appendChild(btnSolo);
+
+  // Copy channel
+  const isCopyActive  = !!_copyMode;
+  const isCopyPickSrc = _copyMode === 'pick-src';
+  const isCopyHasSrc  = typeof _copyMode === 'object' && _copyMode !== null;
+  const btnCopy = document.createElement('button');
+  btnCopy.className = 'corner-btn corner-btn-copy' +
+    (isCopyActive ? ' active' : '') +
+    (isCopyActive ? ' pending' : '');
+  btnCopy.textContent = 'copy';
+  btnCopy.title = isCopyPickSrc  ? 'Pick source channel (click to cancel)' :
+    isCopyHasSrc  ? `Copy from "${_copyMode.src}" — pick destination` :
+    'Copy channel routes to another channel';
+  btnCopy.addEventListener('click', () => {
+    if (_copyMode) { _copyMode = null; _refreshCornerButtons(); }
+    else           { _copyMode = 'pick-src'; _refreshCornerButtons(); }
+  });
+  actionsRow.appendChild(btnCopy);
+
+  inner.appendChild(actionsRow);
+
+  // ── Status + lock row ──────────────────────────────────────────────────
+  const statusRow = document.createElement('div');
+  statusRow.className = 'corner-status-row';
+
+  const routes      = st.routeList();
+  const routedChIds = new Set(routes.map(r => r.rx_id));
+  const unroutedN   = inputs.filter(ch => !routedChIds.has(ch.id)).length;
+  const clipN       = Array.from(_clipMap.values()).filter(Boolean).length;
+  const danteN      = routes.filter(r => r.route_type === 'dante').length;
+
+  const statUnrouted = document.createElement('span');
+  statUnrouted.className = 'corner-stat corner-stat-unrouted' + (unroutedN > 0 ? ' danger' : '');
+  statUnrouted.textContent = `○ ${unroutedN} unrouted`;
+  statUnrouted.title = 'Click to highlight / scroll to unrouted rows';
+  statUnrouted.style.cursor = 'pointer';
+  statUnrouted.addEventListener('click', () => {
+    const grid = _container?.querySelector('.matrix-grid');
+    if (!grid) return;
+    const curRoutes = st.routeList();
+    const routedIds = new Set(curRoutes.map(r => r.rx_id));
+    const anyHigh   = !!grid.querySelector('.xp-row.unrouted-highlight');
+    grid.querySelectorAll('.xp-row').forEach(xpRow => {
+      xpRow.classList.toggle('unrouted-highlight', !anyHigh && !routedIds.has(xpRow.dataset.rxId));
+    });
+    if (!anyHigh) {
+      grid.querySelector('.xp-row.unrouted-highlight')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+  statusRow.appendChild(statUnrouted);
+
+  const statClip = document.createElement('span');
+  statClip.className = 'corner-stat corner-stat-clip' + (clipN > 0 ? ' danger' : '');
+  statClip.textContent = `▲ ${clipN} clip`;
+  statClip.title = 'Channels clipping (> −3 dB)';
+  statusRow.appendChild(statClip);
+
+  const statDante = document.createElement('span');
+  statDante.className = 'corner-stat corner-stat-dante';
+  statDante.textContent = `⊕ ${danteN} dante`;
+  statDante.title = 'Active Dante routes';
+  statusRow.appendChild(statDante);
+
+  // Lock toggle
+  const btnLock = document.createElement('button');
+  btnLock.className = 'corner-btn corner-lock-btn' + (_locked ? ' active' : '');
+  btnLock.textContent = _locked ? '🔒' : '🔓';
+  btnLock.title = _locked ? 'Routes locked — click to unlock' : 'Click to lock routes';
+  btnLock.addEventListener('click', () => { _locked = !_locked; _refreshCornerButtons(); });
+  statusRow.appendChild(btnLock);
+
+  inner.appendChild(statusRow);
+
+  // ── Legend ────────────────────────────────────────────────────────────
+  const legendEl = document.createElement('div');
+  legendEl.className = 'corner-legend';
+  legendEl.innerHTML = `
+    <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-local"></span>local</span>
+    <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-dante"></span>dante</span>`;
+  inner.appendChild(legendEl);
+
+  corner.appendChild(inner);
+
+  // Resize handle — must remain last direct child of corner-cell (row layout)
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'ch-label-resize';
   corner.appendChild(resizeHandle);
@@ -232,6 +427,23 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
   });
   label.addEventListener('mouseleave', () => { label.style.cursor = ''; });
 
+  // Solo / copy pick handler
+  label.addEventListener('click', e => {
+    const r = label.getBoundingClientRect();
+    if (e.clientX >= r.right - 8) return; // ignore resize zone
+    if (_soloMode === 'pending') {
+      e.stopPropagation();
+      _execSolo(ch.id);
+    } else if (_copyMode === 'pick-src') {
+      e.stopPropagation();
+      _copyMode = { src: ch.id };
+      _refreshCornerButtons();
+    } else if (typeof _copyMode === 'object' && _copyMode !== null) {
+      e.stopPropagation();
+      _execCopy(_copyMode.src, ch.id);
+    }
+  });
+
   row.appendChild(label);
 
   // Crosspoint cells
@@ -263,6 +475,8 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
 
 // ── Crosspoint toggle ──────────────────────────────────────────────────────
 async function _toggleRoute(rxId, txId, cell) {
+  if (_locked) return;
+  if (_soloMode === 'pending' || _copyMode) return;
   const routeType = st.getRouteType(rxId, txId);
   const prevClass = cell.className;
   try {
@@ -279,6 +493,7 @@ async function _toggleRoute(rxId, txId, cell) {
       st.setRoute({ route_type: 'dante', ...route });
       cell.className = 'xp-cell ' + (st.getRouteType(rxId, txId) ?? 'dante');
     }
+    _updateAllStats();
   } catch (e) {
     cell.className = prevClass; // revert on error
     toast('Route error: ' + e.message, true);
@@ -289,11 +504,24 @@ async function _toggleRoute(rxId, txId, cell) {
 export function updateMetering(rxData, txData) {
   if (rxData) {
     Object.entries(rxData).forEach(([id, db]) => {
+      // Clipping tracking
+      const nowClipping = isFinite(db) && db > -3;
+      if (nowClipping !== (_clipMap.get(id) ?? false)) {
+        _clipMap.set(id, nowClipping);
+        _updateAllStats();
+      }
       const fill = document.getElementById(`vu-fill-${id}`);
       if (fill) {
         const pct = _dbToPercent(db);
         fill.style.height = pct + '%';
         fill.style.background = _dbToColour(db);
+      }
+      // Signal-flow bar on channel label
+      const label = _container?.querySelector(`.ch-label[data-ch-id="${id}"]`);
+      if (label) {
+        const pct = _dbToPercent(db);
+        label.style.setProperty('--signal-pct', pct + '%');
+        label.style.setProperty('--signal-color', _dbToColour(db));
       }
       // Crosspoint dot glow: active routes light up proportional to signal level
       const pct = _dbToPercent(db);
@@ -510,4 +738,119 @@ function _startRename(nameEl, ch) {
       nameEl.style.overflow = '';
     }
   });
+}
+
+// ── Corner stat live update ────────────────────────────────────────────────
+function _updateAllStats() {
+  if (!_container) return;
+  const channels   = st.channelList();
+  const routes     = st.routeList();
+  const routedIds  = new Set(routes.map(r => r.rx_id));
+  const unroutedN  = channels.filter(ch => !routedIds.has(ch.id)).length;
+  const danteN     = routes.filter(r => r.route_type === 'dante').length;
+  const clipN      = Array.from(_clipMap.values()).filter(Boolean).length;
+
+  const unrEl = _container.querySelector('.corner-stat-unrouted');
+  if (unrEl) {
+    unrEl.textContent = `○ ${unroutedN} unrouted`;
+    unrEl.classList.toggle('danger', unroutedN > 0);
+  }
+  const danteEl = _container.querySelector('.corner-stat-dante');
+  if (danteEl) danteEl.textContent = `⊕ ${danteN} dante`;
+
+  const clipEl = _container.querySelector('.corner-stat-clip');
+  if (clipEl) {
+    clipEl.textContent = `▲ ${clipN} clip`;
+    clipEl.classList.toggle('danger', clipN > 0);
+  }
+}
+
+// ── Corner button state refresh (no full re-render) ────────────────────────
+function _refreshCornerButtons() {
+  if (!_container) return;
+  document.body.style.cursor = (_soloMode === 'pending' || _copyMode) ? 'crosshair' : '';
+
+  const btnSolo = _container.querySelector('.corner-btn-solo');
+  if (btnSolo) {
+    const soloed  = typeof _soloMode === 'object' && _soloMode !== null;
+    const pending = _soloMode === 'pending';
+    btnSolo.textContent = soloed ? 'un-solo' : 'solo';
+    btnSolo.className = 'corner-btn corner-btn-solo' +
+      (soloed || pending ? ' active' : '') + (pending ? ' pending' : '');
+    btnSolo.title = soloed ? 'Restore all routes' :
+      pending ? 'Pick a channel (click to cancel)' : 'Solo a channel';
+  }
+
+  const btnCopy = _container.querySelector('.corner-btn-copy');
+  if (btnCopy) {
+    const active  = !!_copyMode;
+    const pickSrc = _copyMode === 'pick-src';
+    const hasSrc  = typeof _copyMode === 'object' && _copyMode !== null;
+    btnCopy.className = 'corner-btn corner-btn-copy' +
+      (active ? ' active' : '') + (active ? ' pending' : '');
+    btnCopy.title = pickSrc  ? 'Pick source channel (click to cancel)' :
+      hasSrc ? `Copy from "${_copyMode.src}" — pick destination` :
+      'Copy channel routes to another channel';
+  }
+
+  const btnLock = _container.querySelector('.corner-lock-btn');
+  if (btnLock) {
+    btnLock.textContent = _locked ? '🔒' : '🔓';
+    btnLock.className = 'corner-btn corner-lock-btn' + (_locked ? ' active' : '');
+    btnLock.title = _locked ? 'Routes locked — click to unlock' : 'Click to lock routes';
+  }
+}
+
+// ── Solo mode ──────────────────────────────────────────────────────────────
+async function _execSolo(channelId) {
+  const allRoutes = st.routeList().slice();
+  _soloMode = { channelId, savedRoutes: allRoutes };
+  _refreshCornerButtons();
+
+  for (const r of allRoutes) {
+    try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
+  }
+  for (const r of allRoutes.filter(r => r.rx_id === channelId)) {
+    try {
+      const route = await api.postRoute(r.rx_id, r.tx_id, r.route_type ?? 'local');
+      st.setRoute({ route_type: r.route_type ?? 'local', ...route });
+    } catch (_) {}
+  }
+  render(_container);
+}
+
+async function _restoreSolo() {
+  if (!_soloMode || typeof _soloMode !== 'object') return;
+  const { savedRoutes } = _soloMode;
+  _soloMode = null;
+
+  const current = st.routeList().slice();
+  for (const r of current) {
+    try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
+  }
+  for (const r of savedRoutes) {
+    try {
+      const route = await api.postRoute(r.rx_id, r.tx_id, r.route_type ?? 'local');
+      st.setRoute({ route_type: r.route_type ?? 'local', ...route });
+    } catch (_) {}
+  }
+  render(_container);
+}
+
+// ── Copy mode ──────────────────────────────────────────────────────────────
+async function _execCopy(srcId, dstId) {
+  if (srcId === dstId) { _copyMode = null; _refreshCornerButtons(); return; }
+  const srcRoutes = st.routeList().filter(r => r.rx_id === srcId);
+  _copyMode = null;
+  document.body.style.cursor = '';
+
+  for (const r of srcRoutes) {
+    if (!st.getRouteType(dstId, r.tx_id)) {
+      try {
+        const route = await api.postRoute(dstId, r.tx_id, r.route_type ?? 'local');
+        st.setRoute({ route_type: r.route_type ?? 'local', ...route });
+      } catch (_) {}
+    }
+  }
+  render(_container);
 }
