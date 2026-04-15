@@ -105,15 +105,18 @@ impl MonitorWriter {
             if active {
                 let cur_gen = self.generation.load(Ordering::Acquire);
                 if cur_gen == last_gen {
-                    // No new data from RT callback — write silence to keep PCM clock alive.
-                    self.write_frames(&pcm, &silence)?;
+                    // No new data yet — sleep briefly rather than writing silence.
+                    // Writing 256-frame silence blocks here dilutes the 128-frame audio
+                    // chunks to ~33% duty cycle which sounds like heavy distortion.
+                    // ALSA recovers from any underrun via write_frames error handling.
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                     continue;
                 }
                 last_gen = cur_gen;
 
                 let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
                 if nf == 0 {
-                    self.write_frames(&pcm, &silence)?;
+                    std::thread::sleep(std::time::Duration::from_millis(1));
                     continue;
                 }
                 let src = {
