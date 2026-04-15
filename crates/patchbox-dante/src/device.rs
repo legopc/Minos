@@ -451,8 +451,11 @@ fn try_set_rt_priority_once() {
             // prevent denormal floats from causing 100× CPU spikes in the RT path.
             #[cfg(target_arch = "x86_64")]
             unsafe {
-                use std::arch::x86_64::{_mm_getcsr, _mm_setcsr};
-                _mm_setcsr(_mm_getcsr() | 0x8040); // FTZ (bit15) + DAZ (bit6)
+                // Read MXCSR, set FTZ (bit15) + DAZ (bit6), write back.
+                let mut mxcsr: u32;
+                std::arch::asm!("stmxcsr [{0}]", in(reg) &mut mxcsr);
+                mxcsr |= 0x8040;
+                std::arch::asm!("ldmxcsr [{0}]", in(reg) &mxcsr);
             }
         } else {
             tracing::debug!(
