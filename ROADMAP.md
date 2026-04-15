@@ -24,6 +24,8 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 | **Sprint 2** | Monitor bus backend, RT-safe solo/mute/polarity in DSP callback |
 | **Sprint 3** | Matrix crosspoint level glow (orange/amber dots), VU meters with dB scale markings (0/−10/−20/−40 dBFS), solo/mute/polarity buttons on input strips (mixer), DSP badge buttons on matrix rows |
 | **Sprint 4** | Input channel rename (double-click ch-name in matrix), output column rename (double-click angled header), resizable input label column (drag right edge, 8 px hit zone), angled output column headers (−60 deg, left-aligned origin), DSP badge sizing (matrix vs mixer distinction) |
+| **Sprint 5** | Internal submix buses: named group channels routable as virtual inputs, per-bus DSP chain (gain/polarity/EQ/compressor/gate/HPF), bus strips in Mixer tab, full REST + WS API, matrix bus column headers with coloured dividers |
+| **Sprint F** | PFL solo monitoring: headphone output to local ALSA device (`plughw:1,0`), solo/mute bus with additive multi-solo + Ctrl+click exclusive, solo indicator bar, monitor device selector in System tab, hardware volume init on first open |
 
 ---
 
@@ -43,7 +45,7 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 
 | Item | Description |
 |---|---|
-| **Internal submix buses** | Named group channels: route any RX into a bus with its own DSP chain (gain/polarity/HPF/EQ/gate/compressor); bus output appears as virtual input row in matrix routable to any TX. 4 buses default, configurable. Bus strips optionally shown in Mixer tab (system toggle). Prerequisite: Input Gain Badge (one-line fix — `input_dsp_to_value()` missing `"am"` block). ~6–8 dev days across 7 phases. |
+| **Internal submix buses** | ~~Named group channels: route any RX into a bus with its own DSP chain (gain/polarity/HPF/EQ/gate/compressor); bus output appears as virtual input row in matrix routable to any TX. 4 buses default, configurable. Bus strips optionally shown in Mixer tab (system toggle). Prerequisite: Input Gain Badge (one-line fix — `input_dsp_to_value()` missing `"am"` block). ~6–8 dev days across 7 phases.~~ ✅ **Complete — Sprint 5** |
 | JWT secret persisted to disk | Secret regenerated on every restart; all clients forcibly re-login after any service restart. Store to `/etc/patchbox/jwt.key` (0600), load at startup. |
 | JWT refresh flow | No token refresh; 8h sessions silently expire mid-show. Add `/api/v1/auth/refresh` endpoint; frontend polls 15min before expiry. |
 | Input Gain Badge | `InputChannelDsp.gain_db` exists in backend + API — just missing `"am"` emit in `input_dsp_to_value()`. Two-line fix; surfaces trim control in matrix + mixer. |
@@ -70,7 +72,7 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 | DSP panel overflow fix | Panels can render off-screen on small viewports; constrain max-height + boundary detection |
 | Fader edit affordance | Double-click to type exact dB value is undiscoverable; add tooltip or pencil icon on dB label |
 | Keyboard shortcuts | Ctrl+S snapshot, Ctrl+Z undo last route, ESC clear solo, `?` help overlay |
-| AFL/PFL solo | Monitor bus routing to dedicated output (backend + UI) |
+| AFL/PFL solo | ~~Monitor bus routing to dedicated output (backend + UI)~~ ✅ **Complete — Sprint F** |
 | API retry on transient failure | `api.js` throws immediately on network error; add exponential backoff retry (3×) with toast on final fail |
 | Empty matrix state | Blank grid with no guidance when no routes exist; add "Click a crosspoint to create a route" hint |
 | Config backup/restore UI | Add scheduled backup endpoint + restore from list of last 10 backups in System tab |

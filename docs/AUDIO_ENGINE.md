@@ -152,7 +152,69 @@ The important lesson is that the "popping" problem was not one bug. Different po
 - **Fix:** when `block == 0`, zero-fill from `write_pos` up to `tx + LEAD`; when a large resume block arrives, snap `write_pos` back to `tx + LEAD` before writing.
 - **Why it was needed:** this is the final safety layer that makes silence stay silent for an external ring with no freshness metadata.
 
-## What turned out *not* to be the fix
+## PFL solo monitor path
+
+The PFL (Pre-Fader Listen) feature routes a selected input channel to the local headphone jack of the dante-doos node for live monitoring.
+
+### Signal path
+
+```text
+Dante RX (raw f32 samples)
+    |
+    v
+[matrix.rs: pre-input-DSP tap]
+    |  monitor_buf[] = inputs[rx_idx]  (raw, before channel trim/EQ)
+    v
+[device.rs: RT callback]
+    |  try_lock → push to Arc<Mutex<VecDeque<f32>>>
+    v
+[monitor.rs: ALSA writer thread]
+    |  drain queue into local VecDeque accumulator
+    |  fill 128-frame period (pad with silence if underflow)
+    v
+ALSA plughw:1,0 (HD-Audio Generic — ALC221 headphone jack)
+```
+
+### Why the tap is pre-DSP
+
+The config for dante-doos has `gain_db = 7.48` on input channel 0. Applying a PFL tap post-DSP would push the signal to ±2.37, clipping it after `f32→i32` conversion. The pre-DSP tap reads the raw Dante samples which are always within `[-1.0, 1.0]`.
+
+### The 32-frame block problem (and fix)
+
+**Root cause found during Sprint F bring-up:** Dante delivers 32-frame blocks at 48kHz (~0.67ms per callback). The original monitor path used `triple_buffer` — which only keeps the *latest* published value. During one 128-frame ALSA period (2.67ms), four Dante callbacks fire. The ALSA writer woke up and read only the fourth frame; the first three were silently overwritten.
+
+Result: 32 audio frames + 96 silence frames per 128-frame ALSA period = **25% audio duty cycle = severe distortion**.
+
+**Fix:** Replace `triple_buffer` with a bounded `Arc<Mutex<VecDeque<f32>>>` FIFO queue (capacity 9600 frames / 200ms).
+
+- RT callback: `try_lock` + push 32 samples per block (drops on lock contention — acceptable at 0.67ms intervals)
+- ALSA writer: after each blocking `writei()` returns (~2.67ms), drain the queue into a local `VecDeque` accumulator, then consume exactly 128 frames (padding with silence if the queue underflows)
+
+Steady state: queue accumulates ~128 samples during the `writei()` block → drained → written → 100% duty cycle → clean audio.
+
+### Hardware volume initialisation
+
+The ALC221 codec boots with the headphone amplifier at minimum. `set_hardware_volume()` is called once when the ALSA device is opened; it mutes all Speaker controls and sets Headphone/Master/PCM to maximum. This must happen before any audio can be heard.
+
+### ALSA configuration
+
+| Parameter | Value | Reason |
+|---|---|---|
+| Format | S32\_LE | `plughw` converts to native S24 |
+| Period | 128 frames | 4× Dante block size — queue accumulates exactly one period per `writei()` |
+| Buffer | 1024 frames (8 periods) | 21ms headroom against jitter |
+| `start_threshold` | 512 frames | Prevent DMA from starting after the first write — avoids underrun→recover→underrun cycle |
+| Channels | 2 (L=R) | Mono PFL duplicated to both ears |
+
+### Files
+
+| File | Role |
+|---|---|
+| `crates/patchbox-dante/src/monitor.rs` | ALSA writer thread: device open, hardware volume, accumulator loop |
+| `crates/patchbox-dante/src/device.rs` | Queue creation, RT callback push, monitor writer lifecycle (hot-reconfigure on device change) |
+| `crates/patchbox-core/src/matrix.rs` | Pre-DSP PFL tap: `monitor_buf[] = inputs[rx_idx]` |
+
+
 
 These were useful investigations, but not root causes:
 
@@ -200,7 +262,9 @@ If you need to work on this area again, start here:
 
 | File | Why it matters |
 |---|---|
-| `crates/patchbox-dante/src/device.rs` | Main DSP callback, TX ring logic, `LEAD_SAMPLES`, RT scheduling |
+| `crates/patchbox-dante/src/device.rs` | Main DSP callback, TX ring logic, `LEAD_SAMPLES`, RT scheduling, monitor queue push |
+| `crates/patchbox-dante/src/monitor.rs` | ALSA writer thread: PFL accumulator loop, hardware volume init, xrun recovery |
+| `crates/patchbox-core/src/matrix.rs` | PFL pre-DSP tap, routing matrix, per-bus DSP chain |
 | `crates/patchbox-dante/src/sample_conv.rs` | Dante PCM scaling |
 | `inferno_aoip/src/device_server/samples_collector.rs` | RX wakeup behavior and callback scheduling |
 | `inferno_aoip/src/device_server/mod.rs` | Wiring between device setup and callback path |
