@@ -35,7 +35,6 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 |---|---|
 | Config fsync on write | Add `file.sync_all()` + parent dir fsync before atomic rename — prevents config corruption on power loss |
 | Persist error propagation | API mutations silently swallow `persist()` failures; return `500` instead of `200` when config write fails |
-| Dante device reconnection | No auto-recovery when Dante device disconnects mid-session; add watchdog + auto-restart + frontend "Reconnecting…" state |
 | RT callback panic guard | Wrap audio callback with catch-unwind + circuit breaker (>3 panics in 1min → log critical, disable RT scheduling) |
 
 ---

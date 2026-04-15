@@ -38,21 +38,7 @@ Issues where data loss, audio outages, or security failures are possible. Addres
 
 ---
 
-### 3. Dante Device Reconnection Watchdog
-
-**What it is.** If the Dante network device becomes unreachable or the audio engine stalls, the service has no recovery mechanism. It stays broken until someone manually restarts it.
-
-**Why implement.** In a live audio environment, automated recovery is essential. Dante networks can have brief interruptions.
-
-**Why not.** Device teardown and restart needs careful verification. Restart takes up to 2 seconds for PTP clock re-poll. Watchdog backoff timing must account for this to avoid log spam.
-
-**Risk.** Depends on the RT panic guard being in place first. A panicking callback during a reconnect could interfere with both recovery mechanisms.
-
-**Effort.** 2–3 days, including testing with an actual cable pull on the dante-doos hardware.
-
----
-
-### 4. Real-Time Callback Panic Guard
+### 3. Real-Time Callback Panic Guard
 
 **What it is.** The audio callback runs at scheduler priority 90. Any panic inside it crashes the entire process immediately with no safety net.
 
@@ -66,7 +52,7 @@ Issues where data loss, audio outages, or security failures are possible. Addres
 
 ---
 
-### 5. JWT Secret Persisted to Disk
+### 4. JWT Secret Persisted to Disk
 
 **What it is.** Every service restart generates a new random auth secret, immediately invalidating all browser sessions.
 
@@ -78,7 +64,7 @@ Issues where data loss, audio outages, or security failures are possible. Addres
 
 ---
 
-### 6. JWT Token Refresh Endpoint
+### 5. JWT Token Refresh Endpoint
 
 **What it is.** Auth tokens expire after 8 hours with no refresh mechanism. A browser session left open overnight fails silently on next interaction.
 
@@ -377,13 +363,13 @@ Valuable but not urgent. Some depend on major features above.
 
 | Area | Items | Estimated Effort |
 |------|-------|-----------------|
-| Critical reliability | 6 | ~8–10 days |
+| Critical reliability | 5 | ~5–7 days |
 | High priority features | 5 | ~5–6 days |
 | Medium UX improvements | 9 | ~9–10 days |
 | Audio/DSP enhancements | 5 | ~12–18 days |
 | Major new features | 2 | ~10–11 days |
 | Low priority / future | 12 | ~15–20 days |
-| **Total** | **39** | **~59–75 days** |
+| **Total** | **38** | **~56–72 days** |
 
 **Recommended first sprint.** Config write safety + persist error propagation + JWT secret persistence: combined ~6 hours, dramatically reduces operational risk. Add the input gain badge as a 2-hour bonus. These four items are independent of everything else and have no blocking dependencies.
 
