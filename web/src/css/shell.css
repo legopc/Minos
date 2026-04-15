@@ -307,3 +307,62 @@ body.offline .xp-cell {
   border-color: #c0392b;
   color: #fff;
 }
+
+/* ── Keyboard shortcuts overlay ─────────────────── */
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  padding: 16px;
+}
+.shortcuts-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 20px;
+  max-width: 380px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.shortcuts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.shortcuts-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.shortcuts-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.shortcuts-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.shortcuts-table tr { border-bottom: 1px solid var(--border-primary); }
+.shortcuts-table td { padding: 10px 4px; color: var(--text-secondary); }
+.shortcut-key {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-primary);
+  font-size: 12px;
+  background: var(--bg-dark);
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}

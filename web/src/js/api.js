@@ -44,6 +44,20 @@ const put  = (path, body)  => req('PUT',    path, body);
 const del  = (path)        => req('DELETE', path);
 export const patch = (path, body) => req('PUT', path, body);
 
+async function reqWithRetry(method, path, body, maxRetries = 3) {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await req(method, path, body);
+    } catch (e) {
+      lastError = e;
+      if (method === 'POST' || attempt >= maxRetries) throw e;
+      await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+    }
+  }
+  throw lastError;
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 export function login(username, password) {
   return fetch(BASE + '/login', {
@@ -92,15 +106,15 @@ export const putChannel      = (id, body)  => put(`/channels/${id}`, body);
 
 // Input DSP
 export const getInputDsp        = (ch)         => get(`/inputs/${ch}/dsp`);
-export const putInputGain       = (ch, db)     => put(`/inputs/${ch}/gain`, { gain_db: db });
-export const putInputPolarity   = (ch, invert) => put(`/inputs/${ch}/polarity`, { invert });
-export const putInputHpf        = (ch, body)   => put(`/inputs/${ch}/hpf`, body);
-export const putInputLpf        = (ch, body)   => put(`/inputs/${ch}/lpf`, body);
-export const putInputEq         = (ch, body)   => put(`/inputs/${ch}/eq`, body);
-export const putInputEqEnabled  = (ch, enabled)=> put(`/inputs/${ch}/eq/enabled`, { enabled });
-export const putInputGate       = (ch, body)   => put(`/inputs/${ch}/gate`, body);
-export const putInputCompressor = (ch, body)   => put(`/inputs/${ch}/compressor`, body);
-export const putInputEnabled    = (ch, enabled)=> put(`/inputs/${ch}/enabled`, { enabled });
+export const putInputGain       = (ch, db)     => reqWithRetry('PUT', `/inputs/${ch}/gain`, { gain_db: db });
+export const putInputPolarity   = (ch, invert) => reqWithRetry('PUT', `/inputs/${ch}/polarity`, { invert });
+export const putInputHpf        = (ch, body)   => reqWithRetry('PUT', `/inputs/${ch}/hpf`, body);
+export const putInputLpf        = (ch, body)   => reqWithRetry('PUT', `/inputs/${ch}/lpf`, body);
+export const putInputEq         = (ch, body)   => reqWithRetry('PUT', `/inputs/${ch}/eq`, body);
+export const putInputEqEnabled  = (ch, enabled)=> reqWithRetry('PUT', `/inputs/${ch}/eq/enabled`, { enabled });
+export const putInputGate       = (ch, body)   => reqWithRetry('PUT', `/inputs/${ch}/gate`, body);
+export const putInputCompressor = (ch, body)   => reqWithRetry('PUT', `/inputs/${ch}/compressor`, body);
+export const putInputEnabled    = (ch, enabled)=> reqWithRetry('PUT', `/inputs/${ch}/enabled`, { enabled });
 
 // ── Outputs (TX channels) ──────────────────────────────────────────────────
 export const getOutputs     = ()          => get('/outputs');
@@ -109,16 +123,16 @@ export const putOutput      = (id, body)  => put(`/outputs/${id}`, body);
 
 // Output DSP
 export const getOutputDsp        = (ch)          => get(`/outputs/${ch}/dsp`);
-export const putOutputGain       = (ch, db)      => put(`/outputs/${ch}/gain`, { gain_db: db });
-export const putOutputHpf        = (ch, body)    => put(`/outputs/${ch}/hpf`, body);
-export const putOutputLpf        = (ch, body)    => put(`/outputs/${ch}/lpf`, body);
-export const putOutputEq         = (ch, body)    => put(`/outputs/${ch}/eq`, body);
-export const putOutputEqEnabled  = (ch, enabled) => put(`/outputs/${ch}/eq/enabled`, { enabled });
-export const putOutputCompressor = (ch, body)    => put(`/outputs/${ch}/compressor`, body);
-export const putOutputLimiter    = (ch, body)    => put(`/outputs/${ch}/limiter`, body);
-export const putOutputDelay      = (ch, body)    => put(`/outputs/${ch}/delay`, body);
-export const putOutputEnabled    = (ch, enabled) => put(`/outputs/${ch}/enabled`, { enabled });
-export const putOutputMute       = (ch, muted)   => put(`/outputs/${ch}/mute`, { muted });
+export const putOutputGain       = (ch, db)      => reqWithRetry('PUT', `/outputs/${ch}/gain`, { gain_db: db });
+export const putOutputHpf        = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/hpf`, body);
+export const putOutputLpf        = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/lpf`, body);
+export const putOutputEq         = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/eq`, body);
+export const putOutputEqEnabled  = (ch, enabled) => reqWithRetry('PUT', `/outputs/${ch}/eq/enabled`, { enabled });
+export const putOutputCompressor = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/compressor`, body);
+export const putOutputLimiter    = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/limiter`, body);
+export const putOutputDelay      = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/delay`, body);
+export const putOutputEnabled    = (ch, enabled) => reqWithRetry('PUT', `/outputs/${ch}/enabled`, { enabled });
+export const putOutputMute       = (ch, muted)   => reqWithRetry('PUT', `/outputs/${ch}/mute`, { muted });
 
 // ── Zones ──────────────────────────────────────────────────────────────────
 export const getZones      = ()          => get('/zones');
@@ -132,10 +146,10 @@ export const unmuteZone    = (txIdx)     => post(`/zones/${txIdx}/unmute`);
 export const getRoutes     = ()                    => get('/routes');
 export const postRoute     = (rx_id, tx_id, route_type) =>
   post('/routes', { rx_id, tx_id, route_type: route_type ?? 'local' });
-export const deleteRoute   = (id)                  => del(`/routes/${encodeURIComponent(id)}`);
-export const deleteRoutesByRx = (rx_id)            => del(`/routes?rx_id=${rx_id}`);
-export const deleteRoutesByTx = (tx_id)            => del(`/routes?tx_id=${tx_id}`);
-export const deleteRoutesByZone = (zone_id)        => del(`/routes?zone_id=${zone_id}`);
+export const deleteRoute   = (id)                  => reqWithRetry('DELETE', `/routes/${encodeURIComponent(id)}`);
+export const deleteRoutesByRx = (rx_id)            => reqWithRetry('DELETE', `/routes?rx_id=${rx_id}`);
+export const deleteRoutesByTx = (tx_id)            => reqWithRetry('DELETE', `/routes?tx_id=${tx_id}`);
+export const deleteRoutesByZone = (zone_id)        => reqWithRetry('DELETE', `/routes?zone_id=${zone_id}`);
 
 // ── Scenes ─────────────────────────────────────────────────────────────────
 export const getScenes     = ()          => get('/scenes');

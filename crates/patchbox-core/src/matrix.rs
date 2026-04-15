@@ -14,6 +14,47 @@ pub fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
 
+/// Compute per-sample blend coefficient for exponential gain smoothing.
+/// `ramp_ms` — 63% settling time in milliseconds; `sample_rate` in Hz.
+/// Returns the fraction of (target - current) to add each sample.
+pub fn compute_ramp_alpha(ramp_ms: f32, sample_rate: f32) -> f32 {
+    if ramp_ms <= 0.0 { return 0.0; }
+    let tau_samples = ramp_ms * 0.001 * sample_rate;
+    1.0 - (-1.0_f32 / tau_samples).exp()
+}
+
+/// Smooth ramp state for zipper-free gain transitions.
+/// All fields are stack-allocated — zero heap use in RT path.
+#[derive(Debug, Clone, Copy)]
+pub struct RampState {
+    pub target_linear: f32,
+    pub current_linear: f32,
+    /// Per-sample blend coefficient: alpha = 1 - exp(-1 / (time_ms * 0.001 * sample_rate))
+    /// Larger alpha = faster ramp. Typical: 10ms @ 48kHz → alpha ≈ 0.0021
+    pub alpha: f32,
+}
+
+impl RampState {
+    pub fn new(initial: f32) -> Self {
+        Self { target_linear: initial, current_linear: initial, alpha: 0.002 }
+    }
+
+    pub fn set_target(&mut self, target_linear: f32) {
+        self.target_linear = target_linear;
+    }
+
+    #[inline(always)]
+    pub fn tick(&mut self) -> f32 {
+        self.current_linear += (self.target_linear - self.current_linear) * self.alpha;
+        self.current_linear
+    }
+
+    #[inline(always)]
+    pub fn is_settled(&self) -> bool {
+        (self.target_linear - self.current_linear).abs() < 1e-6
+    }
+}
+
 /// Per-output DSP chain: Gain → HPF → LPF → 5-band EQ → Compressor → Limiter → Delay.
 pub struct PerOutputDsp {
     pub eq: ParametricEq,
@@ -23,6 +64,7 @@ pub struct PerOutputDsp {
     pub compressor: Compressor,
     pub delay: DelayLine,
     pub gain_linear: f32,
+    pub gain_ramp: RampState,
     /// Gain reduction from last block in dB (0 = no reduction, negative = limiting active).
     /// Written by `process_block()`, read by metering.
     pub last_gr_db: f32,
@@ -38,6 +80,7 @@ impl PerOutputDsp {
             compressor: Compressor::new(),
             delay: DelayLine::new(),
             gain_linear: 1.0,
+            gain_ramp: RampState::new(1.0),
             last_gr_db: 0.0,
         }
     }
@@ -45,6 +88,7 @@ impl PerOutputDsp {
     /// Sync from full OutputChannelDsp config. RT-safe: pure arithmetic, no allocation.
     pub fn sync_output_dsp(&mut self, cfg: &OutputChannelDsp, sample_rate: f32) {
         self.gain_linear = 10f32.powf(cfg.gain_db / 20.0);
+        self.gain_ramp.set_target(self.gain_linear);
         self.hpf.sync(&cfg.hpf, sample_rate);
         self.lpf.sync(&cfg.lpf, sample_rate);
         self.eq.sync(&cfg.eq);
@@ -69,8 +113,14 @@ impl PerOutputDsp {
             for s in buf.iter_mut() { *s = 0.0; }
             return;
         }
-        if (self.gain_linear - 1.0).abs() > 1e-6 {
-            for s in buf.iter_mut() { *s *= self.gain_linear; }
+        if self.gain_ramp.is_settled() {
+            // Fast path: constant gain, no per-sample ramp overhead
+            if (self.gain_ramp.current_linear - 1.0).abs() > 1e-6 {
+                for s in buf.iter_mut() { *s *= self.gain_ramp.current_linear; }
+            }
+        } else {
+            // Ramp path: smoothly interpolate gain per-sample to eliminate zipper noise
+            for s in buf.iter_mut() { *s *= self.gain_ramp.tick(); }
         }
         self.hpf.process_block(buf);
         self.lpf.process_block(buf);
@@ -89,6 +139,7 @@ impl Default for PerOutputDsp {
 /// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor.
 pub struct PerInputDsp {
     pub gain_linear: f32,
+    pub gain_ramp: RampState,
     pub invert_polarity: bool,
     pub hpf: ButterworthFilter,
     pub lpf: ButterworthFilter,
@@ -102,6 +153,7 @@ impl PerInputDsp {
     pub fn new() -> Self {
         Self {
             gain_linear: 1.0,
+            gain_ramp: RampState::new(1.0),
             invert_polarity: false,
             hpf: ButterworthFilter::new(FilterMode::Highpass),
             lpf: ButterworthFilter::new(FilterMode::Lowpass),
@@ -116,6 +168,7 @@ impl PerInputDsp {
     pub fn sync(&mut self, cfg: &InputChannelDsp, sample_rate: f32) {
         self.enabled = cfg.enabled; // sync enabled from config
         self.gain_linear = 10f32.powf(cfg.gain_db / 20.0);
+        self.gain_ramp.set_target(self.gain_linear);
         self.invert_polarity = cfg.polarity;
         self.hpf.sync(&cfg.hpf, sample_rate);
         self.lpf.sync(&cfg.lpf, sample_rate);
@@ -135,8 +188,14 @@ impl PerInputDsp {
         if self.invert_polarity {
             for s in buf.iter_mut() { *s = -*s; }
         }
-        if (self.gain_linear - 1.0).abs() > 1e-6 {
-            for s in buf.iter_mut() { *s *= self.gain_linear; }
+        if self.gain_ramp.is_settled() {
+            // Fast path: constant gain, no per-sample ramp overhead
+            if (self.gain_ramp.current_linear - 1.0).abs() > 1e-6 {
+                for s in buf.iter_mut() { *s *= self.gain_ramp.current_linear; }
+            }
+        } else {
+            // Ramp path: smoothly interpolate gain per-sample to eliminate zipper noise
+            for s in buf.iter_mut() { *s *= self.gain_ramp.tick(); }
         }
         self.hpf.process_block(buf);
         self.lpf.process_block(buf);
@@ -193,6 +252,15 @@ impl MatrixProcessor {
             if let Some(out_cfg) = cfg.output_dsp.get(i) {
                 dsp.sync_output_dsp(out_cfg, self.sample_rate);
             }
+        }
+
+        // Propagate ramp alpha computed from config gain_ramp_ms
+        let alpha = compute_ramp_alpha(cfg.gain_ramp_ms, self.sample_rate);
+        for dsp in self.input_dsp.iter_mut() {
+            dsp.gain_ramp.alpha = alpha;
+        }
+        for dsp in self.output_dsp.iter_mut() {
+            dsp.gain_ramp.alpha = alpha;
         }
     }
 

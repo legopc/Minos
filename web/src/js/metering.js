@@ -60,7 +60,10 @@ function _updateGroup(data, prefix) {
     // Also update matrix mini-vu (rx channels only)
     _queue.set(`vu-fill-${id}`, { db, isPeak: false, isMini: true });
     const ph = state.peakHold.get(id);
-    if (ph) _queue.set(`vu-peak-${id}`, { db: ph.level, isPeak: true });
+    if (ph) {
+      _queue.set(`vu-peak-${id}`, { db: ph.level, isPeak: true });
+      _queue.set(`vu-hold-${id}`, { db: ph.level, isPeak: true });
+    }
   });
 }
 

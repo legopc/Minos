@@ -1,8 +1,9 @@
 // main.js — app init, tab routing, status bar, auth gate
 
-import * as api   from './api.js';
-import * as st    from './state.js';
-import { initWs } from './ws.js';
+import * as api      from './api.js';
+import * as st       from './state.js';
+import * as shortcuts from './shortcuts.js';
+import { initWs }    from './ws.js';
 import { toast as _toast } from './toast.js';
 
 // ── Toast system ───────────────────────────────────────────────────────────
@@ -251,6 +252,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     await api.getHealth();
     hideLogin();
     await loadAll();
+    shortcuts.setupShortcuts();
+
+    window.addEventListener('shortcut:close-panels', () => {
+      import('./panels.js').then(m => m.closeAllPanels?.());
+    });
+
+    window.addEventListener('shortcut:load-scene', (e) => {
+      const favs = (st.state.scenes ?? []).filter(s => s.is_favourite);
+      const scene = favs[e.detail.index];
+      if (scene) api.loadScene(scene.id).catch(err => toast(err.message, true));
+    });
   } catch (e) {
     if (e.message === '401') {
       showLogin();
@@ -258,6 +270,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Server might not require auth — try loading anyway
       hideLogin();
       await loadAll();
+      shortcuts.setupShortcuts();
+
+      window.addEventListener('shortcut:close-panels', () => {
+        import('./panels.js').then(m => m.closeAllPanels?.());
+      });
+
+      window.addEventListener('shortcut:load-scene', (e) => {
+        const favs = (st.state.scenes ?? []).filter(s => s.is_favourite);
+        const scene = favs[e.detail.index];
+        if (scene) api.loadScene(scene.id).catch(err => toast(err.message, true));
+      });
     }
   }
 });

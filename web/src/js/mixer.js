@@ -205,8 +205,12 @@ function _buildInputStrip(ch) {
   const peak = document.createElement('div');
   peak.className = 'strip-meter-peak';
   peak.id = `vu-peak-${ch.id}`;
+  const hold = document.createElement('div');
+  hold.className = 'strip-meter-peak-hold';
+  hold.id = `vu-hold-${ch.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
+  meter.appendChild(hold);
 
   // Gain fader label
   const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
@@ -390,8 +394,12 @@ function _buildOutputMaster(out) {
   const peak = document.createElement('div');
   peak.className = 'strip-meter-peak';
   peak.id = `vu-peak-${out.id}`;
+  const hold = document.createElement('div');
+  hold.className = 'strip-meter-peak-hold';
+  hold.id = `vu-hold-${out.id}`;
   meter.appendChild(bar);
   meter.appendChild(peak);
+  meter.appendChild(hold);
 
   // Fader
   const fader = document.createElement('input');

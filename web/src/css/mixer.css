@@ -675,3 +675,16 @@
   opacity: 1;
   font-weight: bold;
 }
+
+/* ── Peak hold line ─────────────────────────────────── */
+.strip-meter-peak-hold {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--vu-green);
+  opacity: 0.6;
+  transition: bottom 0.05s linear;
+  bottom: 0%;
+  pointer-events: none;
+}
