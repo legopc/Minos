@@ -1524,6 +1524,9 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let monitor_device = cfg.monitor_device.clone();
     let monitor_volume_db = cfg.monitor_volume_db;
     drop(cfg);
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+    let ptp_locked = dante_connected;
+    let dante_status = if dante_connected { "connected" } else { "disconnected" }.to_string();
     Json(SystemResponse {
         version: env!("CARGO_PKG_VERSION"),
         hostname: get_hostname(),

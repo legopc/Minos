@@ -202,6 +202,29 @@ export async function render(container) {
       await _saveMonitorConfig(monitorSelect, volSlider);
     };
   }
+
+  // Reflect WS monitor_config_update in the open System tab
+  const _onMonitorUpdate = () => {
+    const sys = st.state.system;
+    if (monitorSelect) {
+      for (const opt of monitorSelect.options) {
+        opt.selected = opt.value === (sys.monitor_device ?? '');
+      }
+    }
+    if (volSlider && volLabel) {
+      volSlider.value = sys.monitor_volume_db ?? 0;
+      volLabel.textContent = `${volSlider.value} dB`;
+    }
+  };
+  window.addEventListener('pb:monitor-update', _onMonitorUpdate);
+  // Clean up listener when tab is replaced
+  const _cleanup = new MutationObserver(() => {
+    if (!document.contains(monitorSelect)) {
+      window.removeEventListener('pb:monitor-update', _onMonitorUpdate);
+      _cleanup.disconnect();
+    }
+  });
+  if (monitorSelect) _cleanup.observe(document.body, { childList: true, subtree: true });
 }
 
 async function _saveMonitorConfig(devSelect, volSlider) {
