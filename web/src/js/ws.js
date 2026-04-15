@@ -172,6 +172,19 @@ function _dispatch(msg) {
     case 'pong':
       break;
 
+    case 'solo_update':
+      st.state.soloSet.clear();
+      (msg.channels ?? []).forEach(rx => st.state.soloSet.add(`rx_${rx}`));
+      st.state.system.monitor_device = msg.monitor_device ?? null;
+      window.dispatchEvent(new CustomEvent('pb:solo-update'));
+      break;
+
+    case 'monitor_config_update':
+      st.state.system.monitor_device = msg.device ?? null;
+      st.state.system.monitor_volume_db = msg.volume_db ?? 0;
+      window.dispatchEvent(new CustomEvent('pb:monitor-update'));
+      break;
+
     default:
       break;
   }
@@ -182,6 +195,9 @@ function _handleHello(msg) {
   if (msg.rx_count !== undefined) sys.rx_count = msg.rx_count;
   if (msg.tx_count !== undefined) sys.tx_count = msg.tx_count;
   if (msg.zone_count !== undefined) sys.zone_count = msg.zone_count;
+  (msg.solo_channels ?? []).forEach(rx => st.state.soloSet.add(`rx_${rx}`));
+  if (msg.monitor_device !== undefined) sys.monitor_device = msg.monitor_device ?? null;
+  if (msg.monitor_volume_db !== undefined) sys.monitor_volume_db = msg.monitor_volume_db ?? 0;
   window.dispatchEvent(new CustomEvent('pb:status-update'));
 }
 

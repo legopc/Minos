@@ -19,7 +19,10 @@ const _state = {
   connState:     'offline',
   ptp:           { locked: null, offset_ns: 0 },
   activeSceneId: null,
-  system:        {},
+  system:        {
+    monitor_device: null,
+    monitor_volume_db: 0,
+  },
 };
 
 export const state = _state;

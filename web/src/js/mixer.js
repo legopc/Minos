@@ -22,6 +22,20 @@ export function render(container) {
   container.appendChild(sceneBar);
   _renderSceneBar(sceneBar);
 
+  // Solo indicator bar
+  const soloInd = document.createElement('div');
+  soloInd.className = 'mixer-solo-indicator';
+  soloInd.id = 'mixer-solo-indicator';
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'mixer-clear-solo-btn';
+  clearBtn.textContent = '✕ CLEAR';
+  clearBtn.setAttribute('aria-label', 'Clear all solos');
+  clearBtn.onclick = async () => {
+    try { await api.clearSolo(); } catch(e) { console.error(e); toast('Clear solo failed', true); }
+  };
+  soloInd.appendChild(clearBtn);
+  container.appendChild(soloInd);
+
   // Row wrapper: input strips + zone masters side by side
   const body = document.createElement('div');
   body.className = 'mixer-body';
@@ -182,16 +196,40 @@ function _buildInputStrip(ch) {
   };
   strip.appendChild(muteBtn);
 
-  // Solo button (client-side visual dim only)
+  // Solo button
   const soloBtn = document.createElement('button');
   soloBtn.className = 'mixer-solo-btn';
   soloBtn.id = `solo-${ch.id}`;
   soloBtn.textContent = 'S';
-  soloBtn.title = 'Solo';
-  soloBtn.onclick = () => {
-    if (_soloSet.has(ch.id)) { _soloSet.delete(ch.id); soloBtn.classList.remove('active'); }
-    else { _soloSet.add(ch.id); soloBtn.classList.add('active'); }
-    _applySoloVisual();
+  soloBtn.title = 'Solo (PFL)';
+  soloBtn.setAttribute('aria-label', `Solo ${ch.name ?? ch.id}`);
+
+  // Initial state
+  if (st.state.soloSet.has(ch.id)) soloBtn.classList.add('active');
+
+  // Disable if no monitor device configured
+  if (!st.state.system.monitor_device) {
+    soloBtn.disabled = true;
+    soloBtn.title = 'Configure monitor output in System settings';
+  }
+
+  soloBtn.onclick = async (e) => {
+    if (!st.state.system.monitor_device) {
+      toast('Configure monitor device in System settings', true);
+      return;
+    }
+    try {
+      if (e.ctrlKey || e.metaKey) {
+        // Exclusive solo: solo only this channel
+        await api.putSolo([chIdx]);
+      } else {
+        // Additive toggle
+        await api.toggleSolo(chIdx);
+      }
+    } catch(err) {
+      console.error('Solo error:', err);
+      toast('Solo error: ' + err.message, true);
+    }
   };
   strip.appendChild(soloBtn);
 
@@ -721,15 +759,38 @@ function _hasZoneRoute(rxId, zone) {
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
 
-function _applySoloVisual() {
+function _refreshSoloButtons() {
+  document.querySelectorAll('.mixer-solo-btn').forEach(btn => {
+    const id = btn.id.replace('solo-', '');
+    btn.classList.toggle('active', st.state.soloSet.has(id));
+  });
+}
+
+function _applySoloDimming() {
   const strips = document.querySelectorAll('.mixer-strip');
-  if (_soloSet.size === 0) {
+  if (st.state.soloSet.size === 0) {
     strips.forEach(s => s.classList.remove('solo-dimmed'));
   } else {
     strips.forEach(s => {
       const id = s.id.replace('strip-', '');
-      s.classList.toggle('solo-dimmed', !_soloSet.has(id));
+      s.classList.toggle('solo-dimmed', !st.state.soloSet.has(id));
     });
+  }
+}
+
+function _updateSoloIndicator() {
+  const ind = document.getElementById('mixer-solo-indicator');
+  if (!ind) return;
+  const active = st.state.soloSet.size > 0;
+  ind.classList.toggle('active', active);
+  if (active) {
+    const names = [...st.state.soloSet].map(id => {
+      const ch = st.state.channels?.get(id);
+      return ch?.name ?? id;
+    }).join(', ');
+    const clearBtnEl = ind.querySelector('.mixer-clear-solo-btn');
+    ind.textContent = `SOLO: ${names}`;
+    if (clearBtnEl) ind.appendChild(clearBtnEl);
   }
 }
 
@@ -739,5 +800,11 @@ window.addEventListener('pb:buses-changed', () => {
     const masters = document.getElementById('mixer-masters');
     if (strips && masters) _renderStrips(strips, masters);
   }
+});
+
+window.addEventListener('pb:solo-update', () => {
+  _refreshSoloButtons();
+  _applySoloDimming();
+  _updateSoloIndicator();
 });
 

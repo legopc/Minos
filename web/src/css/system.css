@@ -145,3 +145,36 @@
   accent-color: var(--accent-gold, #e3b341);
   min-width: 36px;
 }
+
+/* ── Monitor Output ──────────────────────────────────────────── */
+.cfg-select {
+  background: var(--bg-input, #1a1d2e);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px 8px;
+  min-height: 36px;
+  flex: 1;
+  cursor: pointer;
+}
+.cfg-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.cfg-range {
+  flex: 1;
+  height: 6px;
+  cursor: pointer;
+  accent-color: var(--accent-gold, #e3b341);
+  min-width: 100px;
+}
+
+.cfg-label {
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 48px;
+  text-align: right;
+}

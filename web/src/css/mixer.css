@@ -319,6 +319,42 @@
   border-color: var(--mute-active);
 }
 
+/* Solo button */
+.mixer-solo-btn {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  background: var(--bg-control, #2a2a2a);
+  color: var(--text-muted, #888);
+  border: 1px solid var(--border-dim, #333);
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  transition: background 0.1s, color 0.1s, box-shadow 0.1s;
+}
+
+.mixer-solo-btn:hover,
+.mixer-solo-btn:focus-visible {
+  background: var(--bg-control-hover, #333);
+  color: var(--text-primary, #ddd);
+}
+
+.mixer-solo-btn.active {
+  background: #e8b500;
+  color: #000;
+  box-shadow: 0 0 6px rgba(232, 181, 0, 0.5);
+  border-color: #c99500;
+}
+
+.mixer-solo-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 .strip-dsp-btn.byp {
   opacity: 0.35;
 }
@@ -790,4 +826,49 @@
 .bus-route-label {
   font-size: 13px;
   color: var(--text-primary, #eee);
+}
+
+
+/* SOLO indicator bar */
+.mixer-solo-indicator {
+  background: #e8b500;
+  color: #000;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 4px 12px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.mixer-solo-indicator.active {
+  display: flex;
+}
+
+.mixer-clear-solo-btn {
+  background: rgba(0,0,0,0.3);
+  color: #000;
+  border: 1px solid rgba(0,0,0,0.4);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 24px;
+  touch-action: none;
+  transition: background 0.1s;
+}
+
+.mixer-clear-solo-btn:hover,
+.mixer-clear-solo-btn:focus-visible {
+  background: rgba(0,0,0,0.5);
+}
+
+/* Solo dimming on non-soloed strips */
+.mixer-strip.solo-dimmed {
+  opacity: 0.45;
+  transition: opacity 0.15s;
 }

@@ -75,6 +75,15 @@ export async function render(container) {
         <div class="sys-row"><span class="sys-lbl">Show in Mixer</span><input type="checkbox" id="bus-show-toggle" class="sys-toggle" ${sys.show_buses_in_mixer !== false ? 'checked' : ''}></div>
       </div>
 
+      <!-- Monitor Output (Solo) card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Monitor Output (Solo)</div>
+        <div class="sys-row"><span class="sys-lbl">Device:</span><select id="monitor-device-select" class="cfg-select" aria-label="Monitor output device">
+          <option value="">None (solo disabled)</option>
+        </select></div>
+        <div class="sys-row"><span class="sys-lbl">Volume:</span><input type="range" id="monitor-volume-slider" class="cfg-range" min="-60" max="12" step="1" value="${sys.monitor_volume_db ?? 0}" aria-label="Monitor volume in dB"><span id="monitor-volume-label" class="cfg-label">${sys.monitor_volume_db ?? 0} dB</span></div>
+      </div>
+
       <!-- Actions card -->
       <div class="sys-card">
         <div class="sys-card-title">Actions</div>
@@ -157,6 +166,54 @@ export async function render(container) {
       console.error('Export failed', e);
     }
   });
+
+  // Populate monitor device selector
+  const monitorSelect = document.getElementById('monitor-device-select');
+  if (monitorSelect) {
+    try {
+      const resp = await api.getAudioDevices();
+      (resp.devices ?? []).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = `${d.name} — ${d.description ?? 'Audio Device'}`;
+        if (d.name === sys.monitor_device) opt.selected = true;
+        monitorSelect.appendChild(opt);
+      });
+    } catch(e) {
+      console.error('Failed to load audio devices:', e);
+    }
+  }
+
+  // Wire monitor volume slider
+  const volSlider = document.getElementById('monitor-volume-slider');
+  const volLabel = document.getElementById('monitor-volume-label');
+  if (volSlider && volLabel) {
+    volSlider.oninput = () => {
+      volLabel.textContent = `${volSlider.value} dB`;
+    };
+    volSlider.onchange = async () => {
+      await _saveMonitorConfig(monitorSelect, volSlider);
+    };
+  }
+
+  // Wire monitor device select
+  if (monitorSelect) {
+    monitorSelect.onchange = async () => {
+      await _saveMonitorConfig(monitorSelect, volSlider);
+    };
+  }
+}
+
+async function _saveMonitorConfig(devSelect, volSlider) {
+  try {
+    await api.putMonitor({
+      device: devSelect.value || null,
+      volume_db: parseFloat(volSlider.value),
+    });
+  } catch(e) {
+    console.error('Monitor config error:', e);
+    toast('Failed to save monitor config: ' + e.message, true);
+  }
 }
 
 function _e(s) {

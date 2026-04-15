@@ -187,3 +187,14 @@ export const postAdminChannels  = (rx, tx, bus_count) => {
   return post('/admin/channels', body);
 };
 export const postAdminRestart   = ()     => post('/admin/restart', {});
+
+// ── Solo ────────────────────────────────────────────────────────────────────
+export const getSolo       = ()      => get('/solo');
+export const putSolo       = (chs)   => put('/solo', { channels: chs });
+export const toggleSolo    = (rx)    => post(`/solo/toggle/${rx}`);
+export const clearSolo     = ()      => del('/solo');
+
+// ── Monitor ─────────────────────────────────────────────────────────────────
+export const getMonitor       = ()      => get('/system/monitor');
+export const putMonitor       = (body)  => put('/system/monitor', body);
+export const getAudioDevices  = ()      => get('/system/audio-devices');
