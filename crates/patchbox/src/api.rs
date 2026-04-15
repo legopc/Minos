@@ -1901,6 +1901,20 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                     for (i, &v) in meters.rx_gr_db.iter().enumerate() {
                         gr_map.insert(format!("rx_{}_cmp", i), serde_json::json!(v));
                     }
+                    let mut peak_map = serde_json::Map::new();
+                    for (i, &v) in meters.rx_peak.iter().enumerate() {
+                        peak_map.insert(format!("rx_{}", i), serde_json::json!(linear_to_dbfs(v)));
+                    }
+                    for (i, &v) in meters.tx_peak.iter().enumerate() {
+                        peak_map.insert(format!("tx_{}", i), serde_json::json!(linear_to_dbfs(v)));
+                    }
+                    let mut clip_map = serde_json::Map::new();
+                    for (i, &v) in meters.rx_clip_count.iter().enumerate() {
+                        clip_map.insert(format!("rx_{}", i), serde_json::json!(v));
+                    }
+                    for (i, &v) in meters.tx_clip_count.iter().enumerate() {
+                        clip_map.insert(format!("tx_{}", i), serde_json::json!(v));
+                    }
                     drop(filter);
                     drop(meters);
 
@@ -1909,7 +1923,9 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                         "rx": rx_map,
                         "tx": tx_map,
                         "gr": gr_map,
-                        "bus": bus_map
+                        "bus": bus_map,
+                        "peak": peak_map,
+                        "clip": clip_map
                     });
                     if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
                         break;

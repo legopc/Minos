@@ -360,16 +360,36 @@ impl DanteDevice {
                 }
             }
 
-            // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
+            // Update meters with linear RMS, true peak, clip counts, and limiter GR (best-effort, non-blocking)
             if let Ok(mut m) = meters.try_write() {
+                // Resize all vectors if channel count changed
+                if m.rx_peak.len() != n_rx { m.rx_peak.resize(n_rx, 0.0); }
+                if m.tx_peak.len() != n_tx { m.tx_peak.resize(n_tx, 0.0); }
+                if m.rx_clip_count.len() != n_rx { m.rx_clip_count.resize(n_rx, 0); }
+                if m.tx_clip_count.len() != n_tx { m.tx_clip_count.resize(n_tx, 0); }
+
                 for (i, ch) in rx_f32.iter().enumerate() {
                     if i < m.rx_rms.len() {
                         m.rx_rms[i] = rms_linear(ch);
+                    }
+                    if i < m.rx_peak.len() {
+                        let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+                        m.rx_peak[i] = peak;
+                        if peak > 0.999 {
+                            m.rx_clip_count[i] = m.rx_clip_count[i].saturating_add(1);
+                        }
                     }
                 }
                 for (i, ch) in tx_f32.iter().enumerate() {
                     if i < m.tx_rms.len() {
                         m.tx_rms[i] = rms_linear(ch);
+                    }
+                    if i < m.tx_peak.len() {
+                        let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+                        m.tx_peak[i] = peak;
+                        if peak > 0.999 {
+                            m.tx_clip_count[i] = m.tx_clip_count[i].saturating_add(1);
+                        }
                     }
                 }
                 if m.tx_gr_db.len() != n_tx {

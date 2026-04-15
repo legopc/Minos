@@ -139,6 +139,25 @@
   bottom: 0%;
 }
 
+.strip-clip-badge {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  right: 0;
+  font-size: 7px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--vu-red);
+  letter-spacing: 0.04em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+
+.strip-clip-badge.active {
+  opacity: 1;
+}
+
 /* Fader label + fader */
 .strip-fader-label {
   font-size: 14px;

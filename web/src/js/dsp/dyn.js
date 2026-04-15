@@ -11,6 +11,14 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
   const el = document.createElement('div');
   function emit() { onChange(BK, { ...p }); }
 
+  // GR meter
+  const grMeter = document.createElement('div');
+  grMeter.className = 'dsp-gr-meter';
+  grMeter.innerHTML =
+    `<div class="dsp-gr-track"><div class="dsp-gr-bar" id="gr-bar-${channelId}_cmp"></div></div>` +
+    `<span class="dsp-gr-label" id="gr-label-${channelId}_cmp">0.0 dB</span>`;
+  el.appendChild(grMeter);
+
   const sec = (t) => { const d=document.createElement('div'); d.className='dsp-band-header'; d.textContent=t; return d; };
 
   el.appendChild(sec('Compressor'));

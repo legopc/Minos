@@ -19,6 +19,10 @@ pub struct MeterState {
     pub rx_gate_open: Vec<bool>,
     /// Per-bus linear RMS
     pub bus_rms: Vec<f32>,
+    /// Per-RX cumulative clip count (sample > 0.999)
+    pub rx_clip_count: Vec<u64>,
+    /// Per-TX cumulative clip count (sample > 0.999)
+    pub tx_clip_count: Vec<u64>,
     /// Deprecated: kept for backward compat, same as tx_gr_db
     #[deprecated = "use tx_gr_db instead"]
     pub gr_db: Vec<f32>,
@@ -35,6 +39,8 @@ impl MeterState {
             tx_gr_db: vec![0.0; tx],
             rx_gate_open: vec![false; rx],
             bus_rms: vec![],
+            rx_clip_count: vec![0; rx],
+            tx_clip_count: vec![0; tx],
             gr_db: vec![0.0; tx],
         }
     }

@@ -136,3 +136,48 @@
   font-size: 9px;
   text-align: center;
 }
+
+/* GR (gain-reduction) meter row — shown at top of dynamics/limiter panels */
+.dsp-gr-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+
+.dsp-gr-track {
+  flex: 1;
+  height: 6px;
+  background: var(--meter-bg, #111);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dsp-gr-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--vu-amber, #f5a623);
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.dsp-gr-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* PEQ frequency response canvas */
+.peq-curve-canvas {
+  display: block;
+  width: 100%;
+  height: 80px;
+  border-radius: 3px;
+  background: rgba(0,0,0,0.25);
+  margin-bottom: 6px;
+}

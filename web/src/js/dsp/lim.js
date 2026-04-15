@@ -63,7 +63,13 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
   el.className = 'dsp-content lim';
   if (params.bypassed) el.style.opacity = '0.22';
 
-  // Threshold
+  // GR meter
+  const grMeter = document.createElement('div');
+  grMeter.className = 'dsp-gr-meter';
+  grMeter.innerHTML =
+    `<div class="dsp-gr-track"><div class="dsp-gr-bar" id="gr-bar-${channelId}_lim"></div></div>` +
+    `<span class="dsp-gr-label" id="gr-label-${channelId}_lim">0.0 dB</span>`;
+  el.appendChild(grMeter);
   const threshVal = valEl(fmtDb(params.threshold_db || -3.0));
   const threshSlider = slider(-40, 0, 0.5, params.threshold_db || -3.0, (e) => {
     const v = parseFloat(e.target.value);

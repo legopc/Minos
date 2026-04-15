@@ -39,13 +39,50 @@ function _smooth(id, db) {
   return next;
 }
 
+// Clip badge tracking
+const _lastClipCount = new Map();
+
+function _updateClip(clipData) {
+  Object.entries(clipData).forEach(([id, count]) => {
+    const prev = _lastClipCount.get(id);
+    if (prev !== undefined && count > prev) {
+      const badge = document.getElementById(`clip-badge-${id}`);
+      if (badge) {
+        badge.classList.add('active');
+        clearTimeout(badge._clipTimer);
+        badge._clipTimer = setTimeout(() => badge.classList.remove('active'), 2000);
+      }
+    }
+    _lastClipCount.set(id, count);
+  });
+}
+
+// GR meter update (called from _flush or directly)
+function _updateGR(grData) {
+  Object.entries(grData).forEach(([key, db]) => {
+    const bar   = document.getElementById(`gr-bar-${key}`);
+    const label = document.getElementById(`gr-label-${key}`);
+    if (bar) {
+      const pct = Math.max(0, Math.min(100, (-db / 30) * 100));
+      bar.style.width = pct + '%';
+    }
+    if (label) {
+      label.textContent = db >= 0 ? '0.0 dB' : db.toFixed(1) + ' dB';
+    }
+  });
+}
+
 // ── Main update (called from ws.js on every metering frame) ───────────────
 export function updateAll(msg) {
-  const { rx, tx, gr, bus } = msg;
+  const { rx, tx, gr, bus, peak, clip } = msg;
 
   if (rx) _updateGroup(rx, 'rx');
   if (tx) _updateGroup(tx, 'tx');
   if (bus) _updateGroup(bus, 'bus');
+  // Server-side true peak overrides JS-computed peak hold
+  if (peak) Object.entries(peak).forEach(([id, db]) => updatePeakHold(id, db));
+  if (gr) _updateGR(gr);
+  if (clip) _updateClip(clip);
 
   if (!_pending) {
     _pending = true;
