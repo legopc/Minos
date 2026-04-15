@@ -31,51 +31,51 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 
 ## Upcoming Backlog
 
-### 🔴 Critical — Reliability Fixes
+### ✅ Critical — All Complete
 
-| Item | Description |
+| Item | Evidence |
 |---|---|
-| Config fsync on write | Add `file.sync_all()` + parent dir fsync before atomic rename — prevents config corruption on power loss |
-| Persist error propagation | API mutations silently swallow `persist()` failures; return `500` instead of `200` when config write fails |
-| RT callback panic guard | Wrap audio callback with catch-unwind + circuit breaker (>3 panics in 1min → log critical, disable RT scheduling) |
+| Config fsync on write | `state.rs` — `f.sync_all()` + parent dir fsync after atomic rename |
+| Persist error propagation | `api.rs` — `persist_or_500!` macro returns `500 + {"error":…, "in_memory":true}` |
+| RT callback panic guard | `device.rs` — `catch_unwind` + circuit breaker (>3 panics/60s → drop SCHED_FIFO) |
 
 ---
 
-### 🟠 High — Features & Important Fixes
+### ✅ High — All Complete
 
-| Item | Description |
+| Item | Evidence |
 |---|---|
-| **Internal submix buses** | ~~Named group channels: route any RX into a bus with its own DSP chain (gain/polarity/HPF/EQ/gate/compressor); bus output appears as virtual input row in matrix routable to any TX. 4 buses default, configurable. Bus strips optionally shown in Mixer tab (system toggle). Prerequisite: Input Gain Badge (one-line fix — `input_dsp_to_value()` missing `"am"` block). ~6–8 dev days across 7 phases.~~ ✅ **Complete — Sprint 5** |
-| JWT secret persisted to disk | Secret regenerated on every restart; all clients forcibly re-login after any service restart. Store to `/etc/patchbox/jwt.key` (0600), load at startup. |
-| JWT refresh flow | No token refresh; 8h sessions silently expire mid-show. Add `/api/v1/auth/refresh` endpoint; frontend polls 15min before expiry. |
-| Input Gain Badge | `InputChannelDsp.gain_db` exists in backend + API — just missing `"am"` emit in `input_dsp_to_value()`. Two-line fix; surfaces trim control in matrix + mixer. |
-| Parameter ramping (zipper noise) | Gain/EQ/compression changes apply instantly causing audible clicks. Add 10–50ms sample-accurate gain envelope ramping in `per_input_dsp.sync()` / `per_output_dsp.sync()`. |
-| Denormal protection | No FTZ (flush-to-zero) setup; long-tail DSP filters (gate/compressor release) generate subnormals and stall x86 CPU. Add MXCSR FTZ in RT callback + subnormal floor in filter state updates. |
-| Offline UI banner | WS disconnect leaves controls active; mutations silently fail. Show prominent "OFFLINE" banner, disable mutation buttons, queue + retry on reconnect. |
-| Destructive action modals | Clear routes, scene delete, channel reconfig all use raw `confirm()`. Replace with styled modals showing impact (route count, scene name/date). |
-| Config validation on load | Malformed TOML or out-of-range `rx_channels`/`tx_channels` can crash. Validate schema before applying; reject with helpful error message. |
-| WS zombie connection cleanup | Send task not aborted on write error; connections hang open and accumulate. Abort send_task immediately on error + add close-frame timeout. |
+| JWT secret persisted to disk | `jwt.rs:65` — loads/creates `/etc/patchbox/jwt.key` |
+| JWT refresh flow | `auth_api.rs:66` — `/api/v1/auth/refresh` endpoint registered |
+| Input Gain Badge | `api.rs:699` — `input_dsp_to_value()` emits `"am"` block |
+| Parameter ramping (zipper noise) | `matrix.rs:17–198` — `RampState` + per-sample `gain_ramp.tick()` |
+| Denormal protection | `device.rs:570–578` — MXCSR FTZ+DAZ via inline asm |
+| Offline UI banner | `ws.js:47` + `main.js:221–235` + `#offline-banner` in HTML |
+| Destructive action modals | `modal.js` — full `confirmModal()` impl; no `window.confirm()` in codebase |
+| Config validation on load | `config.rs:535` — `validate()` called before use in `main.rs:34` |
+| WS zombie connection cleanup | `api.rs:1936` — `send_task.abort()` on connection drop |
+| **Internal submix buses** | ✅ Complete — Sprint 5 |
+| **AFL/PFL solo** | ✅ Complete — Sprint F |
 
 ---
 
 ### 🟡 Medium — UI/UX Improvements
 
-| Item | Description |
-|---|---|
-| Scene modal | Save-as dialog, rename in-place, confirm-on-recall with diff preview |
-| EQ curve canvas | Visual frequency response curve rendered on parametric EQ panel |
-| GR meters | Gain reduction meters on limiter/compressor/gate DSP panels |
-| Clipping detection + indicator | Post-limiter clip counter per output channel; persistent badge showing "CLIPPED ×3"; resets manually |
-| Crosspoint pending state | Clicked cells show spinner/pulse until API response; disable re-click during pending request |
-| Mixer scene scroll indicators | Scene bar has no indicator of hidden scenes; add scroll-left/right arrows + count badge |
-| Persistent peak hold on meters | Meter peaks decay instantly; add peak hold line with slow decay (10 dB/s) and manual reset |
-| DSP panel overflow fix | Panels can render off-screen on small viewports; constrain max-height + boundary detection |
-| Fader edit affordance | Double-click to type exact dB value is undiscoverable; add tooltip or pencil icon on dB label |
-| Keyboard shortcuts | Ctrl+S snapshot, Ctrl+Z undo last route, ESC clear solo, `?` help overlay |
-| AFL/PFL solo | ~~Monitor bus routing to dedicated output (backend + UI)~~ ✅ **Complete — Sprint F** |
-| API retry on transient failure | `api.js` throws immediately on network error; add exponential backoff retry (3×) with toast on final fail |
-| Empty matrix state | Blank grid with no guidance when no routes exist; add "Click a crosspoint to create a route" hint |
-| Config backup/restore UI | Add scheduled backup endpoint + restore from list of last 10 backups in System tab |
+| Item | Status | Description |
+|---|---|---|
+| Scene modal | ⬜ | Save-as dialog, rename in-place, confirm-on-recall with diff preview |
+| EQ curve canvas | ⬜ | Visual frequency response curve rendered on parametric EQ panel |
+| GR meters | ⬜ | Gain reduction meters on limiter/compressor/gate DSP panels |
+| Clipping detection + indicator | ⬜ | Post-limiter clip counter per output channel; persistent badge showing "CLIPPED ×3"; resets manually |
+| Crosspoint pending state | ✅ | `matrix.js` — `_pendingCrosspoints` map + CSS `pending` class guards double-click |
+| Mixer scene scroll indicators | ⬜ | Scene bar has no indicator of hidden scenes; add scroll-left/right arrows + count badge |
+| Persistent peak hold on meters | ✅ | `mixer.js` — `strip-meter-peak-hold` elements per strip with hold line |
+| DSP panel overflow fix | ⬜ | Panels can render off-screen on small viewports; constrain max-height + boundary detection |
+| Fader edit affordance | ⬜ | Double-click to type exact dB value is undiscoverable; add tooltip or pencil icon on dB label |
+| Keyboard shortcuts | ⬜ | Ctrl+S snapshot, Ctrl+Z undo last route, ESC clear solo, `?` help overlay |
+| API retry on transient failure | ✅ | `api.js:47–55` — `reqWithRetry` with 3× exponential backoff on GET/PUT |
+| Empty matrix state | ⬜ | Blank grid with no guidance when no routes exist; add "Click a crosspoint to create a route" hint |
+| Config backup/restore UI | ⬜ | Add scheduled backup endpoint + restore from list of last 10 backups in System tab |
 
 ---
 
