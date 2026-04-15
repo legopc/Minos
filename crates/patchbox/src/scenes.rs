@@ -60,8 +60,22 @@ impl SceneStore {
     }
 
     pub fn save(&self, path: &PathBuf) -> Result<(), String> {
+        use std::io::Write;
         let s = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(path, s).map_err(|e| e.to_string())?;
+        let tmp = path.with_extension("scenes.toml.tmp");
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true).create(true).truncate(true)
+                .open(&tmp).map_err(|e| e.to_string())?;
+            f.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+        if let Some(parent) = path.parent() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
         Ok(())
     }
 }

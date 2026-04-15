@@ -51,11 +51,25 @@ impl AppState {
     }
 
     pub async fn persist(&self) -> Result<(), String> {
+        use std::io::Write;
         let cfg = self.config.read().await;
         let s = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
+        drop(cfg);
         let tmp_path = self.config_path.with_extension("toml.tmp");
-        std::fs::write(&tmp_path, &s).map_err(|e| e.to_string())?;
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true).create(true).truncate(true)
+                .open(&tmp_path).map_err(|e| e.to_string())?;
+            f.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
         std::fs::rename(&tmp_path, &self.config_path).map_err(|e| e.to_string())?;
+        // fsync parent dir so the rename directory entry is durable
+        if let Some(parent) = self.config_path.parent() {
+            if let Ok(dir) = std::fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
         Ok(())
     }
 

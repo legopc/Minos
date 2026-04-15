@@ -33,6 +33,32 @@ use crate::state::AppState;
 use crate::auth_api;
 use crate::scenes::Scene;
 
+/// Returns HTTP 500 with structured JSON if config persist fails.
+/// The change remains live in memory until next restart (documented in response body).
+macro_rules! persist_or_500 {
+    ($state:expr) => {
+        if let Err(e) = $state.persist().await {
+            tracing::error!(error = %e, "config persist failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("persist failed: {e}"), "in_memory": true}))
+            ).into_response();
+        }
+    };
+}
+
+macro_rules! persist_scenes_or_500 {
+    ($state:expr) => {
+        if let Err(e) = $state.persist_scenes().await {
+            tracing::error!(error = %e, "scenes persist failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("scenes persist failed: {e}"), "in_memory": true}))
+            ).into_response();
+        }
+    };
+}
+
 #[derive(Deserialize)]
 pub struct MatrixUpdate { pub tx: usize, pub rx: usize, pub enabled: bool }
 
@@ -171,7 +197,7 @@ async fn put_matrix(State(s): State<AppState>, Json(u): Json<MatrixUpdate>) -> i
     }
     cfg.matrix[u.tx][u.rx] = u.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -183,7 +209,7 @@ async fn put_gain_input(State(s): State<AppState>, Json(u): Json<GainUpdate>) ->
     }
     cfg.input_gain_db[u.channel] = u.db.clamp(-60.0, 12.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -195,7 +221,7 @@ async fn put_gain_output(State(s): State<AppState>, Json(u): Json<GainUpdate>) -
     }
     cfg.output_gain_db[u.channel] = u.db.clamp(-60.0, 12.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -207,7 +233,7 @@ async fn mute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl Int
     }
     cfg.output_muted[tx] = true;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -219,7 +245,7 @@ async fn unmute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl I
     }
     cfg.output_muted[tx] = false;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -228,7 +254,7 @@ async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() { *m = true; }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -237,7 +263,7 @@ async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() { *m = false; }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -261,7 +287,7 @@ async fn save_scene(State(s): State<AppState>, Json(req): Json<SaveSceneRequest>
     let mut store = s.scenes.write().await;
     store.scenes.insert(req.name.clone(), scene);
     drop(store);
-    let _ = s.persist_scenes().await;
+    persist_scenes_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -277,8 +303,8 @@ async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl
     scene.apply_to_config(&mut cfg);
     drop(cfg);
     s.scenes.write().await.active = Some(name.clone());
-    let _ = s.persist().await;
-    let _ = s.persist_scenes().await;
+    persist_or_500!(s);
+    persist_scenes_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"scene_loaded","scene_id":&name,"name":&name}).to_string());
     StatusCode::OK.into_response()
 }
@@ -290,7 +316,7 @@ async fn delete_scene(State(s): State<AppState>, Path(name): Path<String>) -> im
         return (StatusCode::NOT_FOUND, "scene not found").into_response();
     }
     drop(store);
-    let _ = s.persist_scenes().await;
+    persist_scenes_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -302,7 +328,7 @@ async fn put_source_name(State(s): State<AppState>, Path(idx): Path<usize>, Json
     }
     cfg.sources[idx] = u.name;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -314,7 +340,7 @@ async fn put_zone_name(State(s): State<AppState>, Path(idx): Path<usize>, Json(u
     }
     cfg.zones[idx] = u.name;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::OK.into_response()
 }
 
@@ -340,7 +366,7 @@ async fn put_eq(State(s): State<AppState>, Path(tx): Path<usize>, Json(u): Json<
     eq.bands[u.band].gain_db = u.gain_db.clamp(-24.0, 24.0);
     eq.bands[u.band].q = u.q.clamp(0.1, 10.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -352,7 +378,7 @@ async fn put_eq_enabled(State(s): State<AppState>, Path(tx): Path<usize>, Json(u
     };
     eq.enabled = u.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -375,7 +401,7 @@ async fn put_limiter(State(s): State<AppState>, Path(tx): Path<usize>, Json(u): 
     lim.attack_ms = u.attack_ms.clamp(0.1, 50.0);
     lim.release_ms = u.release_ms.clamp(10.0, 2000.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -387,7 +413,7 @@ async fn put_limiter_enabled(State(s): State<AppState>, Path(tx): Path<usize>, J
     };
     lim.enabled = u.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -431,7 +457,7 @@ async fn put_input_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(b
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -441,7 +467,7 @@ async fn put_input_polarity(State(s): State<AppState>, Path(ch): Path<usize>, Js
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.polarity = body.invert;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -451,7 +477,7 @@ async fn put_input_hpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(bo
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.hpf = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -461,7 +487,7 @@ async fn put_input_lpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(bo
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.lpf = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -471,7 +497,7 @@ async fn put_input_eq(State(s): State<AppState>, Path(ch): Path<usize>, Json(bod
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.eq = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -481,7 +507,7 @@ async fn put_input_eq_enabled(State(s): State<AppState>, Path(ch): Path<usize>, 
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.eq.enabled = body.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -491,7 +517,7 @@ async fn put_input_gate(State(s): State<AppState>, Path(ch): Path<usize>, Json(b
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.gate = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -501,7 +527,7 @@ async fn put_input_compressor(State(s): State<AppState>, Path(ch): Path<usize>, 
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.compressor = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -511,7 +537,7 @@ async fn put_input_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Jso
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.enabled = body.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -534,7 +560,7 @@ async fn put_output_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -544,7 +570,7 @@ async fn put_output_hpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(b
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.hpf = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -554,7 +580,7 @@ async fn put_output_lpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(b
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.lpf = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -564,7 +590,7 @@ async fn put_output_eq(State(s): State<AppState>, Path(ch): Path<usize>, Json(bo
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.eq = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -574,7 +600,7 @@ async fn put_output_eq_enabled(State(s): State<AppState>, Path(ch): Path<usize>,
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.eq.enabled = body.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -584,7 +610,7 @@ async fn put_output_compressor(State(s): State<AppState>, Path(ch): Path<usize>,
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.compressor = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -594,7 +620,7 @@ async fn put_output_limiter(State(s): State<AppState>, Path(ch): Path<usize>, Js
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.limiter = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -604,7 +630,7 @@ async fn put_output_delay(State(s): State<AppState>, Path(ch): Path<usize>, Json
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.delay = body;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -614,7 +640,7 @@ async fn put_output_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Js
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.enabled = body.enabled;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -624,7 +650,7 @@ async fn put_output_mute(State(s): State<AppState>, Path(ch): Path<usize>, Json(
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.muted = body.muted;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -660,6 +686,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
             "bypassed": false,
             "params": {"hpf": {"enabled": dsp.hpf.enabled, "freq_hz": dsp.hpf.freq_hz}, "lpf": {"enabled": dsp.lpf.enabled, "freq_hz": dsp.lpf.freq_hz}}
         },
+        "am": {"enabled": true, "bypassed": false, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
         "peq": {"enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
         "gte": {"enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
@@ -843,7 +870,7 @@ async fn put_channel(State(s): State<AppState>, Path(id): Path<String>, Json(bod
         if i < cfg.input_dsp.len() { cfg.input_dsp[i].enabled = enabled; }
     }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -931,7 +958,7 @@ async fn put_output_resource(State(s): State<AppState>, Path(id): Path<String>, 
         if i < cfg.output_muted.len() { cfg.output_muted[i] = muted; }
     }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"output_update","id":&id,"volume_db":body.volume_db,"muted":body.muted}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -956,7 +983,7 @@ async fn post_zone(State(s): State<AppState>, Json(body): Json<CreateZoneRequest
     };
     cfg.zone_config.push(zone.clone());
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     (StatusCode::CREATED, Json(zone)).into_response()
 }
 
@@ -981,7 +1008,7 @@ async fn put_zone_resource(State(s): State<AppState>, Path(zone_id): Path<String
         cfg.zone_config[i].tx_ids = tx_ids;
     }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -996,7 +1023,7 @@ async fn delete_zone_resource(State(s): State<AppState>, Path(zone_id): Path<Str
     }
     cfg.zone_config.remove(i);
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1035,7 +1062,7 @@ async fn post_route(State(s): State<AppState>, Json(body): Json<CreateRouteReque
     }
     cfg.matrix[tx][rx] = true;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"dante"}).to_string());
     let route_id = format!("rx_{}|tx_{}", rx, tx);
     (StatusCode::CREATED, Json(serde_json::json!({
@@ -1064,7 +1091,7 @@ async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl
     }
     cfg.matrix[tx][rx] = false;
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":format!("rx_{}",rx),"tx_id":format!("tx_{}",tx),"state":"off","route_type":"dante"}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -1097,7 +1124,7 @@ async fn delete_routes_bulk(State(s): State<AppState>, Query(params): Query<Hash
         }
     }
     drop(cfg);
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1175,7 +1202,7 @@ async fn post_system_config_import(State(s): State<AppState>, body: axum::body::
     };
     new_cfg.normalize();
     *s.config.write().await = new_cfg;
-    let _ = s.persist().await;
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1206,7 +1233,7 @@ async fn put_scene(State(s): State<AppState>, Path(id): Path<String>, Json(body)
         scene.is_favourite = fav;
     }
     drop(store);
-    let _ = s.persist_scenes().await;
+    persist_scenes_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 

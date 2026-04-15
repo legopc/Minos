@@ -447,6 +447,13 @@ fn try_set_rt_priority_once() {
         };
         if ret == 0 {
             tracing::info!("DSP thread elevated to SCHED_FIFO priority 90");
+            // Enable FTZ (flush denormals to zero) and DAZ (denormals are zero) to
+            // prevent denormal floats from causing 100× CPU spikes in the RT path.
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                use std::arch::x86_64::{_mm_getcsr, _mm_setcsr};
+                _mm_setcsr(_mm_getcsr() | 0x8040); // FTZ (bit15) + DAZ (bit6)
+            }
         } else {
             tracing::debug!(
                 "SCHED_FIFO not granted (needs CAP_SYS_NICE or rtprio limit): errno={}",
