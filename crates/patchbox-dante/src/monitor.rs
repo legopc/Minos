@@ -117,43 +117,25 @@ impl MonitorWriter {
 
         let period = PERIOD_FRAMES as usize;
         let mut write_buf = vec![0i32; period * CHANNELS as usize];
-        let mut cached_audio = vec![0i32; period * CHANNELS as usize];
         let mut have_audio = false;
         let mut last_gen: u64 = 0;
+        let mut sine_phase: f32 = 0.0; // SINE TEST: 440 Hz injected to isolate ALSA writer
 
         while !self.shutdown.load(Ordering::Relaxed) {
             let active = self.solo_active.load(Ordering::Acquire);
 
             if active {
-                let cur_gen = self.generation.load(Ordering::Acquire);
-                if cur_gen != last_gen {
-                    last_gen = cur_gen;
-                    let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
-                    if nf > 0 {
-                        let src = {
-                            let mut tb = self.tb_output.lock().unwrap();
-                            *tb.read()
-                        };
-                        // NOTE: gain is already applied by the RT callback in matrix.rs.
-                        // Do NOT apply volume_db here — that caused double-gain (squared).
-                        for i in 0..nf.min(period) {
-                            let s = f32_to_i32_alsa(src[i]);
-                            write_buf[i * 2] = s;
-                            write_buf[i * 2 + 1] = s;
-                        }
-                        // Zero-pad if Dante block < ALSA period (should not happen with matching sizes)
-                        for i in nf.min(period)..period {
-                            write_buf[i * 2] = 0;
-                            write_buf[i * 2 + 1] = 0;
-                        }
-                        cached_audio.copy_from_slice(&write_buf);
-                        have_audio = true;
-                    }
+                // SINE TEST: bypass TB read entirely — generate 440 Hz at -6 dBFS
+                for i in 0..period {
+                    let s = f32_to_i32_alsa((sine_phase * std::f32::consts::TAU).sin() * 0.5);
+                    write_buf[i * 2] = s;
+                    write_buf[i * 2 + 1] = s;
+                    sine_phase += 440.0 / 48000.0;
+                    if sine_phase >= 1.0 { sine_phase -= 1.0; }
                 }
-                // Replay cached audio when no new generation arrived.
-                // ALSA's blocking writei paces us at the hardware rate — no sleep polling needed.
-                let buf = if have_audio { &cached_audio } else { &write_buf };
-                self.write_frames(&pcm, buf)?;
+                have_audio = true;
+                let _ = last_gen; // suppress unused warning during test
+                self.write_frames(&pcm, &write_buf)?;
             } else {
                 have_audio = false;
                 self.write_frames(&pcm, &vec![0i32; period * CHANNELS as usize])?;
