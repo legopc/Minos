@@ -141,10 +141,12 @@
 
 /* Fader label + fader */
 .strip-fader-label {
-  font-size: 11px;
-  color: var(--text-accent);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
   text-align: center;
   width: 100%;
+  letter-spacing: 0.5px;
 }
 
 /*
