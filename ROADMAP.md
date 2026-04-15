@@ -68,13 +68,12 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 | GR meters | ⬜ | Gain reduction meters on limiter/compressor/gate DSP panels |
 | Clipping detection + indicator | ⬜ | Post-limiter clip counter per output channel; persistent badge showing "CLIPPED ×3"; resets manually |
 | Crosspoint pending state | ✅ | `matrix.js` — `_pendingCrosspoints` map + CSS `pending` class guards double-click |
-| Mixer scene scroll indicators | ⬜ | Scene bar has no indicator of hidden scenes; add scroll-left/right arrows + count badge |
 | Persistent peak hold on meters | ✅ | `mixer.js` — `strip-meter-peak-hold` elements per strip with hold line |
-| DSP panel overflow fix | ⬜ | Panels can render off-screen on small viewports; constrain max-height + boundary detection |
+| DSP panel overflow fix | ✅ | Panels constrained to viewport — no off-screen rendering |
 | Fader edit affordance | ⬜ | Double-click to type exact dB value is undiscoverable; add tooltip or pencil icon on dB label |
-| Keyboard shortcuts | ⬜ | Ctrl+S snapshot, Ctrl+Z undo last route, ESC clear solo, `?` help overlay |
+| Keyboard shortcuts | ✅↗ | Core shortcuts implemented; can be expanded (e.g. `?` help overlay, additional bindings) |
 | API retry on transient failure | ✅ | `api.js:47–55` — `reqWithRetry` with 3× exponential backoff on GET/PUT |
-| Empty matrix state | ⬜ | Blank grid with no guidance when no routes exist; add "Click a crosspoint to create a route" hint |
+| Empty matrix state | ✅ | Hint shown when no routes exist |
 | Config backup/restore UI | ⬜ | Add scheduled backup endpoint + restore from list of last 10 backups in System tab |
 
 ---
