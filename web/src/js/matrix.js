@@ -1087,6 +1087,10 @@ async function _execSolo(channelId) {
   _soloMode = { channelId, savedRoutes: allRoutes };
   _refreshCornerButtons();
 
+  // Tell backend which RX to PFL-monitor (channelId = "rx_N" → index N)
+  const rxIdx = parseInt(channelId.replace('rx_', ''), 10);
+  if (!isNaN(rxIdx)) api.putSolo([rxIdx]).catch(() => {});
+
   for (const r of allRoutes) {
     try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
   }
@@ -1103,6 +1107,9 @@ async function _restoreSolo() {
   if (!_soloMode || typeof _soloMode !== 'object') return;
   const { savedRoutes } = _soloMode;
   _soloMode = null;
+
+  // Clear PFL monitor
+  api.clearSolo().catch(() => {});
 
   const current = st.routeList().slice();
   for (const r of current) {
