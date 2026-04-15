@@ -370,6 +370,9 @@ pub struct PatchboxConfig {
     /// Increase to 96 if pops/clicks occur after reducing rx_jitter_samples.
     #[serde(default = "default_lead_samples")]
     pub lead_samples: usize,
+    /// Gain ramp time in ms for zipper-free transitions. Default 10ms.
+    #[serde(default = "default_gain_ramp_ms")]
+    pub gain_ramp_ms: f32,
 }
 
 impl Default for PatchboxConfig {
@@ -396,6 +399,7 @@ impl Default for PatchboxConfig {
             port: 9191,
             rx_jitter_samples: default_rx_jitter_samples(),
             lead_samples: default_lead_samples(),
+            gain_ramp_ms: default_gain_ramp_ms(),
         }
     }
 }
@@ -511,4 +515,8 @@ fn default_rx_jitter_samples() -> usize {
 
 fn default_lead_samples() -> usize {
     48
+}
+
+fn default_gain_ramp_ms() -> f32 {
+    10.0
 }
