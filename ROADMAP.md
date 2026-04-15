@@ -35,6 +35,7 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 | GR meters | Gain reduction meters on compressor/limiter/gate DSP panels | Medium |
 | Scene modal | Save-as dialog, rename, confirm-on-recall | Medium |
 | Matrix keyboard nav | Arrow keys to move focus, Enter to toggle crosspoint | Low |
+| Internal buses | Named submix buses: route any RX inputs into a virtual group channel with its own DSP chain (EQ/gate/limiter), output appears as a new input row in the matrix routable to any TX. Enables group processing (e.g. "Band Bus" — compress guitar+bass+keys together before zoning). Requires new `InternalBus` entity in config + RT audio engine + matrix UI virtual rows. | High |
 | AFL/PFL solo | Monitor bus routing to dedicated output (backend + UI) | Medium |
 | `/health` enrichment | Add Dante connection state, PTP lock status, active route count | Low |
 | Scene scheduler | Time-based auto-recall (e.g. "Stage open at 20:00") | Low |
