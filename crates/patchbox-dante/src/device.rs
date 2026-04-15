@@ -346,6 +346,17 @@ impl DanteDevice {
             let actual_rx = channels.len().min(n_rx);
             let block     = samples_count;
 
+            // One-shot block-size diagnostic: log first 5 non-zero block sizes
+            {
+                use std::sync::atomic::{AtomicU8, Ordering as O};
+                static LOG_COUNT: AtomicU8 = AtomicU8::new(0);
+                let c = LOG_COUNT.load(O::Relaxed);
+                if c < 5 && block > 0 {
+                    LOG_COUNT.fetch_add(1, O::Relaxed);
+                    tracing::info!(block, channels = actual_rx, "RT callback block size diagnostic");
+                }
+            }
+
             // Sync DSP state from latest config (RT-safe: no alloc when vecs already sized)
             matrix_proc.sync(cfg);
 
