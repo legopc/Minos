@@ -413,6 +413,11 @@ pub struct PatchboxConfig {
     /// Monitor volume in dB, -60 to +12.
     #[serde(default)]
     pub monitor_volume_db: f32,
+    /// Optional path to statime observation Unix socket for real PTP offset reporting.
+    /// When set and the socket is reachable, health endpoint returns actual offset_ns.
+    /// Example: /run/statime/observation.sock
+    #[serde(default)]
+    pub statime_observation_path: Option<String>,
     /// Soloed RX channel indices. Session-only, NOT persisted.
     #[serde(skip)]
     pub solo_channels: Vec<usize>,
@@ -448,6 +453,7 @@ impl Default for PatchboxConfig {
             bus_matrix: None,
             monitor_device: None,
             monitor_volume_db: 0.0,
+            statime_observation_path: None,
             solo_channels: vec![],
         }
     }

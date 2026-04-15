@@ -9,6 +9,16 @@ use axum::{
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use tokio::time::{interval, Duration};
+use std::sync::Arc;
+use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
+use std::os::unix::fs::FileTypeExt;
+use axum::extract::ConnectInfo;
+use axum::http::Request;
+use axum::middleware::Next;
+use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+
+type IpLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
 #[derive(RustEmbed)]
 #[folder = "../../web/src/"]
@@ -89,7 +99,12 @@ use std::sync::atomic::Ordering as AOrdering;
 pub struct HealthDante { pub name: String, pub nic: String, pub connected: bool }
 
 #[derive(Serialize)]
-pub struct HealthPtp { pub synced: bool, pub socket_path: String }
+pub struct HealthPtp {
+    pub synced: bool,
+    pub socket_path: String,
+    /// PTP offset from master in nanoseconds. None if observation socket not configured or unreachable.
+    pub offset_ns: Option<i64>,
+}
 
 #[derive(Serialize)]
 pub struct HealthAudio {
@@ -130,16 +145,45 @@ fn linear_to_db(v: f32) -> f32 {
     (20.0 * v.log10()).max(-60.0)
 }
 
+/// Query statime observation Unix socket for PTP offset from master.
+/// Connects with a 100ms timeout, reads Prometheus text, parses `offset_from_master`.
+/// Returns None if socket unreachable or metric missing.
+async fn query_ptp_offset(socket_path: &str) -> Option<i64> {
+    use tokio::io::AsyncReadExt;
+    let connect = tokio::net::UnixStream::connect(socket_path);
+    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect).await.ok()?.ok()?;
+    let mut buf = String::new();
+    let read = tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
+    if read.is_err() { return None; }
+    // Parse: "statime_offset_from_master{...} <value>"
+    for line in buf.lines() {
+        if line.starts_with("statime_offset_from_master") && !line.starts_with('#') {
+            if let Some(val_str) = line.split_whitespace().last() {
+                if let Ok(secs) = val_str.parse::<f64>() {
+                    return Some((secs * 1_000_000_000.0) as i64);
+                }
+            }
+        }
+    }
+    None
+}
+
 // GET /api/v1/health
 async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let meters = s.meters.read().await;
 
-    // PTP: check whether the statime clock socket exists (it's a DGRAM socket,
-    // so UnixStream::connect cannot be used — existence of the file is sufficient)
-    let ptp_synced = {
-        let path = cfg.dante_clock_path.clone();
-        std::path::Path::new(&path).exists()
+    // PTP: check clock socket is actually a socket (not just any file)
+    let ptp_socket_path = cfg.dante_clock_path.clone();
+    let ptp_synced = std::fs::metadata(&ptp_socket_path)
+        .map(|m| m.file_type().is_socket())
+        .unwrap_or(false);
+
+    // Attempt to read real offset from statime observation socket (optional)
+    let ptp_offset_ns = if let Some(obs_path) = &cfg.statime_observation_path {
+        query_ptp_offset(obs_path).await
+    } else {
+        None
     };
 
     // Audio stats
@@ -176,6 +220,7 @@ async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
         ptp: HealthPtp {
             synced: ptp_synced,
             socket_path: cfg.dante_clock_path.clone(),
+            offset_ns: ptp_offset_ns,
         },
         audio: HealthAudio {
             rx_channels: cfg.rx_channels,
@@ -2065,7 +2110,26 @@ async fn post_admin_restart(
     (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
 }
 
+/// Per-IP rate limiting middleware. Returns 429 if a client exceeds 100 req/s (burst 200).
+async fn rate_limit_mw(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    axum::extract::State(limiter): axum::extract::State<IpLimiter>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    match limiter.check_key(&addr.ip()) {
+        Ok(_) => next.run(req).await,
+        Err(_) => (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            [("Retry-After", "1")],
+            "rate limit exceeded",
+        ).into_response(),
+    }
+}
+
 pub fn router(state: AppState) -> Router {
+    let quota = Quota::per_second(NonZeroU32::new(100).unwrap()).allow_burst(NonZeroU32::new(200).unwrap());
+    let limiter: IpLimiter = Arc::new(RateLimiter::keyed(quota));
     // Protected routes — require valid JWT
     let protected = Router::new()
         .route("/api/v1/whoami", get(whoami))
@@ -2169,4 +2233,5 @@ pub fn router(state: AppState) -> Router {
     }
 
     app.with_state(state)
+        .route_layer(middleware::from_fn_with_state(limiter, rate_limit_mw))
 }
