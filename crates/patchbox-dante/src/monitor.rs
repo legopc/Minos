@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering}
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u32 = 2; // stereo: L=R (mono PFL duplicated to both ears)
-const PERIOD_FRAMES: i64 = 256;
-const BUFFER_FRAMES: i64 = 1024;
+const PERIOD_FRAMES: i64 = 128;  // Match Dante block size — eliminates sub-period writes
+const NUM_PERIODS: i64 = 8;      // 8 × 128 = 1024 frames = 21.3 ms headroom
+const BUFFER_FRAMES: i64 = PERIOD_FRAMES * NUM_PERIODS;
 const MAX_FRAMES: usize = 1024;
 
 pub struct MonitorWriter {
@@ -90,13 +91,34 @@ impl MonitorWriter {
             hwp.set_period_size_near(PERIOD_FRAMES, alsa::ValueOr::Nearest)?;
             hwp.set_buffer_size_near(BUFFER_FRAMES)?;
             pcm.hw_params(&hwp)?;
+
+            let actual_rate = hwp.get_rate().unwrap_or(0);
+            let actual_period = hwp.get_period_size().unwrap_or(0);
+            let actual_buffer = hwp.get_buffer_size().unwrap_or(0);
+            tracing::info!(
+                rate = actual_rate, period = actual_period, buffer = actual_buffer,
+                "monitor ALSA hw_params applied"
+            );
         }
+
+        // Prevent premature playback start: require buffer half-full before DMA begins.
+        // Without this, start_threshold defaults to 1 frame → playback starts immediately
+        // after any write → buffer drains in 2.67 ms → underrun → perpetual starvation cycle.
+        {
+            let swp = pcm.sw_params_current()?;
+            swp.set_start_threshold(BUFFER_FRAMES as alsa::pcm::Frames / 2)?;
+            pcm.sw_params(&swp)?;
+        }
+
         pcm.prepare()?;
+        self.prefill_silence(&pcm)?;
 
         tracing::info!(device = %self.device_name, "monitor ALSA device opened");
 
-        let silence = vec![0i32; PERIOD_FRAMES as usize * CHANNELS as usize];
-        let mut write_buf = vec![0i32; MAX_FRAMES * CHANNELS as usize];
+        let period = PERIOD_FRAMES as usize;
+        let mut write_buf = vec![0i32; period * CHANNELS as usize];
+        let mut cached_audio = vec![0i32; period * CHANNELS as usize];
+        let mut have_audio = false;
         let mut last_gen: u64 = 0;
 
         while !self.shutdown.load(Ordering::Relaxed) {
@@ -104,38 +126,50 @@ impl MonitorWriter {
 
             if active {
                 let cur_gen = self.generation.load(Ordering::Acquire);
-                if cur_gen == last_gen {
-                    // No new data yet — sleep briefly rather than writing silence.
-                    // Writing 256-frame silence blocks here dilutes the 128-frame audio
-                    // chunks to ~33% duty cycle which sounds like heavy distortion.
-                    // ALSA recovers from any underrun via write_frames error handling.
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                    continue;
+                if cur_gen != last_gen {
+                    last_gen = cur_gen;
+                    let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
+                    if nf > 0 {
+                        let src = {
+                            let mut tb = self.tb_output.lock().unwrap();
+                            *tb.read()
+                        };
+                        // NOTE: gain is already applied by the RT callback in matrix.rs.
+                        // Do NOT apply volume_db here — that caused double-gain (squared).
+                        for i in 0..nf.min(period) {
+                            let s = f32_to_i32_alsa(src[i]);
+                            write_buf[i * 2] = s;
+                            write_buf[i * 2 + 1] = s;
+                        }
+                        // Zero-pad if Dante block < ALSA period (should not happen with matching sizes)
+                        for i in nf.min(period)..period {
+                            write_buf[i * 2] = 0;
+                            write_buf[i * 2 + 1] = 0;
+                        }
+                        cached_audio.copy_from_slice(&write_buf);
+                        have_audio = true;
+                    }
                 }
-                last_gen = cur_gen;
-
-                let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
-                if nf == 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                    continue;
-                }
-                let src = {
-                    let mut tb = self.tb_output.lock().unwrap();
-                    *tb.read()
-                };
-                // Apply software volume_db gain
-                let vol_db = self.volume_db.load(Ordering::Relaxed) as f32;
-                let gain = 10.0f32.powf(vol_db / 20.0);
-                // Convert f32 → i32 S32_LE, interleaved stereo (L=R mono PFL)
-                for i in 0..nf {
-                    let s = f32_to_i32_alsa(src[i] * gain);
-                    write_buf[i * 2] = s;
-                    write_buf[i * 2 + 1] = s;
-                }
-                self.write_frames(&pcm, &write_buf[..nf * 2])?;
+                // Replay cached audio when no new generation arrived.
+                // ALSA's blocking writei paces us at the hardware rate — no sleep polling needed.
+                let buf = if have_audio { &cached_audio } else { &write_buf };
+                self.write_frames(&pcm, buf)?;
             } else {
-                self.write_frames(&pcm, &silence)?;
+                have_audio = false;
+                self.write_frames(&pcm, &vec![0i32; period * CHANNELS as usize])?;
             }
+        }
+        Ok(())
+    }
+
+    /// Pre-fill the ALSA buffer with silence after prepare() or recover().
+    /// Ensures start_threshold is met so playback doesn't start prematurely.
+    fn prefill_silence(&self, pcm: &alsa::pcm::PCM) -> Result<(), Box<dyn std::error::Error>> {
+        let period = PERIOD_FRAMES as usize;
+        let buf = vec![0i32; period * CHANNELS as usize];
+        for _ in 0..(NUM_PERIODS / 2 + 1) {
+            let io = pcm.io_i32()?;
+            io.writei(&buf)?;
         }
         Ok(())
     }
@@ -143,10 +177,12 @@ impl MonitorWriter {
     fn write_frames(&self, pcm: &alsa::pcm::PCM, buf: &[i32]) -> Result<(), Box<dyn std::error::Error>> {
         let io = pcm.io_i32()?;
         if let Err(e) = io.writei(buf) {
-            // Capture errno before dropping io (which borrows pcm)
             let errno = e.errno() as i32;
             drop(io);
+            tracing::debug!(errno, "monitor ALSA xrun — recovering and pre-filling");
             pcm.recover(errno, true)?;
+            // Pre-fill after recovery to break the underrun→recover→underrun cycle
+            self.prefill_silence(pcm)?;
             pcm.io_i32()?.writei(buf).map(|_| ()).map_err(Into::into)
         } else {
             Ok(())
