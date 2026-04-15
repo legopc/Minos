@@ -136,3 +136,12 @@
   outline: none;
   border-color: var(--accent);
 }
+
+/* ── Bus Settings ────────────────────────────────────────── */
+.sys-toggle {
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--accent-gold, #e3b341);
+  min-width: 36px;
+}

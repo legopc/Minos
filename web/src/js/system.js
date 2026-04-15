@@ -67,6 +67,14 @@ export async function render(container) {
         <div class="sys-row"><button class="sys-btn" id="cfg-save-btn">Save & Restart</button></div>
       </div>
 
+      <!-- Bus Settings card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Internal Buses</div>
+        <div class="sys-row"><span class="sys-lbl">Bus Count</span><input type="number" id="bus-count-input" class="cfg-input" min="0" max="8" value="${sys.bus_count ?? 0}"></div>
+        <div class="sys-row"><button class="sys-btn" id="bus-count-btn">Apply (restart)</button></div>
+        <div class="sys-row"><span class="sys-lbl">Show in Mixer</span><input type="checkbox" id="bus-show-toggle" class="sys-toggle" ${sys.show_buses_in_mixer !== false ? 'checked' : ''}></div>
+      </div>
+
       <!-- Actions card -->
       <div class="sys-card">
         <div class="sys-card-title">Actions</div>
@@ -100,6 +108,39 @@ export async function render(container) {
       _showRestartOverlay();
     } catch(e) {
       toast('Failed: ' + e.message, true);
+    }
+  });
+
+  // Wire bus count button
+  document.getElementById('bus-count-btn')?.addEventListener('click', async () => {
+    const busCount = parseInt(document.getElementById('bus-count-input').value, 10);
+    if (isNaN(busCount) || busCount < 0 || busCount > 8) {
+      toast('Invalid bus count (0-8)', true);
+      return;
+    }
+    try {
+      const rx = parseInt(document.getElementById('cfg-rx-count').value, 10);
+      const tx = parseInt(document.getElementById('cfg-tx-count').value, 10);
+      if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
+        toast('Invalid channel count (1-32)', true);
+        return;
+      }
+      await api.postAdminChannels(rx, tx, busCount);
+      _showRestartOverlay();
+    } catch(e) {
+      toast('Failed: ' + e.message, true);
+    }
+  });
+
+  // Wire show buses toggle
+  document.getElementById('bus-show-toggle')?.addEventListener('change', async (e) => {
+    try {
+      await api.putSystem({ show_buses_in_mixer: e.target.checked });
+      if (st.state.system) st.state.system.show_buses_in_mixer = e.target.checked;
+      window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+    } catch(e) {
+      toast('Failed: ' + e.message, true);
+      e.target.checked = !e.target.checked;
     }
   });
 

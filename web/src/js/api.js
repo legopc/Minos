@@ -151,6 +151,16 @@ export const deleteRoutesByRx = (rx_id)            => reqWithRetry('DELETE', `/r
 export const deleteRoutesByTx = (tx_id)            => reqWithRetry('DELETE', `/routes?tx_id=${tx_id}`);
 export const deleteRoutesByZone = (zone_id)        => reqWithRetry('DELETE', `/routes?zone_id=${zone_id}`);
 
+// ── Buses ──────────────────────────────────────────────────────────────────
+export const getBuses      = ()             => get('/buses');
+export const createBus     = (name)         => post('/buses', { name });
+export const deleteBus     = (id)           => reqWithRetry('DELETE', `/buses/${id}`);
+export const updateBus     = (id, body)     => reqWithRetry('PUT', `/buses/${id}`, body);
+export const setBusRouting = (id, routing)  => reqWithRetry('PUT', `/buses/${id}/routing`, { routing });
+export const setBusMatrix  = (matrix)       => reqWithRetry('PUT', '/bus-matrix', { matrix });
+export const setBusGain    = (id, gain_db)  => reqWithRetry('PUT', `/buses/${id}/gain`, { gain_db });
+export const setBusMute    = (id, muted)    => reqWithRetry('PUT', `/buses/${id}/mute`, { muted });
+
 // ── Scenes ─────────────────────────────────────────────────────────────────
 export const getScenes     = ()          => get('/scenes');
 export const getScene      = (id)        => get(`/scenes/${id}`);
@@ -166,9 +176,14 @@ export const getMetering   = ()          => get('/metering');
 // ── System ─────────────────────────────────────────────────────────────────
 export const getSystem          = ()     => get('/system');
 export const getHealth          = ()     => get('/health');
+export const putSystem          = (body) => put('/system', body);
 export const putSystemConfig    = (body) => put('/system/config', body);
 export const getConfigExport    = ()     => fetch(BASE + '/system/config/export', {
   headers: _token ? { 'Authorization': `Bearer ${_token}` } : {},
 });
-export const postAdminChannels  = (rx, tx) => post('/admin/channels', { rx, tx });
+export const postAdminChannels  = (rx, tx, bus_count) => {
+  const body = { rx, tx };
+  if (bus_count !== undefined) body.bus_count = bus_count;
+  return post('/admin/channels', body);
+};
 export const postAdminRestart   = ()     => post('/admin/restart', {});
