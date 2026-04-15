@@ -791,6 +791,8 @@ struct SystemResponse {
     audio_drops: u64,
     bus_count: usize,
     show_buses_in_mixer: bool,
+    monitor_device: Option<String>,
+    monitor_volume_db: f32,
 }
 
 #[derive(Serialize)]
@@ -1519,10 +1521,9 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let tx_count = cfg.tx_channels;
     let bus_count = cfg.internal_buses.len();
     let show_buses_in_mixer = cfg.show_buses_in_mixer;
+    let monitor_device = cfg.monitor_device.clone();
+    let monitor_volume_db = cfg.monitor_volume_db;
     drop(cfg);
-    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
-    let ptp_locked = dante_connected;
-    let dante_status = if dante_connected { "connected" } else { "disconnected" }.to_string();
     Json(SystemResponse {
         version: env!("CARGO_PKG_VERSION"),
         hostname: get_hostname(),
@@ -1536,6 +1537,8 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
         audio_drops: s.resyncs.load(AOrdering::Relaxed),
         bus_count,
         show_buses_in_mixer,
+        monitor_device,
+        monitor_volume_db,
     })
 }
 

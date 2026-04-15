@@ -204,13 +204,63 @@ impl DanteDevice {
         let (mut tb_input, mut tb_output) = triple_buffer(&initial_cfg);
 
         // Background task: push config updates into triple buffer every 10ms
+        // Also manages ALSA monitor writer lifecycle — spawns/restarts on device change.
         let config_ref = config.clone();
+        let mon_tb_output_watcher = mon_tb_output_arc.clone();
+        let mon_nframes_watcher   = mon_nframes.clone();
+        let mon_active_watcher    = mon_active.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(10));
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            let mut last_monitor_device: Option<String> = initial_cfg.monitor_device.clone();
+            let mut monitor_shutdown: Option<Arc<std::sync::atomic::AtomicBool>> = None;
+
+            // Initial monitor writer spawn
+            if let Some(ref dev) = initial_cfg.monitor_device {
+                let writer = crate::monitor::MonitorWriter::new(
+                    dev.clone(),
+                    mon_tb_output_watcher.clone(),
+                    mon_nframes_watcher.clone(),
+                    mon_active_watcher.clone(),
+                );
+                let sh = writer.shutdown.clone();
+                monitor_shutdown = Some(sh);
+                std::thread::Builder::new()
+                    .name("monitor-alsa".into())
+                    .spawn(move || writer.run())
+                    .ok();
+                tracing::info!(device = %dev, "ALSA monitor writer started");
+            }
+
             loop {
                 interval.tick().await;
                 if let Ok(cfg) = config_ref.try_read() {
                     tb_input.write(cfg.clone());
+
+                    // Hot-reconfigure: device changed?
+                    if cfg.monitor_device != last_monitor_device {
+                        // Stop old writer
+                        if let Some(sh) = monitor_shutdown.take() {
+                            sh.store(true, std::sync::atomic::Ordering::Release);
+                            tracing::info!("monitor ALSA writer stopped");
+                        }
+                        // Start new writer
+                        if let Some(ref dev) = cfg.monitor_device {
+                            let writer = crate::monitor::MonitorWriter::new(
+                                dev.clone(),
+                                mon_tb_output_watcher.clone(),
+                                mon_nframes_watcher.clone(),
+                                mon_active_watcher.clone(),
+                            );
+                            let sh = writer.shutdown.clone();
+                            monitor_shutdown = Some(sh);
+                            std::thread::Builder::new()
+                                .name("monitor-alsa".into())
+                                .spawn(move || writer.run())
+                                .ok();
+                            tracing::info!(device = %dev, "ALSA monitor writer started (hot-reconfigure)");
+                        }
+                        last_monitor_device = cfg.monitor_device.clone();
+                    }
                 }
             }
         });
@@ -477,24 +527,6 @@ impl DanteDevice {
                 }
             }
         })).await;
-
-        // Spawn ALSA monitor writer if configured
-        {
-            let cfg_snap = config.read().await;
-            if let Some(ref dev) = cfg_snap.monitor_device {
-                let writer = crate::monitor::MonitorWriter::new(
-                    dev.clone(),
-                    mon_tb_output_arc.clone(),
-                    mon_nframes.clone(),
-                    mon_active.clone(),
-                );
-                std::thread::Builder::new()
-                    .name("monitor-alsa".into())
-                    .spawn(move || writer.run())
-                    .expect("failed to spawn monitor writer thread");
-                tracing::info!(device = %dev, "ALSA monitor writer started");
-            }
-        }
 
         // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
         // which kills the mDNS broadcaster and removes the device from Dante Controller.
