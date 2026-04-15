@@ -94,8 +94,10 @@ export function render(container) {
 
   // C5: Show empty matrix hint when no routes exist (only after state has loaded — channels populated)
   const routeCount = (st.routeList?.() ?? []).length;
+  const busRouteCount = Object.values(st.state.busMatrix ?? {}).reduce((n, m) => n + Object.values(m).filter(Boolean).length, 0)
+    + st.busList().reduce((n, b) => n + (Array.isArray(b.routing) ? b.routing.filter(Boolean).length : 0), 0);
   const stateLoaded = st.state.channels.size > 0;
-  if (routeCount === 0 && stateLoaded) {
+  if (routeCount === 0 && busRouteCount === 0 && stateLoaded) {
     const hint = document.createElement('div');
     hint.className = 'matrix-empty-hint';
     hint.innerHTML = `
