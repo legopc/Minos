@@ -4,6 +4,7 @@ import * as api from './api.js';
 import { openPanel } from './panels.js';
 import { toast } from './toast.js';
 import { DSP_COLOURS } from './dsp/colours.js';
+import { buildBusRoutingContent } from './dsp/bus-routing.js';
 
 let _animFrame = null;
 let _soloSet = new Set();
@@ -131,6 +132,16 @@ function _renderStrips(strips, masters) {
     const s = _buildInputStrip(ch);
     strips.appendChild(s);
   });
+
+  // Bus strips
+  const buses = st.busList();
+  if (st.state.system?.show_buses_in_mixer !== false && buses.length > 0) {
+    const sep = document.createElement('div');
+    sep.className = 'mixer-bus-separator';
+    sep.textContent = 'BUSES';
+    strips.appendChild(sep);
+    buses.forEach(bus => strips.appendChild(_buildBusStrip(bus)));
+  }
 
   // Output master strips (one per output, replaces zone-based iteration)
   outputs.forEach(out => {
@@ -347,6 +358,189 @@ function _buildInputStrip(ch) {
   return strip;
 }
 
+function _buildBusStrip(bus) {
+  const strip = document.createElement('div');
+  strip.className = 'mixer-strip bus-strip';
+  strip.id = `strip-${bus.id}`;
+  strip.dataset.busId = bus.id;
+
+  // Name
+  const nm = document.createElement('div');
+  nm.className = 'strip-name';
+  nm.textContent = bus.name ?? bus.id;
+  nm.title = bus.id;
+  strip.appendChild(nm);
+
+  // Mute button
+  const muteBtn = document.createElement('button');
+  const initMuted = bus.muted ?? false;
+  muteBtn.className = 'strip-mute-btn' + (initMuted ? ' active' : '');
+  muteBtn.textContent = 'MUTE';
+  muteBtn.title = initMuted ? 'Unmute bus' : 'Mute bus';
+  muteBtn.onclick = async () => {
+    const nowMuted = muteBtn.classList.contains('active');
+    try {
+      await api.setBusMute(bus.id, !nowMuted);
+      muteBtn.classList.toggle('active', !nowMuted);
+      muteBtn.title = !nowMuted ? 'Unmute bus' : 'Mute bus';
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(muteBtn);
+
+  // Sources indicator badge
+  const srcCount = Array.isArray(bus.routing) ? bus.routing.length : 0;
+  const srcBadge = document.createElement('button');
+  srcBadge.className = 'strip-sources-badge';
+  srcBadge.title = 'Configure bus sources';
+  srcBadge.textContent = `${srcCount} src`;
+  srcBadge.onclick = () => _openBusRoutingPanel(bus);
+  strip.appendChild(srcBadge);
+
+  // VU meter
+  const meter = document.createElement('div');
+  meter.className = 'strip-meter';
+  const bar = document.createElement('div');
+  bar.className = 'strip-meter-bar';
+  bar.id = `vu-bar-${bus.id}`;
+  const peak = document.createElement('div');
+  peak.className = 'strip-meter-peak';
+  peak.id = `vu-peak-${bus.id}`;
+  const hold = document.createElement('div');
+  hold.className = 'strip-meter-peak-hold';
+  hold.id = `vu-hold-${bus.id}`;
+  meter.appendChild(bar);
+  meter.appendChild(peak);
+  meter.appendChild(hold);
+
+  // Gain fader label
+  const vol = bus.dsp?.am?.params?.gain_db ?? 0;
+  const dbLabel = document.createElement('div');
+  dbLabel.className = 'strip-fader-label strip-fader-label-editable';
+  dbLabel.id = `mix-lbl-${bus.id}`;
+  dbLabel.textContent = _db(vol);
+  strip.appendChild(dbLabel);
+
+  // Fader
+  const fader = document.createElement('input');
+  fader.type = 'range';
+  fader.className = 'strip-fader';
+  fader.min = 0; fader.max = 1000; fader.step = 1;
+  fader.value = st.dbToSlider(vol);
+  let fTimer;
+  fader.oninput = () => {
+    const db = st.sliderToDb(+fader.value);
+    dbLabel.textContent = _db(db);
+    clearTimeout(fTimer);
+    fTimer = setTimeout(() => {
+      api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
+    }, 80);
+  };
+
+  // Double-click dB label to type exact value
+  dbLabel.ondblclick = () => {
+    const curDb = st.sliderToDb(+fader.value);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
+    inp.min = -30; inp.max = 12; inp.step = 0.1;
+    inp.className = 'strip-fader-entry';
+    dbLabel.replaceWith(inp);
+    inp.focus(); inp.select();
+    const commit = () => {
+      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
+      fader.value = st.dbToSlider(db);
+      dbLabel.textContent = _db(db);
+      inp.replaceWith(dbLabel);
+      api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
+    };
+    inp.onblur = commit;
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') inp.replaceWith(dbLabel);
+    };
+  };
+
+  // Long-press (500ms) on label to edit
+  dbLabel.addEventListener('pointerdown', e => {
+    _pressStartX = e.clientX; _pressStartY = e.clientY;
+    _pressTimer = setTimeout(() => { dbLabel.ondblclick?.call(dbLabel); }, 500);
+  });
+  dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('pointermove', e => {
+    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
+  });
+
+  // Fader + meter side by side
+  const fmWrap = document.createElement('div');
+  fmWrap.className = 'mixer-fader-meter-wrap';
+  const scaleCol = document.createElement('div');
+  scaleCol.className = 'strip-vu-scale';
+  [0, -6, -12, -18, -30].forEach(db => {
+    const lbl = document.createElement('span');
+    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
+    lbl.textContent = db === 0 ? '0' : String(db);
+    scaleCol.appendChild(lbl);
+  });
+  fmWrap.appendChild(scaleCol);
+  fmWrap.appendChild(meter);
+  fmWrap.appendChild(fader);
+  strip.appendChild(fmWrap);
+
+  // DSP badge row
+  const dspRow = document.createElement('div');
+  dspRow.className = 'strip-dsp-row';
+  const dsp = bus.dsp ?? {};
+  Object.keys(dsp).forEach(blk => {
+    const block = dsp[blk];
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const btn = document.createElement('button');
+    btn.className = 'strip-dsp-btn';
+    if (!block.enabled || block.bypassed) btn.classList.add('byp');
+    btn.textContent = colour.label ?? blk.toUpperCase();
+    btn.title = blk.toUpperCase();
+    btn.dataset.block = blk;
+    btn.dataset.ch = bus.id;
+    btn.style.background = colour.bg;
+    btn.style.color = colour.fg;
+    btn.onclick = () => openPanel(blk, bus.id, btn);
+    dspRow.appendChild(btn);
+  });
+  strip.appendChild(dspRow);
+
+  return strip;
+}
+
+function _openBusRoutingPanel(bus) {
+  // Remove any existing bus routing panel
+  const existing = document.getElementById('bus-routing-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'bus-routing-panel';
+  panel.className = 'bus-routing-panel';
+  panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+    'z-index:1000;background:var(--bg-panel,#1e1e2e);border:1px solid var(--border,#444);' +
+    'border-radius:8px;padding:16px;min-width:260px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.6);';
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'position:absolute;top:8px;right:8px;background:none;border:none;' +
+    'color:var(--text-muted,#888);cursor:pointer;font-size:14px;padding:4px 6px;';
+  closeBtn.onclick = () => panel.remove();
+  panel.appendChild(closeBtn);
+
+  // Backdrop dismiss
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = 'position:fixed;inset:0;z-index:999;';
+  backdrop.onclick = () => { panel.remove(); backdrop.remove(); };
+
+  panel.appendChild(buildBusRoutingContent(bus));
+  document.body.appendChild(backdrop);
+  document.body.appendChild(panel);
+}
+
 function _buildOutputMaster(out) {
   const txIdx = parseInt(out.id.replace('tx_', ''), 10);
   const color = st.getZoneColour(out.zone_colour_index ?? 0);
@@ -501,8 +695,8 @@ function _buildOutputMaster(out) {
   return strip;
 }
 
-export function updateMetering(rx, tx) {
-  if (!rx && !tx) return;
+export function updateMetering(rx, tx, bus) {
+  if (!rx && !tx && !bus) return;
   const update = (map) => {
     if (!map) return;
     Object.entries(map).forEach(([id, db]) => {
@@ -518,6 +712,7 @@ export function updateMetering(rx, tx) {
   };
   update(rx);
   update(tx);
+  update(bus);
 }
 
 function _hasZoneRoute(rxId, zone) {
@@ -538,4 +733,11 @@ function _applySoloVisual() {
   }
 }
 
+window.addEventListener('pb:buses-changed', () => {
+  if (st.state.activeTab === 'mixer') {
+    const strips = document.querySelector('.mixer-strips');
+    const masters = document.querySelector('.mixer-masters');
+    if (strips && masters) _renderStrips(strips, masters);
+  }
+});
 

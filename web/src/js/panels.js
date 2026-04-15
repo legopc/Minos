@@ -194,7 +194,10 @@ function buildPanelEl(blockKey, channelId, pid) {
 async function _loadContent(blockKey, channelId, contentEl) {
   try {
     const mod = await import(`./dsp/${blockKey}.js`);
-    const ch = state.channels.get(channelId) ?? state.outputs.get(channelId);
+    const isBus = channelId.startsWith('bus_');
+    const ch = isBus
+      ? state.buses.get(channelId)
+      : state.channels.get(channelId) ?? state.outputs.get(channelId);
     const blockData = ch?.dsp?.[blockKey] ?? {};
     const params = { ...(blockData.params ?? {}), bypassed: blockData.bypassed ?? false, enabled: blockData.enabled ?? true };
     const accent = DSP_COLOURS[blockKey]?.fg ?? '#888';
@@ -221,16 +224,27 @@ function _onParamChange(channelId, block, newParams) {
 
   const timeoutId = setTimeout(async () => {
     try {
+      const isBus = channelId.startsWith('bus_');
       const isRx = channelId.startsWith('rx_');
       const idx = parseInt(channelId.split('_')[1], 10);
-      const base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
+      let base;
+      if (isBus) {
+        base = `/buses/${channelId}`;
+      } else {
+        base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
+      }
 
       if (block === 'flt') {
         const promises = [];
         if (newParams.hpf) promises.push(api.patch(`${base}/hpf`, newParams.hpf));
         if (newParams.lpf) promises.push(api.patch(`${base}/lpf`, newParams.lpf));
         await Promise.all(promises);
-        const ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+        let ch;
+        if (isBus) {
+          ch = state.buses.get(channelId);
+        } else {
+          ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+        }
         if (ch?.dsp?.flt?.params) {
           if (newParams.hpf) Object.assign(ch.dsp.flt.params.hpf, newParams.hpf);
           if (newParams.lpf) Object.assign(ch.dsp.flt.params.lpf, newParams.lpf);
@@ -251,9 +265,11 @@ function _onParamChange(channelId, block, newParams) {
 
       await api.patch(endpoint, newParams);
 
-      const ch = isRx
-        ? state.channels.get(channelId)
-        : state.outputs.get(channelId);
+      const ch = isBus
+        ? state.buses.get(channelId)
+        : isRx
+          ? state.channels.get(channelId)
+          : state.outputs.get(channelId);
       if (ch && ch.dsp && ch.dsp[block]) {
         ch.dsp[block] = { ...ch.dsp[block], params: { ...(ch.dsp[block].params ?? {}), ...newParams } };
       }
@@ -269,10 +285,21 @@ function _onParamChange(channelId, block, newParams) {
 
 async function _onBypass(channelId, block, bypassed) {
   try {
+    const isBus = channelId.startsWith('bus_');
     const isRx = channelId.startsWith('rx_');
     const idx = parseInt(channelId.split('_')[1], 10);
-    const base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
-    const ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+    let base;
+    if (isBus) {
+      base = `/buses/${channelId}`;
+    } else {
+      base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
+    }
+    let ch;
+    if (isBus) {
+      ch = state.buses.get(channelId);
+    } else {
+      ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+    }
 
     if (block === 'flt') {
       const fltParams = ch?.dsp?.flt?.params ?? {};

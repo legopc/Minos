@@ -241,6 +241,8 @@ window.addEventListener('pb:ws-state', (e) => {
 window.addEventListener('pb:metering', e => {
   // Forward to matrix if it's been rendered
   import('./matrix.js').then(m => m.updateMetering?.(e.detail.rx, e.detail.tx)).catch(() => {});
+  // Forward to mixer if it's been rendered (include bus metering)
+  import('./mixer.js').then(m => m.updateMetering?.(e.detail.rx, e.detail.tx, e.detail.bus)).catch(() => {});
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
