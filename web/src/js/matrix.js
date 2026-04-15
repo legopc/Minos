@@ -52,12 +52,11 @@ export function render(container) {
 
   const grid = document.createElement('div');
   grid.className = 'matrix-grid';
-  grid.style.setProperty('--num-cols', orderedOutputs.length);
+  grid.style.setProperty('--num-cols', orderedOutputs.length + buses.length);
 
-  grid.appendChild(_buildHdrRow(orderedOutputs, txZoneMap));
-  channels.forEach((ch, i) => grid.appendChild(_buildRow(ch, i, orderedOutputs, txZoneMap)));
+  grid.appendChild(_buildHdrRow(orderedOutputs, txZoneMap, buses));
+  channels.forEach((ch, i) => grid.appendChild(_buildRow(ch, i, orderedOutputs, txZoneMap, buses)));
 
-  const buses = st.busList();
   if (buses.length > 0) {
     const sep = document.createElement('div');
     sep.className = 'xp-row bus-separator-row';
@@ -65,7 +64,13 @@ export function render(container) {
     sepLabel.className = 'ch-label bus-sep-label';
     sepLabel.textContent = 'BUSES';
     sep.appendChild(sepLabel);
+    // spacers for output cols + bus cols
     orderedOutputs.forEach(() => {
+      const spacer = document.createElement('div');
+      spacer.className = 'xp-cell bus-sep-cell';
+      sep.appendChild(spacer);
+    });
+    buses.forEach(() => {
       const spacer = document.createElement('div');
       spacer.className = 'xp-cell bus-sep-cell';
       sep.appendChild(spacer);
@@ -73,7 +78,7 @@ export function render(container) {
     grid.appendChild(sep);
 
     buses.forEach((bus, busIdx) => {
-      grid.appendChild(_buildBusRow(bus, busIdx, orderedOutputs));
+      grid.appendChild(_buildBusRow(bus, busIdx, orderedOutputs, buses));
     });
   }
 
@@ -121,7 +126,7 @@ function _orderOutputsByZone(outputs, zones) {
 }
 
 // ── Header row: corner + output column headers ────────────────────────────
-function _buildHdrRow(outputs, txZoneMap) {
+function _buildHdrRow(outputs, txZoneMap, buses) {
   const row = document.createElement('div');
   row.className = 'matrix-hdr-row';
 
@@ -387,11 +392,36 @@ function _buildHdrRow(outputs, txZoneMap) {
     row.appendChild(col);
   });  // end outputs.forEach
 
+  // Bus column headers (input→bus routing)
+  if (buses && buses.length > 0) {
+    buses.forEach((bus, bi) => {
+      const col = document.createElement('div');
+      col.className = 'out-hdr bus-col-hdr';
+      col.dataset.busId = bus.id;
+      col.style.borderLeft = '2px solid var(--vu-amber)';
+
+      const numEl = document.createElement('span');
+      numEl.className = 'out-num';
+      numEl.textContent = 'B' + (bi + 1);
+      col.appendChild(numEl);
+
+      const nameWrap = document.createElement('div');
+      nameWrap.className = 'out-name-wrap';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'out-name';
+      nameEl.textContent = bus.name ?? bus.id;
+      nameWrap.appendChild(nameEl);
+      col.appendChild(nameWrap);
+
+      row.appendChild(col);
+    });
+  }
+
   return row;
 }
 
 // ── Channel row: sticky label + crosspoint cells ───────────────────────────
-function _buildRow(ch, idx, outputs, txZoneMap) {
+function _buildRow(ch, idx, outputs, txZoneMap, buses) {
   const row = document.createElement('div');
   row.className = 'xp-row';
   row.dataset.rxId = ch.id;
@@ -417,7 +447,7 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (blk === 'am' && !block.enabled) return;
+
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const badge = document.createElement('button');
     badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');
@@ -503,11 +533,30 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
     row.appendChild(cell);
   });
 
+  // Bus crosspoint columns (input→bus routing)
+  if (buses && buses.length > 0) {
+    buses.forEach(bus => {
+      const active = Array.isArray(bus.routing) && bus.routing[idx] === true;
+      const cell = document.createElement('div');
+      cell.className = 'xp-cell bus-src' + (active ? ' active' : '');
+      cell.dataset.rxId = ch.id;
+      cell.dataset.busId = bus.id;
+      cell.style.borderLeft = '2px solid var(--vu-amber)';
+
+      const dot = document.createElement('div');
+      dot.className = 'xp-dot';
+      cell.appendChild(dot);
+
+      cell.addEventListener('click', () => _toggleInputToBus(bus, idx, cell));
+      row.appendChild(cell);
+    });
+  }
+
   return row;
 }
 
 // ── Bus row builder ────────────────────────────────────────────────────────
-function _buildBusRow(bus, busIdx, outputs) {
+function _buildBusRow(bus, busIdx, outputs, buses) {
   const row = document.createElement('div');
   row.className = 'xp-row bus-row';
   row.dataset.busId = bus.id;
@@ -531,7 +580,7 @@ function _buildBusRow(bus, busIdx, outputs) {
   const dsp = bus.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (blk === 'am' && !block.enabled) return;
+
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const badge = document.createElement('button');
     badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');
@@ -562,6 +611,15 @@ function _buildBusRow(bus, busIdx, outputs) {
     cell.addEventListener('click', () => _toggleBusRoute(bus.id, out.id, cell));
     row.appendChild(cell);
   });
+
+  // Empty spacers for bus columns (bus→bus routing n/a)
+  if (buses && buses.length > 0) {
+    buses.forEach(() => {
+      const spacer = document.createElement('div');
+      spacer.className = 'xp-cell';
+      row.appendChild(spacer);
+    });
+  }
 
   return row;
 }
@@ -599,6 +657,31 @@ async function _toggleBusRoute(busId, txId, cell) {
     cell.style.pointerEvents = '';
   }
 }
+
+// ── Input→Bus crosspoint toggle ────────────────────────────────────────────
+async function _toggleInputToBus(bus, chIdx, cell) {
+  if (_locked) return;
+  const routing = Array.isArray(bus.routing) ? [...bus.routing] : [];
+  while (routing.length <= chIdx) routing.push(false);
+  const newVal = !routing[chIdx];
+  routing[chIdx] = newVal;
+
+  cell.classList.toggle('active', newVal);
+  cell.style.pointerEvents = 'none';
+  try {
+    await api.setBusRouting(bus.id, routing);
+    bus.routing = routing;
+    st.setBus(bus);
+  } catch (e) {
+    routing[chIdx] = !newVal;
+    bus.routing = routing;
+    cell.classList.toggle('active', !newVal);
+    toast('Bus routing error: ' + e.message, true);
+  } finally {
+    cell.style.pointerEvents = '';
+  }
+}
+
 async function _toggleRoute(rxId, txId, cell) {
   if (_locked) return;
   if (_soloMode === 'pending' || _copyMode) return;

@@ -691,7 +691,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
             "bypassed": false,
             "params": {"hpf": {"enabled": dsp.hpf.enabled, "freq_hz": dsp.hpf.freq_hz}, "lpf": {"enabled": dsp.lpf.enabled, "freq_hz": dsp.lpf.freq_hz}}
         },
-        "am": {"enabled": dsp.gain_db != 0.0_f32 || dsp.polarity, "bypassed": false, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
+        "am": {"enabled": true, "bypassed": dsp.gain_db == 0.0_f32 && !dsp.polarity, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
         "peq": {"enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
         "gte": {"enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},

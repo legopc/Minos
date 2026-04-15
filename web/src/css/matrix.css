@@ -626,6 +626,17 @@
   border-color: color-mix(in srgb, var(--border) 70%, var(--accent-gold) 30%);
 }
 
+/* Input→bus routing crosspoints */
+.xp-cell.bus-src .xp-dot {
+  border-color: var(--bus-route-color);
+}
+
+.xp-cell.bus-src.active .xp-dot {
+  background: var(--bus-route-color);
+  border-color: var(--bus-route-color);
+  box-shadow: 0 0 8px 2px var(--bus-route-color);
+}
+
 .corner-dot-bus {
   background: var(--bus-route-color);
 }

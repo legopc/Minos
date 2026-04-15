@@ -308,7 +308,7 @@ function _buildInputStrip(ch) {
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (blk === 'am' && !block.enabled) return;
+
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
@@ -487,7 +487,7 @@ function _buildBusStrip(bus) {
   const dsp = bus.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (blk === 'am' && !block.enabled) return;
+
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
