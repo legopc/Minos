@@ -5,6 +5,7 @@ import * as api from './api.js';
 import { toast } from './toast.js';
 import { openPanel } from './panels.js';
 import { DSP_COLOURS } from './dsp/colours.js';
+import { confirmModal } from './modal.js';
 
 let _container = null;
 
@@ -13,6 +14,7 @@ let _locked   = false;
 let _soloMode = null;   // null | 'pending' | {channelId, savedRoutes}
 let _copyMode = null;   // null | 'pick-src' | {src}
 const _clipMap = new Map(); // chId -> bool (currently clipping)
+const _pendingCrosspoints = new Map(); // key (rx|tx) -> Date.now()
 
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
@@ -57,6 +59,22 @@ export function render(container) {
 
   viewport.appendChild(grid);
   _container.appendChild(viewport);
+
+  // C5: Show empty matrix hint when no routes exist
+  const routeCount = st.routeList().length;
+  if (routeCount === 0) {
+    const hint = document.createElement('div');
+    hint.className = 'matrix-empty-hint';
+    hint.innerHTML = `
+      <div class="matrix-hint-box">
+        <p>No routes yet.</p>
+        <p style="font-size:11px;color:var(--text-muted);">Tap any crosspoint cell to connect an input to an output.</p>
+        <button class="matrix-hint-dismiss">Got it</button>
+      </div>
+    `;
+    hint.querySelector('.matrix-hint-dismiss').addEventListener('click', () => hint.remove());
+    viewport.appendChild(hint);
+  }
 
   // Restore scroll position after paint
   if (prevScrollX || prevScrollY) {
@@ -132,13 +150,21 @@ function _buildHdrRow(outputs, txZoneMap) {
   btnClear.className = 'corner-btn';
   btnClear.textContent = '✕ clear';
   btnClear.title = 'Clear all routes';
-  btnClear.addEventListener('click', async () => {
-    if (!confirm('Clear ALL routes?')) return;
-    const routes = st.routeList().slice();
-    for (const r of routes) {
-      try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
-    }
-    render(_container);
+  btnClear.addEventListener('click', () => {
+    const activeCount = st.routeList().length;
+    confirmModal({
+      title: 'Clear all routes?',
+      body: `Removes all ${activeCount} active route${activeCount !== 1 ? 's' : ''}. Cannot be undone.`,
+      confirmLabel: 'Clear routes',
+      danger: true,
+      onConfirm: async () => {
+        const routes = st.routeList().slice();
+        for (const r of routes) {
+          try { await api.deleteRoute(`${r.rx_id}|${r.tx_id}`); st.removeRoute(r.rx_id, r.tx_id); } catch (_) {}
+        }
+        render(_container);
+      },
+    });
   });
   actionsRow.appendChild(btnClear);
 
@@ -461,26 +487,38 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
 async function _toggleRoute(rxId, txId, cell) {
   if (_locked) return;
   if (_soloMode === 'pending' || _copyMode) return;
+  
+  const key = `${rxId}|${txId}`;
+  if (_pendingCrosspoints.has(key)) return;
+  
+  _pendingCrosspoints.set(key, Date.now());
+  cell.classList.add('pending');
+  cell.style.pointerEvents = 'none';
+  
   const routeType = st.getRouteType(rxId, txId);
   const prevClass = cell.className;
   try {
     if (routeType) {
       // Optimistic: show as unrouted immediately
-      cell.className = 'xp-cell';
+      cell.className = 'xp-cell pending';
       const routeId = `${rxId}|${txId}`;
       await api.deleteRoute(routeId);
       st.removeRoute(rxId, txId);
     } else {
       // Optimistic: show as routed immediately
-      cell.className = 'xp-cell local';
+      cell.className = 'xp-cell local pending';
       const route = await api.postRoute(rxId, txId, 'local');
       st.setRoute({ route_type: 'dante', ...route });
-      cell.className = 'xp-cell ' + (st.getRouteType(rxId, txId) ?? 'dante');
+      cell.className = 'xp-cell ' + (st.getRouteType(rxId, txId) ?? 'dante') + ' pending';
     }
     _updateAllStats();
   } catch (e) {
     cell.className = prevClass; // revert on error
     toast('Route error: ' + e.message, true);
+  } finally {
+    _pendingCrosspoints.delete(key);
+    cell.classList.remove('pending');
+    cell.style.pointerEvents = '';
   }
 }
 

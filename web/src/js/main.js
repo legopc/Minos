@@ -204,6 +204,27 @@ async function loadAll() {
 window.addEventListener('pb:unauthorized', () => showLogin());
 window.addEventListener('pb:status-update', () => updateStatusBar());
 window.addEventListener('pb:ws-state', e => updateWsStatus(e.detail));
+
+// Offline banner with grace period
+let _offlineTimer = null;
+window.addEventListener('pb:ws-state', (e) => {
+  if (e.detail === 'connected') {
+    clearTimeout(_offlineTimer);
+    _offlineTimer = null;
+    document.body.classList.remove('offline');
+    const banner = document.getElementById('offline-banner');
+    if (banner) { banner.hidden = true; banner.style.display = 'none'; }
+  } else {
+    if (!_offlineTimer) {
+      _offlineTimer = setTimeout(() => {
+        document.body.classList.add('offline');
+        const banner = document.getElementById('offline-banner');
+        if (banner) { banner.hidden = false; banner.style.display = 'block'; }
+      }, 3000);
+    }
+  }
+});
+
 window.addEventListener('pb:metering', e => {
   // Forward to matrix if it's been rendered
   import('./matrix.js').then(m => m.updateMetering?.(e.detail.rx, e.detail.tx)).catch(() => {});

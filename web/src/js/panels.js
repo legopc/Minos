@@ -59,6 +59,8 @@ function injectStyles() {
   gap: 8px;
   max-height: 400px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .dsp-row {
   display: flex;
@@ -115,10 +117,20 @@ export function openPanel(blockKey, channelId, triggerEl) {
   const br = (triggerEl && typeof triggerEl.getBoundingClientRect === 'function')
     ? triggerEl.getBoundingClientRect()
     : triggerEl;  // accept pre-captured DOMRect
-  let x = Math.min(br.left - ar.left + 8, ar.width - 250);
+  
+  const panelWidth  = 360;
+  const panelHeight = 420;
+  
+  let x = br.left - ar.left + 8;
   let y = br.bottom - ar.top + 4;
-  if (y + 320 > ar.height) y = br.top - ar.top - 320;
-  y = Math.max(y, 4);  // clamp: never above #app top edge
+  
+  // Clamp right edge
+  if (x + panelWidth > ar.width)  x = Math.max(0, br.left - ar.left - panelWidth - 4);
+  x = Math.max(4, Math.min(x, ar.width - panelWidth - 4));
+  
+  // Clamp bottom edge — flip above trigger
+  if (y + panelHeight > ar.height) y = Math.max(4, br.top - ar.top - panelHeight - 4);
+  y = Math.max(4, y);
 
   const el = buildPanelEl(blockKey, channelId, pid);
   el.style.cssText = `position:absolute;left:${x}px;top:${y}px;z-index:${++zTop}`;

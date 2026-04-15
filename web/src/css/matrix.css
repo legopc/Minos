@@ -524,3 +524,62 @@
 .dsp-picker-btn:hover {
   filter: brightness(1.3);
 }
+
+/* ── C1: Crosspoint Pending State ───────────────────────────────────────── */
+.xp-cell.pending {
+  position: relative;
+  opacity: 0.7;
+}
+
+.xp-cell.pending::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px solid;
+  border-color: var(--vu-amber) transparent var(--vu-amber) transparent;
+  border-radius: 50%;
+  animation: spin-pending 0.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes spin-pending {
+  to { transform: rotate(360deg); }
+}
+
+/* ── C5: Empty Matrix State Hint ────────────────────────────────────────── */
+.matrix-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.matrix-hint-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 20px 24px;
+  text-align: center;
+  pointer-events: all;
+  max-width: 280px;
+}
+
+.matrix-hint-box p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.matrix-hint-dismiss {
+  margin-top: 8px;
+  padding: 8px 16px;
+  min-height: 44px;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+}

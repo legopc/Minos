@@ -7,6 +7,7 @@ import { DSP_COLOURS } from './dsp/colours.js';
 
 let _animFrame = null;
 let _soloSet = new Set();
+let _pressTimer = null;
 
 export function render(container) {
   container.innerHTML = '';
@@ -48,11 +49,23 @@ function _renderSceneBar(bar) {
   label.className = 'mixer-scene-label';
   label.textContent = 'Favourite Scenes:';
   bar.appendChild(label);
+
+  // Left arrow button
+  const leftArr = document.createElement('button');
+  leftArr.className = 'mixer-scene-arrow hidden';
+  leftArr.innerHTML = '◀';
+  leftArr.setAttribute('touch-action', 'manipulation');
+  bar.appendChild(leftArr);
+
+  // Scroll container
+  const scrollContainer = document.createElement('div');
+  scrollContainer.className = 'mixer-scene-scroll-container';
+  
   if (!scenes.length) {
     const e = document.createElement('span');
     e.style.cssText = 'color:var(--text-muted);font-size:10px;';
     e.textContent = 'None starred';
-    bar.appendChild(e);
+    scrollContainer.appendChild(e);
   } else {
     scenes.slice(0, 8).forEach(s => {
       const btn = document.createElement('button');
@@ -67,9 +80,42 @@ function _renderSceneBar(bar) {
           toast(`Loaded: ${s.name}`);
         } catch(e) { toast('Load failed', true); }
       };
-      bar.appendChild(btn);
+      scrollContainer.appendChild(btn);
     });
   }
+  bar.appendChild(scrollContainer);
+
+  // Right arrow button
+  const rightArr = document.createElement('button');
+  rightArr.className = 'mixer-scene-arrow hidden';
+  rightArr.innerHTML = '▶';
+  rightArr.setAttribute('touch-action', 'manipulation');
+  bar.appendChild(rightArr);
+
+  // Scroll listener
+  scrollContainer.addEventListener('scroll', () => {
+    _updateSceneScrollArrows(scrollContainer, leftArr, rightArr);
+  });
+
+  // Arrow click handlers
+  leftArr.onclick = () => {
+    scrollContainer.scrollBy({ left: -120, behavior: 'smooth' });
+  };
+  rightArr.onclick = () => {
+    scrollContainer.scrollBy({ left: 120, behavior: 'smooth' });
+  };
+
+  // Check initial state
+  requestAnimationFrame(() => {
+    _updateSceneScrollArrows(scrollContainer, leftArr, rightArr);
+  });
+}
+
+function _updateSceneScrollArrows(container, leftArr, rightArr) {
+  const canLeft  = container.scrollLeft > 0;
+  const canRight = container.scrollLeft < container.scrollWidth - container.clientWidth - 5;
+  leftArr.classList.toggle('hidden', !canLeft);
+  rightArr.classList.toggle('hidden', !canRight);
 }
 
 function _renderStrips(strips, masters) {
@@ -165,7 +211,7 @@ function _buildInputStrip(ch) {
   // Gain fader label
   const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
   const dbLabel = document.createElement('div');
-  dbLabel.className = 'strip-fader-label';
+  dbLabel.className = 'strip-fader-label strip-fader-label-editable';
   dbLabel.id = `mix-lbl-${ch.id}`;
   dbLabel.textContent = _db(vol);
   strip.appendChild(dbLabel);
@@ -209,6 +255,14 @@ function _buildInputStrip(ch) {
       if (e.key === 'Escape') inp.replaceWith(dbLabel);
     };
   };
+
+  // Long-press (500ms) on label to edit — same logic as dblclick
+  dbLabel.addEventListener('pointerdown', () => {
+    _pressTimer = setTimeout(() => { dbLabel.ondblclick?.call(dbLabel); }, 500);
+  });
+  dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('pointermove', () => clearTimeout(_pressTimer));
 
   // Fader + meter side by side
   const fmWrap = document.createElement('div');
@@ -322,7 +376,7 @@ function _buildOutputMaster(out) {
   // Volume label
   const vol = curOut?.volume_db ?? out.volume_db ?? 0;
   const volLabel = document.createElement('div');
-  volLabel.className = 'strip-fader-label';
+  volLabel.className = 'strip-fader-label strip-fader-label-editable';
   volLabel.id = `mix-lbl-${out.id}`;
   volLabel.textContent = _db(vol);
   strip.appendChild(volLabel);
@@ -358,6 +412,38 @@ function _buildOutputMaster(out) {
       } catch(e) { toast(e.message, true); }
     }, 80);
   };
+
+  // Double-click volume label to type exact value
+  volLabel.ondblclick = () => {
+    const curDb = st.sliderToDb(+fader.value);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
+    inp.min = -30; inp.max = 12; inp.step = 0.1;
+    inp.className = 'strip-fader-entry';
+    volLabel.replaceWith(inp);
+    inp.focus(); inp.select();
+    const commit = () => {
+      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
+      fader.value = st.dbToSlider(db);
+      volLabel.textContent = _db(db);
+      inp.replaceWith(volLabel);
+      api.putOutputGain(txIdx, db).catch(e => toast(e.message, true));
+    };
+    inp.onblur = commit;
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') inp.replaceWith(volLabel);
+    };
+  };
+
+  // Long-press (500ms) on label to edit — same logic as dblclick
+  volLabel.addEventListener('pointerdown', () => {
+    _pressTimer = setTimeout(() => { volLabel.ondblclick?.call(volLabel); }, 500);
+  });
+  volLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
+  volLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  volLabel.addEventListener('pointermove', () => clearTimeout(_pressTimer));
 
   // Fader + meter side by side
   const fmWrap = document.createElement('div');

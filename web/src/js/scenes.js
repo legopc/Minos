@@ -116,13 +116,21 @@ function _renderList(listPanel, diffPanel) {
     delBtn.textContent = 'Del';
     delBtn.onclick = async e => {
       e.stopPropagation();
-      if (!confirm(`Delete scene "${scene.name}"?`)) return;
-      try {
-        await api.deleteScene(scene.id);
-        st.removeScene(scene.id);
-        _renderList(listPanel, diffPanel);
-        toast('Scene deleted');
-      } catch(e) { toast('Delete failed: ' + e.message, true); }
+      const { confirmModal } = await import('./modal.js');
+      confirmModal({
+        title: `Delete "${scene.name}"?`,
+        body: `This scene will be permanently deleted. Cannot be undone.`,
+        confirmLabel: 'Delete scene',
+        danger: true,
+        onConfirm: async () => {
+          try {
+            await api.deleteScene(scene.id);
+            st.removeScene(scene.id);
+            _renderList(listPanel, diffPanel);
+            toast('Scene deleted');
+          } catch(e) { toast('Delete failed: ' + e.message, true); }
+        },
+      });
     };
 
     actions.appendChild(loadBtn);
