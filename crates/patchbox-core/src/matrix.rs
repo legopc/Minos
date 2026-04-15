@@ -360,20 +360,18 @@ impl MatrixProcessor {
         let max_inputs = inputs.len().min(MAX_INPUT_CHANNELS);
 
         let nf = nframes.min(MAX_FRAMES);
-        for (i, inp) in inputs.iter().enumerate().take(max_inputs) {
-            self.scratch[i][..nf].copy_from_slice(&inp[..nf]);
-            if let Some(dsp) = self.input_dsp.get_mut(i) {
-                dsp.process_block(&mut self.scratch[i][..nf]);
-            }
-        }
 
-        // --- PFL monitor mix: tap post-input-DSP, before routing (only when solo active) ---
+        // --- PFL monitor mix: tap pre-input-DSP (raw Dante signal) ---
+        // Tap BEFORE input_dsp so that channel trim/gain does not drive the monitor into
+        // clipping. The monitor level is controlled solely by monitor_volume_db.
+        // Outputs are post-DSP (trim applied) and protected by the output limiter;
+        // the monitor path has no limiter, so a pre-DSP tap is the safe choice.
         if self.solo_active {
             for s in self.monitor_buf[..nf].iter_mut() { *s = 0.0; }
             for rx_idx in 0..max_inputs {
                 if self.solo_mask[rx_idx] {
                     for (s_out, &s_in) in self.monitor_buf[..nf].iter_mut()
-                        .zip(self.scratch[rx_idx][..nf].iter())
+                        .zip(inputs[rx_idx][..nf].iter())
                     {
                         *s_out += s_in;
                     }
@@ -382,6 +380,13 @@ impl MatrixProcessor {
             let mon_gain = db_to_linear(config.monitor_volume_db);
             if (mon_gain - 1.0).abs() > 1e-6 {
                 for s in self.monitor_buf[..nf].iter_mut() { *s *= mon_gain; }
+            }
+        }
+
+        for (i, inp) in inputs.iter().enumerate().take(max_inputs) {
+            self.scratch[i][..nf].copy_from_slice(&inp[..nf]);
+            if let Some(dsp) = self.input_dsp.get_mut(i) {
+                dsp.process_block(&mut self.scratch[i][..nf]);
             }
         }
 
