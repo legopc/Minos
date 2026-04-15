@@ -2,7 +2,7 @@
 #![cfg(feature = "inferno")]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u32 = 2; // stereo: L=R (mono PFL duplicated to both ears)
@@ -15,6 +15,8 @@ pub struct MonitorWriter {
     tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
     nframes: Arc<AtomicUsize>,
     solo_active: Arc<AtomicBool>,
+    /// Incremented by RT callback each time a new buffer is published.
+    pub generation: Arc<AtomicU64>,
     /// Volume in integer dB (e.g. 0 = unity, -20 = -20 dB). Shared with config poller.
     pub volume_db: Arc<AtomicI32>,
     pub shutdown: Arc<AtomicBool>,
@@ -26,6 +28,7 @@ impl MonitorWriter {
         tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
         nframes: Arc<AtomicUsize>,
         solo_active: Arc<AtomicBool>,
+        generation: Arc<AtomicU64>,
         volume_db: Arc<AtomicI32>,
     ) -> Self {
         Self {
@@ -33,6 +36,7 @@ impl MonitorWriter {
             tb_output,
             nframes,
             solo_active,
+            generation,
             volume_db,
             shutdown: Arc::new(AtomicBool::new(false)),
         }
@@ -93,11 +97,20 @@ impl MonitorWriter {
 
         let silence = vec![0i32; PERIOD_FRAMES as usize * CHANNELS as usize];
         let mut write_buf = vec![0i32; MAX_FRAMES * CHANNELS as usize];
+        let mut last_gen: u64 = 0;
 
         while !self.shutdown.load(Ordering::Relaxed) {
             let active = self.solo_active.load(Ordering::Acquire);
 
             if active {
+                let cur_gen = self.generation.load(Ordering::Acquire);
+                if cur_gen == last_gen {
+                    // No new data from RT callback — write silence to keep PCM clock alive.
+                    self.write_frames(&pcm, &silence)?;
+                    continue;
+                }
+                last_gen = cur_gen;
+
                 let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
                 if nf == 0 {
                     self.write_frames(&pcm, &silence)?;

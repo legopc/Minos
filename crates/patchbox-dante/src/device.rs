@@ -210,6 +210,8 @@ impl DanteDevice {
         let mon_active  = Arc::new(AtomicBool::new(false));
         let mon_active_cb  = mon_active.clone();
         let mon_nframes_cb = mon_nframes.clone();
+        let mon_generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let mon_generation_cb = mon_generation.clone();
         let mon_volume_db  = Arc::new(std::sync::atomic::AtomicI32::new(initial_cfg.monitor_volume_db as i32));
 
         // Background task: push config updates into triple buffer every 10ms
@@ -218,6 +220,7 @@ impl DanteDevice {
         let mon_tb_output_watcher = mon_tb_output_arc.clone();
         let mon_nframes_watcher   = mon_nframes.clone();
         let mon_active_watcher    = mon_active.clone();
+        let mon_generation_watcher = mon_generation.clone();
         let mon_volume_watcher    = mon_volume_db.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -233,6 +236,7 @@ impl DanteDevice {
                     mon_tb_output_watcher.clone(),
                     mon_nframes_watcher.clone(),
                     mon_active_watcher.clone(),
+                    mon_generation_watcher.clone(),
                     mon_volume_watcher.clone(),
                 );
                 let sh = writer.shutdown.clone();
@@ -268,6 +272,7 @@ impl DanteDevice {
                                 mon_tb_output_watcher.clone(),
                                 mon_nframes_watcher.clone(),
                                 mon_active_watcher.clone(),
+                                mon_generation_watcher.clone(),
                                 mon_volume_watcher.clone(),
                             );
                             let sh = writer.shutdown.clone();
@@ -364,6 +369,7 @@ impl DanteDevice {
             if matrix_proc.solo_active {
                 mon_nframes_cb.store(block, AOrdering::Release);
                 mon_tb_input.write(matrix_proc.monitor_buf);
+                mon_generation_cb.fetch_add(1, AOrdering::Release);
             }
 
             // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
