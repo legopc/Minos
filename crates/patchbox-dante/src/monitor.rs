@@ -153,10 +153,12 @@ fn parse_card_idx(device: &str) -> Option<i32> {
 /// Set all playback mixer controls (Headphone, Master, PCM, Speaker) to maximum
 /// and unmute switches. Called once on PCM open so volume_db is the sole level control.
 fn set_hardware_volume(card_idx: i32) {
+    use alsa::mixer::{Mixer, Selem};
     let card_name = format!("hw:{}", card_idx);
-    match alsa::Mixer::new(&card_name, false) {
+    match Mixer::new(&card_name, false) {
         Ok(mixer) => {
-            for selem in mixer.iter() {
+            for elem in mixer.iter() {
+                let selem = match Selem::new(elem) { Some(s) => s, None => continue };
                 let sid = selem.get_id();
                 let name = match sid.get_name() { Ok(n) => n, Err(_) => continue };
                 let relevant = name.contains("Headphone")
@@ -165,9 +167,8 @@ fn set_hardware_volume(card_idx: i32) {
                     || name.contains("Speaker");
                 if !relevant { continue; }
                 if selem.has_playback_volume() {
-                    if let Ok((_, max)) = selem.get_playback_volume_range() {
-                        let _ = selem.set_playback_volume_all(max);
-                    }
+                    let (_, max) = selem.get_playback_volume_range();
+                    let _ = selem.set_playback_volume_all(max);
                 }
                 if selem.has_playback_switch() {
                     let _ = selem.set_playback_switch_all(1);
