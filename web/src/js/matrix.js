@@ -45,6 +45,7 @@ export function render(container) {
   });
 
   const orderedOutputs = _orderOutputsByZone(outputs, zones);
+  const buses = st.busList();
 
   // Single scroll container wraps everything
   const viewport = document.createElement('div');
