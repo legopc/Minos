@@ -417,7 +417,7 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (!block.enabled) return;
+    if (blk === 'am' && !block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const badge = document.createElement('button');
     badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');
@@ -531,7 +531,7 @@ function _buildBusRow(bus, busIdx, outputs) {
   const dsp = bus.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (!block.enabled) return;
+    if (blk === 'am' && !block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const badge = document.createElement('button');
     badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');

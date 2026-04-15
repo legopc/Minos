@@ -302,13 +302,13 @@ function _buildInputStrip(ch) {
   fmWrap.appendChild(fader);
   strip.appendChild(fmWrap);
 
-  // DSP badge row — spec §6.4: show only enabled+non-bypassed blocks
+  // DSP badge row — AM hidden when not active; all other blocks always shown
   const dspRow = document.createElement('div');
   dspRow.className = 'strip-dsp-row';
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (!block.enabled) return;
+    if (blk === 'am' && !block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
@@ -388,15 +388,6 @@ function _buildBusStrip(bus) {
     } catch(e) { toast(e.message, true); }
   };
   strip.appendChild(muteBtn);
-
-  // Sources indicator badge
-  const srcCount = Array.isArray(bus.routing) ? bus.routing.length : 0;
-  const srcBadge = document.createElement('button');
-  srcBadge.className = 'strip-sources-badge';
-  srcBadge.title = 'Configure bus sources';
-  srcBadge.textContent = `${srcCount} src`;
-  srcBadge.onclick = () => _openBusRoutingPanel(bus);
-  strip.appendChild(srcBadge);
 
   // VU meter
   const meter = document.createElement('div');
@@ -496,7 +487,7 @@ function _buildBusStrip(bus) {
   const dsp = bus.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
-    if (!block.enabled) return;
+    if (blk === 'am' && !block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
@@ -741,7 +732,7 @@ function _applySoloVisual() {
 window.addEventListener('pb:buses-changed', () => {
   if (st.state.activeTab === 'mixer') {
     const strips = document.querySelector('.mixer-strips');
-    const masters = document.querySelector('.mixer-masters');
+    const masters = document.getElementById('mixer-masters');
     if (strips && masters) _renderStrips(strips, masters);
   }
 });
