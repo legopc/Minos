@@ -629,9 +629,9 @@
 /* Input→bus column divider — matches .bus-separator-row style */
 .bus-col-div-hdr,
 .bus-col-div-cell {
-  width: 20px !important;
-  min-width: 20px !important;
-  max-width: 20px !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
   background: var(--surface-0);
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
