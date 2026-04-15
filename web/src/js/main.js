@@ -160,25 +160,37 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system] = await Promise.all([
+    const [channels, outputs, zones, routes, scenes, system, buses] = await Promise.all([
       api.getChannels(),
       api.getOutputs(),
       api.getZones(),
       api.getRoutes(),
       api.getScenes(),
       api.getSystem(),
+      api.getBuses(),
     ]);
 
     channels.forEach(c => st.setChannel(c));
     outputs.forEach(o  => st.setOutput(o));
     zones.forEach(z    => st.setZone(z));
     routes.forEach(r   => st.setRoute(r));
+    buses.forEach(b    => st.setBus(b));
     st.setScenes(Array.isArray(scenes) ? scenes : (scenes.scenes ?? []));
     if (scenes.active) st.setActiveScene(scenes.active);
     st.setSystem(system);
     if (system.ptp_locked !== undefined) {
       st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
     }
+
+    // Build busMatrix from routes with route_type === 'bus'
+    const busMatrix = {};
+    routes.forEach(r => {
+      if (r.route_type === 'bus') {
+        if (!busMatrix[r.tx_id]) busMatrix[r.tx_id] = {};
+        busMatrix[r.tx_id][r.rx_id] = true;
+      }
+    });
+    st.setBusMatrix(busMatrix);
 
     updateStatusBar();
 

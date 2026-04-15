@@ -583,3 +583,49 @@
   cursor: pointer;
   font-size: 13px;
 }
+
+/* ── Internal Buses ─────────────────────────────────────── */
+:root {
+  --accent-gold: #e3b341;
+  --bus-route-color: #e3b341;
+}
+
+.bus-separator-row {
+  background: var(--surface-0);
+  border-top: 1px solid var(--border);
+  opacity: 0.6;
+}
+
+.bus-sep-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.bus-sep-cell {
+  pointer-events: none;
+}
+
+.bus-row {
+  background: color-mix(in srgb, var(--surface-1) 90%, var(--accent-gold) 10%);
+}
+
+.bus-label {
+  border-left: 3px solid var(--accent-gold) !important;
+}
+
+.xp-cell.bus .xp-dot {
+  background: var(--bus-route-color);
+}
+
+.xp-cell.bus {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--accent-gold) 30%);
+}
+
+.corner-dot-bus {
+  background: var(--bus-route-color);
+}

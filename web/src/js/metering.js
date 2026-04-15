@@ -41,10 +41,11 @@ function _smooth(id, db) {
 
 // ── Main update (called from ws.js on every metering frame) ───────────────
 export function updateAll(msg) {
-  const { rx, tx, gr } = msg;
+  const { rx, tx, gr, bus } = msg;
 
   if (rx) _updateGroup(rx, 'rx');
   if (tx) _updateGroup(tx, 'tx');
+  if (bus) _updateGroup(bus, 'bus');
 
   if (!_pending) {
     _pending = true;

@@ -6,6 +6,8 @@ const _state = {
   routes:        new Map(),  // "rx_N|tx_N" → Route
   zones:         new Map(),  // id → Zone
   scenes:        [],         // SceneMeta[]
+  buses:         new Map(),  // id → Bus
+  busMatrix:     {},         // busMatrix[tx_id][bus_id] = true
   metering:      new Map(),  // id → dBFS float
   gr:            new Map(),  // "id_block" → GR dB float
   peakHold:      new Map(),  // id → {level, timestamp}
@@ -27,16 +29,20 @@ export function setOutput(out)             { _state.outputs.set(out.id, out); }
 export function setRoute(r)                { _state.routes.set(`${r.rx_id}|${r.tx_id}`, r); }
 export function removeRoute(rxId, txId)    { _state.routes.delete(`${rxId}|${txId}`); }
 export function setZone(z)                 { _state.zones.set(z.id, z); }
+export function setBus(bus)                { _state.buses.set(bus.id, bus); }
+export function removeBus(id)              { _state.buses.delete(id); }
+export function setBusMatrix(matrix)       { _state.busMatrix = matrix ?? {}; }
 export function setScene(s)                {
   const idx = _state.scenes.findIndex(x => x.id === s.id);
   if (idx >= 0) _state.scenes[idx] = s; else _state.scenes.push(s);
 }
 export function removeScene(id)            { _state.scenes = _state.scenes.filter(s => s.id !== id); }
 export function setScenes(arr)             { _state.scenes = arr; }
-export function setMetering(rx, tx, gr) {
-  if (rx) Object.entries(rx).forEach(([k,v]) => _state.metering.set(k, v));
-  if (tx) Object.entries(tx).forEach(([k,v]) => _state.metering.set(k, v));
-  if (gr) Object.entries(gr).forEach(([k,v]) => _state.gr.set(k, v));
+export function setMetering(rx, tx, gr, bus) {
+  if (rx)  Object.entries(rx).forEach(([k,v])  => _state.metering.set(k, v));
+  if (tx)  Object.entries(tx).forEach(([k,v])  => _state.metering.set(k, v));
+  if (bus) Object.entries(bus).forEach(([k,v]) => _state.metering.set(k, v));
+  if (gr)  Object.entries(gr).forEach(([k,v])  => _state.gr.set(k, v));
 }
 export function setSystem(sys)             { _state.system = sys; }
 export function setConnState(s)            { _state.connState = s; }
@@ -54,6 +60,7 @@ export function channelList()  { return [..._state.channels.values()]; }
 export function outputList()   { return [..._state.outputs.values()]; }
 export function zoneList()     { return [..._state.zones.values()]; }
 export function routeList()    { return [..._state.routes.values()]; }
+export function busList()      { return [..._state.buses.values()]; }
 
 export function hasRoute(rxId, txId) {
   return _state.routes.has(`${rxId}|${txId}`);
@@ -61,6 +68,14 @@ export function hasRoute(rxId, txId) {
 
 export function getRouteType(rxId, txId) {
   return _state.routes.get(`${rxId}|${txId}`)?.route_type ?? null;
+}
+
+export function hasBusRoute(busId, txId) {
+  return !!_state.busMatrix[txId]?.[busId];
+}
+
+export function getBusRouteType(busId, txId) {
+  return _state.busMatrix[txId]?.[busId] ? 'bus' : null;
 }
 
 // Fader math (§12.5) — slider range 0–1000

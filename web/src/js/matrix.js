@@ -57,6 +57,26 @@ export function render(container) {
   grid.appendChild(_buildHdrRow(orderedOutputs, txZoneMap));
   channels.forEach((ch, i) => grid.appendChild(_buildRow(ch, i, orderedOutputs, txZoneMap)));
 
+  const buses = st.busList();
+  if (buses.length > 0) {
+    const sep = document.createElement('div');
+    sep.className = 'xp-row bus-separator-row';
+    const sepLabel = document.createElement('div');
+    sepLabel.className = 'ch-label bus-sep-label';
+    sepLabel.textContent = 'BUSES';
+    sep.appendChild(sepLabel);
+    orderedOutputs.forEach(() => {
+      const spacer = document.createElement('div');
+      spacer.className = 'xp-cell bus-sep-cell';
+      sep.appendChild(spacer);
+    });
+    grid.appendChild(sep);
+
+    buses.forEach((bus, busIdx) => {
+      grid.appendChild(_buildBusRow(bus, busIdx, orderedOutputs));
+    });
+  }
+
   viewport.appendChild(grid);
   _container.appendChild(viewport);
 
@@ -303,7 +323,8 @@ function _buildHdrRow(outputs, txZoneMap) {
   legendEl.className = 'corner-legend';
   legendEl.innerHTML = `
     <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-local"></span>local</span>
-    <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-dante"></span>dante</span>`;
+    <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-dante"></span>dante</span>
+    <span class="corner-legend-item"><span class="corner-legend-dot corner-dot-bus"></span>bus</span>`;
   inner.appendChild(legendEl);
 
   corner.appendChild(inner);
@@ -484,7 +505,98 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
   return row;
 }
 
-// ── Crosspoint toggle ──────────────────────────────────────────────────────
+// ── Bus row builder ────────────────────────────────────────────────────────
+function _buildBusRow(bus, busIdx, outputs) {
+  const row = document.createElement('div');
+  row.className = 'xp-row bus-row';
+  row.dataset.busId = bus.id;
+
+  const label = document.createElement('div');
+  label.className = 'ch-label bus-label';
+  label.dataset.busId = bus.id;
+
+  const num = document.createElement('span');
+  num.className = 'ch-num';
+  num.textContent = 'B' + (busIdx + 1);
+  label.appendChild(num);
+
+  const name = document.createElement('span');
+  name.className = 'ch-name';
+  name.title = 'Double-click to rename';
+  name.textContent = bus.name ?? bus.id;
+  name.addEventListener('dblclick', e => { e.stopPropagation(); _startBusRename(name, bus); });
+  label.appendChild(name);
+
+  const dsp = bus.dsp ?? {};
+  Object.keys(dsp).forEach(blk => {
+    const block = dsp[blk];
+    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const badge = document.createElement('button');
+    badge.className = 'ch-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+    badge.dataset.block = blk;
+    badge.dataset.busId = bus.id;
+    badge.textContent = colour.label ?? blk.toUpperCase();
+    badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+    badge.style.background = colour.bg;
+    badge.style.color = colour.fg;
+    badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, bus.id, badge); };
+    label.appendChild(badge);
+  });
+
+  row.appendChild(label);
+
+  let prevZoneId = null;
+  outputs.forEach(out => {
+    const routeActive = st.hasBusRoute(bus.id, out.id);
+    const cell = document.createElement('div');
+    cell.className = 'xp-cell' + (routeActive ? ' bus' : '');
+    cell.dataset.busId = bus.id;
+    cell.dataset.txId = out.id;
+
+    const dot = document.createElement('div');
+    dot.className = 'xp-dot';
+    cell.appendChild(dot);
+
+    cell.addEventListener('click', () => _toggleBusRoute(bus.id, out.id, cell));
+    row.appendChild(cell);
+  });
+
+  return row;
+}
+
+// ── Bus route toggle ───────────────────────────────────────────────────────
+async function _toggleBusRoute(busId, txId, cell) {
+  if (_locked) return;
+  
+  const key = `${busId}|${txId}`;
+  if (_pendingCrosspoints.has(key)) return;
+  
+  _pendingCrosspoints.set(key, Date.now());
+  cell.classList.add('pending');
+  cell.style.pointerEvents = 'none';
+  
+  const routeActive = st.hasBusRoute(busId, txId);
+  const prevClass = cell.className;
+  try {
+    if (routeActive) {
+      cell.className = 'xp-cell pending';
+      const routeId = `${busId}|${txId}`;
+      await api.deleteRoute(routeId);
+      st.setBusMatrix({ ...st.state.busMatrix, [txId]: { ...st.state.busMatrix[txId], [busId]: false } });
+    } else {
+      cell.className = 'xp-cell bus pending';
+      const route = await api.postRoute(busId, txId, 'bus');
+      st.setBusMatrix({ ...st.state.busMatrix, [txId]: { ...st.state.busMatrix[txId], [busId]: true } });
+    }
+  } catch (e) {
+    cell.className = prevClass;
+    toast('Bus route error: ' + e.message, true);
+  } finally {
+    _pendingCrosspoints.delete(key);
+    cell.classList.remove('pending');
+    cell.style.pointerEvents = '';
+  }
+}
 async function _toggleRoute(rxId, txId, cell) {
   if (_locked) return;
   if (_soloMode === 'pending' || _copyMode) return;
@@ -712,6 +824,47 @@ function _startOutputRename(nameEl, nameWrap, out) {
 }
 
 
+function _startBusRename(nameEl, bus) {
+  const prev = nameEl.textContent;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = prev;
+  inp.className = 'ch-rename-input';
+  nameEl.textContent = '';
+  nameEl.style.overflow = 'visible';
+  nameEl.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  const commit = async () => {
+    const next = inp.value.trim() || prev;
+    nameEl.textContent = next;
+    nameEl.style.overflow = '';
+    nameEl.title = 'Double-click to rename';
+    if (next === prev) return;
+    try {
+      await api.updateBus(bus.id, { name: next });
+      const cur = st.state.buses.get(bus.id);
+      if (cur) st.setBus({ ...cur, name: next });
+      toast(`Renamed to "${next}"`);
+    } catch (e) {
+      nameEl.textContent = prev;
+      nameEl.style.overflow = '';
+      toast('Rename failed: ' + e.message, true);
+    }
+  };
+
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') {
+      inp.removeEventListener('blur', commit);
+      nameEl.textContent = prev;
+      nameEl.style.overflow = '';
+    }
+  });
+}
+
 function _startRename(nameEl, ch) {
   const prev = nameEl.textContent;
   const inp = document.createElement('input');
@@ -873,3 +1026,9 @@ async function _execCopy(srcId, dstId) {
   }
   render(_container);
 }
+
+
+// ── Bus change listener ───────────────────────────────────────────────────
+window.addEventListener('pb:buses-changed', () => {
+  if (st.state.activeTab === 'matrix') render(_container);
+});

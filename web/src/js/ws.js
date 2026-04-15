@@ -68,9 +68,8 @@ function _dispatch(msg) {
       break;
 
     case 'metering':
-      st.setMetering(msg.rx, msg.tx, msg.gr);
+      st.setMetering(msg.rx, msg.tx, msg.gr, msg.bus);
       meter.updateAll(msg);
-      // Notify matrix tab if active
       window.dispatchEvent(new CustomEvent('pb:metering', { detail: msg }));
       break;
 
@@ -82,6 +81,70 @@ function _dispatch(msg) {
           st.setRoute(msg.route);
         }
         _refreshMatrixCell(msg.route.rx_id, msg.route.tx_id);
+      }
+      break;
+
+    case 'bus_created':
+      if (msg.bus) {
+        st.setBus(msg.bus);
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+      }
+      break;
+
+    case 'bus_deleted':
+      if (msg.id) {
+        st.removeBus(msg.id);
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+      }
+      break;
+
+    case 'bus_update':
+      if (msg.id) {
+        const existing = st.state.buses.get(msg.id);
+        if (existing) {
+          if (msg.name !== undefined) existing.name = msg.name;
+          if (msg.muted !== undefined) existing.muted = msg.muted;
+          window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+        }
+      }
+      break;
+
+    case 'bus_routing_update':
+      if (msg.id) {
+        const bus = st.state.buses.get(msg.id);
+        if (bus && msg.routing) {
+          bus.routing = msg.routing;
+          window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+        }
+      }
+      break;
+
+    case 'bus_dsp_update':
+      if (msg.id) {
+        const bus = st.state.buses.get(msg.id);
+        if (bus && msg.block && msg.params) {
+          if (!bus.dsp) bus.dsp = {};
+          bus.dsp[msg.block] = msg.params;
+        }
+      }
+      break;
+
+    case 'bus_matrix_update':
+      if (msg.matrix) {
+        const bm = {};
+        const outputs = st.outputList();
+        msg.matrix.forEach((row, txIdx) => {
+          const txId = outputs[txIdx]?.id;
+          if (!txId) return;
+          bm[txId] = {};
+          const buses = st.busList();
+          row.forEach((on, busIdx) => {
+            const busId = buses[busIdx]?.id;
+            if (busId) bm[txId][busId] = on;
+          });
+        });
+        st.setBusMatrix(bm);
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
       }
       break;
 
