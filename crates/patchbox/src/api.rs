@@ -1459,12 +1459,10 @@ async fn post_admin_channels(
     if let Err(e) = state.persist().await {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("persist failed: {}", e)}))).into_response();
     }
-    // Spawn restart after short delay so response can be sent first
+    // Exit cleanly — systemd Restart=always handles production; dev mode user restarts manually
     tokio::spawn(async {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        let _ = tokio::process::Command::new("systemctl")
-            .args(["restart", "patchbox"])
-            .spawn();
+        std::process::exit(0);
     });
     (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
 }
@@ -1475,9 +1473,7 @@ async fn post_admin_restart(
     let _ = state.persist().await;
     tokio::spawn(async {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        let _ = tokio::process::Command::new("systemctl")
-            .args(["restart", "patchbox"])
-            .spawn();
+        std::process::exit(0);
     });
     (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
 }
