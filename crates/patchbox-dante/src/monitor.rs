@@ -138,10 +138,11 @@ impl MonitorWriter {
     }
 }
 
-/// Convert f32 [-1.0, 1.0] to S32_LE (scaled to 24-bit range in 32-bit container).
+/// Convert f32 [-1.0, 1.0] to S32_LE (full 32-bit range).
+/// Must use full range so that plughw S32→S16 conversion is correct.
 #[inline]
 fn f32_to_i32_alsa(s: f32) -> i32 {
-    (s.clamp(-1.0, 1.0) * 8_388_607.0) as i32
+    (s.clamp(-1.0, 1.0) * i32::MAX as f32) as i32
 }
 
 /// Parse card index from a device name like "plughw:1,0" or "hw:0,0".
