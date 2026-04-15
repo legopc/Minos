@@ -2,7 +2,7 @@
 #![cfg(feature = "inferno")]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u32 = 2; // stereo: L=R (mono PFL duplicated to both ears)
@@ -15,6 +15,8 @@ pub struct MonitorWriter {
     tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
     nframes: Arc<AtomicUsize>,
     solo_active: Arc<AtomicBool>,
+    /// Volume in integer dB (e.g. 0 = unity, -20 = -20 dB). Shared with config poller.
+    pub volume_db: Arc<AtomicI32>,
     pub shutdown: Arc<AtomicBool>,
 }
 
@@ -24,12 +26,14 @@ impl MonitorWriter {
         tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
         nframes: Arc<AtomicUsize>,
         solo_active: Arc<AtomicBool>,
+        volume_db: Arc<AtomicI32>,
     ) -> Self {
         Self {
             device_name,
             tb_output,
             nframes,
             solo_active,
+            volume_db,
             shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -78,6 +82,11 @@ impl MonitorWriter {
             pcm.hw_params(&hwp)?;
         }
         pcm.prepare()?;
+
+        // Set hardware mixer controls to max so software volume_db is sole level control.
+        if let Some(card_idx) = parse_card_idx(&self.device_name) {
+            set_hardware_volume(card_idx);
+        }
         tracing::info!(device = %self.device_name, "monitor ALSA device opened");
 
         let silence = vec![0i32; PERIOD_FRAMES as usize * CHANNELS as usize];
@@ -96,9 +105,12 @@ impl MonitorWriter {
                     let mut tb = self.tb_output.lock().unwrap();
                     *tb.read()
                 };
+                // Apply software volume_db gain
+                let vol_db = self.volume_db.load(Ordering::Relaxed) as f32;
+                let gain = 10.0f32.powf(vol_db / 20.0);
                 // Convert f32 → i32 S32_LE, interleaved stereo (L=R mono PFL)
                 for i in 0..nf {
-                    let s = f32_to_i32_alsa(src[i]);
+                    let s = f32_to_i32_alsa(src[i] * gain);
                     write_buf[i * 2] = s;
                     write_buf[i * 2 + 1] = s;
                 }
@@ -128,6 +140,44 @@ impl MonitorWriter {
 #[inline]
 fn f32_to_i32_alsa(s: f32) -> i32 {
     (s.clamp(-1.0, 1.0) * 8_388_607.0) as i32
+}
+
+/// Parse card index from a device name like "plughw:1,0" or "hw:0,0".
+fn parse_card_idx(device: &str) -> Option<i32> {
+    let s = device
+        .trim_start_matches("plughw:")
+        .trim_start_matches("hw:");
+    s.split(',').next()?.parse().ok()
+}
+
+/// Set all playback mixer controls (Headphone, Master, PCM, Speaker) to maximum
+/// and unmute switches. Called once on PCM open so volume_db is the sole level control.
+fn set_hardware_volume(card_idx: i32) {
+    let card_name = format!("hw:{}", card_idx);
+    match alsa::Mixer::new(&card_name, false) {
+        Ok(mixer) => {
+            for selem in mixer.iter() {
+                let sid = selem.get_id();
+                let name = match sid.get_name() { Ok(n) => n, Err(_) => continue };
+                let relevant = name.contains("Headphone")
+                    || name.contains("Master")
+                    || name.contains("PCM")
+                    || name.contains("Speaker");
+                if !relevant { continue; }
+                if selem.has_playback_volume() {
+                    if let Ok((_, max)) = selem.get_playback_volume_range() {
+                        let _ = selem.set_playback_volume_all(max);
+                    }
+                }
+                if selem.has_playback_switch() {
+                    let _ = selem.set_playback_switch_all(1);
+                }
+                tracing::debug!(name, "hardware volume set to max");
+            }
+            tracing::info!(card = card_idx, "monitor hardware volume initialised");
+        }
+        Err(e) => tracing::warn!(err = %e, card = card_idx, "could not open mixer for hardware volume init"),
+    }
 }
 
 /// Enumerate available ALSA PCM playback devices from /proc/asound/cards.

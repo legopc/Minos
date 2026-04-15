@@ -210,6 +210,7 @@ impl DanteDevice {
         let mon_active  = Arc::new(AtomicBool::new(false));
         let mon_active_cb  = mon_active.clone();
         let mon_nframes_cb = mon_nframes.clone();
+        let mon_volume_db  = Arc::new(std::sync::atomic::AtomicI32::new(initial_cfg.monitor_volume_db as i32));
 
         // Background task: push config updates into triple buffer every 10ms
         // Also manages ALSA monitor writer lifecycle — spawns/restarts on device change.
@@ -217,6 +218,7 @@ impl DanteDevice {
         let mon_tb_output_watcher = mon_tb_output_arc.clone();
         let mon_nframes_watcher   = mon_nframes.clone();
         let mon_active_watcher    = mon_active.clone();
+        let mon_volume_watcher    = mon_volume_db.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             let mut last_monitor_device: Option<String> = initial_cfg.monitor_device.clone();
@@ -229,6 +231,7 @@ impl DanteDevice {
                     mon_tb_output_watcher.clone(),
                     mon_nframes_watcher.clone(),
                     mon_active_watcher.clone(),
+                    mon_volume_watcher.clone(),
                 );
                 let sh = writer.shutdown.clone();
                 monitor_shutdown = Some(sh);
@@ -244,6 +247,9 @@ impl DanteDevice {
                 if let Ok(cfg) = config_ref.try_read() {
                     tb_input.write(cfg.clone());
 
+                    // Update software volume_db live
+                    mon_volume_watcher.store(cfg.monitor_volume_db as i32, std::sync::atomic::Ordering::Relaxed);
+
                     // Hot-reconfigure: device changed?
                     if cfg.monitor_device != last_monitor_device {
                         // Stop old writer
@@ -258,6 +264,7 @@ impl DanteDevice {
                                 mon_tb_output_watcher.clone(),
                                 mon_nframes_watcher.clone(),
                                 mon_active_watcher.clone(),
+                                mon_volume_watcher.clone(),
                             );
                             let sh = writer.shutdown.clone();
                             monitor_shutdown = Some(sh);
