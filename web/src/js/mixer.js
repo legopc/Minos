@@ -133,14 +133,14 @@ function _renderStrips(strips, masters) {
     strips.appendChild(s);
   });
 
-  // Bus strips
+  // Bus strips (in masters, before output strips — buses are outputs not inputs)
   const buses = st.busList();
   if (st.state.system?.show_buses_in_mixer !== false && buses.length > 0) {
     const sep = document.createElement('div');
     sep.className = 'mixer-bus-separator';
     sep.textContent = 'BUSES';
-    strips.appendChild(sep);
-    buses.forEach(bus => strips.appendChild(_buildBusStrip(bus)));
+    masters.appendChild(sep);
+    buses.forEach(bus => masters.appendChild(_buildBusStrip(bus)));
   }
 
   // Output master strips (one per output, replaces zone-based iteration)
@@ -308,10 +308,11 @@ function _buildInputStrip(ch) {
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
+    if (!block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
-    if (!block.enabled || block.bypassed) btn.classList.add('byp');
+    if (block.bypassed) btn.classList.add('byp');
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;
@@ -495,10 +496,11 @@ function _buildBusStrip(bus) {
   const dsp = bus.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
+    if (!block.enabled) return;
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
-    if (!block.enabled || block.bypassed) btn.classList.add('byp');
+    if (block.bypassed) btn.classList.add('byp');
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;

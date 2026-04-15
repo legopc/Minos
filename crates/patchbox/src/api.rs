@@ -691,7 +691,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
             "bypassed": false,
             "params": {"hpf": {"enabled": dsp.hpf.enabled, "freq_hz": dsp.hpf.freq_hz}, "lpf": {"enabled": dsp.lpf.enabled, "freq_hz": dsp.lpf.freq_hz}}
         },
-        "am": {"enabled": true, "bypassed": dsp.gain_db == 0.0_f32 && !dsp.polarity, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
+        "am": {"enabled": dsp.gain_db != 0.0_f32 || dsp.polarity, "bypassed": false, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
         "peq": {"enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
         "gte": {"enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
@@ -1880,7 +1880,19 @@ async fn post_admin_channels(
         cfg.tx_channels = body.tx;
         if let Some(count) = body.bus_count {
             let count = count.min(8);
-            cfg.internal_buses.resize_with(count, InternalBusConfig::default);
+            // Grow: add buses with unique sequential IDs
+            while cfg.internal_buses.len() < count {
+                let idx = cfg.internal_buses.len();
+                cfg.internal_buses.push(InternalBusConfig {
+                    id: format!("bus_{}", idx),
+                    name: format!("Bus {}", idx + 1),
+                    routing: vec![false; cfg.rx_channels],
+                    dsp: patchbox_core::config::InputChannelDsp::default(),
+                    muted: false,
+                });
+            }
+            // Shrink: truncate to requested count
+            cfg.internal_buses.truncate(count);
         }
         cfg.normalize();
     }
