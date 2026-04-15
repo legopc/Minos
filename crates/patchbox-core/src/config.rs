@@ -359,6 +359,10 @@ pub struct PatchboxConfig {
     pub output_gain_db: Vec<f32>,
     /// Routing matrix: matrix[tx][rx] = true means source rx feeds zone tx
     pub matrix: Vec<Vec<bool>>,
+    /// Per-crosspoint gain in dB: matrix_gain_db[tx][rx] applied when matrix[tx][rx] = true.
+    /// 0.0 = unity (default), negative = attenuate, positive = boost.
+    #[serde(default)]
+    pub matrix_gain_db: Vec<Vec<f32>>,
     /// Per-zone mute state (true = muted/silent)
     #[serde(default)]
     pub output_muted: Vec<bool>,
@@ -435,6 +439,7 @@ impl Default for PatchboxConfig {
             input_gain_db: vec![0.0; rx],
             output_gain_db: vec![0.0; tx],
             matrix: vec![vec![false; rx]; tx],
+            matrix_gain_db: vec![vec![0.0; rx]; tx],
             output_muted: vec![false; tx],
             per_output_eq: vec![EqConfig::default(); tx],
             per_output_limiter: vec![LimiterConfig::default(); tx],
@@ -471,6 +476,10 @@ impl PatchboxConfig {
         self.matrix.resize(self.tx_channels, vec![false; self.rx_channels]);
         for row in &mut self.matrix {
             row.resize(self.rx_channels, false);
+        }
+        self.matrix_gain_db.resize(self.tx_channels, vec![0.0; self.rx_channels]);
+        for row in &mut self.matrix_gain_db {
+            row.resize(self.rx_channels, 0.0);
         }
 
         // Migrate legacy fields into new DSP structs if input_dsp/output_dsp are missing/short

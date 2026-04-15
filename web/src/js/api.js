@@ -150,7 +150,8 @@ export const deleteRoute   = (id)                  => reqWithRetry('DELETE', `/r
 export const deleteRoutesByRx = (rx_id)            => reqWithRetry('DELETE', `/routes?rx_id=${rx_id}`);
 export const deleteRoutesByTx = (tx_id)            => reqWithRetry('DELETE', `/routes?tx_id=${tx_id}`);
 export const deleteRoutesByZone = (zone_id)        => reqWithRetry('DELETE', `/routes?zone_id=${zone_id}`);
-
+export const getMatrix     = ()                    => get('/matrix');
+export const putMatrixGain = (tx, rx, gain_db)     => reqWithRetry('PUT', '/matrix', { tx, rx, enabled: true, gain_db });
 // ── Buses ──────────────────────────────────────────────────────────────────
 export const getBuses      = ()             => get('/buses');
 export const createBus     = (name)         => post('/buses', { name });

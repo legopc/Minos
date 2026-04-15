@@ -15,6 +15,7 @@ let _soloMode = null;   // null | 'pending' | {channelId, savedRoutes}
 let _copyMode = null;   // null | 'pick-src' | {src}
 const _clipMap = new Map(); // chId -> bool (currently clipping)
 const _pendingCrosspoints = new Map(); // key (rx|tx) -> Date.now()
+const _xpGain = new Map(); // key (rx|tx) -> gain_db (0.0 = unity)
 
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
@@ -525,10 +526,13 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
 
   // Crosspoint cells
   let prevZoneId = null;
-  outputs.forEach(out => {
+  outputs.forEach((out, outIdx) => {
     const zone = txZoneMap.get(out.id);
     const isZoneStart = zone && zone.id !== prevZoneId;
     prevZoneId = zone?.id ?? null;
+
+    const txIdx = parseInt(out.id.split('_')[1], 10);
+    const rxIdx = parseInt(ch.id.split('_')[1], 10);
 
     const routeType = st.getRouteType(ch.id, out.id);
     const cell = document.createElement('div');
@@ -543,7 +547,16 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     dot.className = 'xp-dot';
     cell.appendChild(dot);
 
+    // Gain label — shown only when gain != 0
+    const gainLabel = document.createElement('span');
+    gainLabel.className = 'xp-gain-label';
+    const gainDb = st.getMatrixGain(txIdx, rxIdx);
+    gainLabel.textContent = gainDb !== 0 ? (gainDb > 0 ? `+${gainDb.toFixed(1)}` : gainDb.toFixed(1)) : '';
+    gainLabel.style.display = gainDb !== 0 ? '' : 'none';
+    cell.appendChild(gainLabel);
+
     cell.addEventListener('click', () => _toggleRoute(ch.id, out.id, cell));
+    cell.addEventListener('wheel', (e) => _onXpWheel(e, ch.id, out.id, txIdx, rxIdx, cell, gainLabel), { passive: false });
     row.appendChild(cell);
   });
 
@@ -741,6 +754,33 @@ async function _toggleRoute(rxId, txId, cell) {
     cell.classList.remove('pending');
     cell.style.pointerEvents = '';
   }
+}
+
+// ── Per-crosspoint gain scroll wheel ──────────────────────────────────────
+const _xpWheelThrottle = new Map();
+
+function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
+  if (!st.getRouteType(rxId, txId)) return; // only active routes
+  e.preventDefault();
+  e.stopPropagation();
+
+  const now = Date.now();
+  const last = _xpWheelThrottle.get(`${rxId}|${txId}`) ?? 0;
+  if (now - last < 80) return;
+  _xpWheelThrottle.set(`${rxId}|${txId}`, now);
+
+  const step = e.shiftKey ? 0.1 : 1.0;
+  const delta = e.deltaY < 0 ? step : -step;
+  const current = st.getMatrixGain(txIdx, rxIdx);
+  const next = Math.round((current + delta) * 10) / 10;
+  const clamped = Math.max(-40, Math.min(12, next));
+
+  st.setMatrixGainCell(txIdx, rxIdx, clamped);
+  gainLabel.textContent = clamped !== 0 ? (clamped > 0 ? `+${clamped.toFixed(1)}` : clamped.toFixed(1)) : '';
+  gainLabel.style.display = clamped !== 0 ? '' : 'none';
+  cell.classList.toggle('xp-gain-nonunity', clamped !== 0);
+
+  api.putMatrixGain(txIdx, rxIdx, clamped).catch(err => toast('Gain error: ' + err.message, true));
 }
 
 // ── Metering update (called from ws.js) ───────────────────────────────────

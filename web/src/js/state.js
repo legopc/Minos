@@ -8,6 +8,7 @@ const _state = {
   scenes:        [],         // SceneMeta[]
   buses:         new Map(),  // id → Bus
   busMatrix:     {},         // busMatrix[tx_id][bus_id] = true
+  matrixGain:    [],         // matrixGain[tx_idx][rx_idx] = dB (float, 0 = unity)
   metering:      new Map(),  // id → dBFS float
   gr:            new Map(),  // "id_block" → GR dB float
   peakHold:      new Map(),  // id → {level, timestamp}
@@ -35,6 +36,14 @@ export function setZone(z)                 { _state.zones.set(z.id, z); }
 export function setBus(bus)                { _state.buses.set(bus.id, bus); }
 export function removeBus(id)              { _state.buses.delete(id); }
 export function setBusMatrix(matrix)       { _state.busMatrix = matrix ?? {}; }
+export function setMatrixGain(gain)        { _state.matrixGain = gain ?? []; }
+export function getMatrixGain(txIdx, rxIdx) {
+  return _state.matrixGain[txIdx]?.[rxIdx] ?? 0.0;
+}
+export function setMatrixGainCell(txIdx, rxIdx, db) {
+  if (!_state.matrixGain[txIdx]) _state.matrixGain[txIdx] = [];
+  _state.matrixGain[txIdx][rxIdx] = db;
+}
 export function setScene(s)                {
   const idx = _state.scenes.findIndex(x => x.id === s.id);
   if (idx >= 0) _state.scenes[idx] = s; else _state.scenes.push(s);

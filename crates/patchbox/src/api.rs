@@ -70,7 +70,13 @@ macro_rules! persist_scenes_or_500 {
 }
 
 #[derive(Deserialize)]
-pub struct MatrixUpdate { pub tx: usize, pub rx: usize, pub enabled: bool }
+pub struct MatrixUpdate {
+    pub tx: usize,
+    pub rx: usize,
+    pub enabled: bool,
+    /// Optional per-crosspoint gain in dB. Only applied when enabled=true. Range: [-40, 12].
+    pub gain_db: Option<f32>,
+}
 
 #[derive(Deserialize)]
 pub struct GainUpdate { pub channel: usize, pub db: f32 }
@@ -241,9 +247,27 @@ async fn put_matrix(State(s): State<AppState>, Json(u): Json<MatrixUpdate>) -> i
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
     }
     cfg.matrix[u.tx][u.rx] = u.enabled;
+    if let Some(db) = u.gain_db {
+        cfg.matrix_gain_db[u.tx][u.rx] = db.clamp(-40.0, 12.0);
+    }
     drop(cfg);
     persist_or_500!(s);
     StatusCode::OK.into_response()
+}
+
+// GET /api/v1/matrix
+#[derive(Serialize)]
+struct MatrixState {
+    enabled: Vec<Vec<bool>>,
+    gain_db: Vec<Vec<f32>>,
+}
+
+async fn get_matrix(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(MatrixState {
+        enabled: cfg.matrix.clone(),
+        gain_db: cfg.matrix_gain_db.clone(),
+    })
 }
 
 // PUT /api/v1/gain/input
@@ -2149,7 +2173,7 @@ pub fn router(state: AppState) -> Router {
     // Protected routes — require valid JWT
     let protected = Router::new()
         .route("/api/v1/whoami", get(whoami))
-        .route("/api/v1/matrix", put(put_matrix))
+        .route("/api/v1/matrix", get(get_matrix).put(put_matrix))
         .route("/api/v1/gain/input", put(put_gain_input))
         .route("/api/v1/gain/output", put(put_gain_output))
         .route("/api/v1/zones/:tx/mute", post(mute_zone))

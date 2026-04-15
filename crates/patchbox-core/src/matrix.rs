@@ -147,6 +147,9 @@ pub struct PerInputDsp {
     pub gate: GateExpander,
     pub compressor: Compressor,
     pub enabled: bool,
+    // DC blocker state: 1st-order HPF at ~2 Hz, always on
+    dc_x1: f32,
+    dc_y1: f32,
 }
 
 impl PerInputDsp {
@@ -161,6 +164,8 @@ impl PerInputDsp {
             gate: GateExpander::new(),
             compressor: Compressor::new(),
             enabled: true,
+            dc_x1: 0.0,
+            dc_y1: 0.0,
         }
     }
 
@@ -184,6 +189,14 @@ impl PerInputDsp {
         if !self.enabled {
             for s in buf.iter_mut() { *s = 0.0; }
             return;
+        }
+        // DC blocker (always on): y[n] = x[n] - x[n-1] + R*y[n-1], R ≈ 0.9999 (~2 Hz)
+        const DC_R: f32 = 0.9999;
+        for s in buf.iter_mut() {
+            let y = *s - self.dc_x1 + DC_R * self.dc_y1;
+            self.dc_x1 = *s;
+            self.dc_y1 = y;
+            *s = y;
         }
         if self.invert_polarity {
             for s in buf.iter_mut() { *s = -*s; }
@@ -423,9 +436,14 @@ impl MatrixProcessor {
                     .unwrap_or(false);
 
                 if routed {
+                    let xp_gain_db = config.matrix_gain_db
+                        .get(tx_idx)
+                        .and_then(|row| row.get(rx_idx))
+                        .copied()
+                        .unwrap_or(0.0);
                     let in_gain = db_to_linear(
                         config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
-                    );
+                    ) * db_to_linear(xp_gain_db);
                     let src = if rx_idx < max_inputs {
                         &self.scratch[rx_idx][..nf]
                     } else {

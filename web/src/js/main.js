@@ -160,7 +160,7 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system, buses] = await Promise.all([
+    const [channels, outputs, zones, routes, scenes, system, buses, matrixState] = await Promise.all([
       api.getChannels(),
       api.getOutputs(),
       api.getZones(),
@@ -168,6 +168,7 @@ async function loadAll() {
       api.getScenes(),
       api.getSystem(),
       api.getBuses(),
+      api.getMatrix().catch(() => null),
     ]);
 
     channels.forEach(c => st.setChannel(c));
@@ -191,6 +192,9 @@ async function loadAll() {
       }
     });
     st.setBusMatrix(busMatrix);
+
+    // Store matrix gain state for crosspoint scroll-wheel control
+    if (matrixState?.gain_db) st.setMatrixGain(matrixState.gain_db);
 
     updateStatusBar();
 

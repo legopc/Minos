@@ -469,6 +469,7 @@
   justify-content: center;
   cursor: pointer;
   border-right: 1px solid var(--border-subtle);
+  position: relative;
 }
 
 .xp-cell:hover {
@@ -544,6 +545,24 @@
 
 @keyframes spin-pending {
   to { transform: rotate(360deg); }
+}
+
+/* ── Crosspoint gain label ─────────────────────────────────────────────── */
+.xp-gain-label {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--vu-green);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.xp-cell.xp-gain-nonunity {
+  outline: 1px solid rgba(var(--vu-green-rgb, 80,200,80), 0.35);
+  outline-offset: -2px;
 }
 
 /* ── C5: Empty Matrix State Hint ────────────────────────────────────────── */
