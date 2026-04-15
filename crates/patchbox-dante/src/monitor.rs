@@ -181,6 +181,29 @@ fn set_hardware_volume(card_idx: i32) {
     }
 }
 
+/// Auto-detect the monitor output device using the same logic as the Virgil/Inferno
+/// configure script: pick the first non-Loopback, non-HDMI/DisplayPort card from
+/// /proc/asound/cards and return "plughw:N,0". Returns None if no suitable card found.
+pub fn auto_detect_monitor_device() -> Option<String> {
+    let content = std::fs::read_to_string("/proc/asound/cards").ok()?;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if let Some(c) = trimmed.chars().next() {
+            if c.is_ascii_digit() {
+                let card_num: u32 = c.to_digit(10)?;
+                // Skip HDMI, DisplayPort, and Loopback cards (same exclusions as Virgil)
+                if trimmed.contains("HDMI") || trimmed.contains("DisplayPort") || trimmed.contains("Loopback") {
+                    continue;
+                }
+                let device = format!("plughw:{},0", card_num);
+                tracing::info!(device, "monitor device auto-detected");
+                return Some(device);
+            }
+        }
+    }
+    None
+}
+
 /// Enumerate available ALSA PCM playback devices from /proc/asound/cards.
 /// Returns (hw_name, description) pairs plus plughw equivalents.
 /// Does NOT shell out to aplay (not installed on dante-doos).

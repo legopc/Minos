@@ -224,8 +224,10 @@ impl DanteDevice {
             let mut last_monitor_device: Option<String> = initial_cfg.monitor_device.clone();
             let mut monitor_shutdown: Option<Arc<std::sync::atomic::AtomicBool>> = None;
 
-            // Initial monitor writer spawn
-            if let Some(ref dev) = initial_cfg.monitor_device {
+            // Initial monitor writer spawn — use configured device or auto-detect (Virgil-style)
+            let initial_dev = initial_cfg.monitor_device.clone()
+                .or_else(crate::monitor::auto_detect_monitor_device);
+            if let Some(ref dev) = initial_dev {
                 let writer = crate::monitor::MonitorWriter::new(
                     dev.clone(),
                     mon_tb_output_watcher.clone(),
@@ -257,8 +259,10 @@ impl DanteDevice {
                             sh.store(true, std::sync::atomic::Ordering::Release);
                             tracing::info!("monitor ALSA writer stopped");
                         }
-                        // Start new writer
-                        if let Some(ref dev) = cfg.monitor_device {
+                        // Start new writer — use configured device or auto-detect fallback
+                        let new_dev = cfg.monitor_device.clone()
+                            .or_else(crate::monitor::auto_detect_monitor_device);
+                        if let Some(ref dev) = new_dev {
                             let writer = crate::monitor::MonitorWriter::new(
                                 dev.clone(),
                                 mon_tb_output_watcher.clone(),
