@@ -60,9 +60,10 @@ export function render(container) {
   viewport.appendChild(grid);
   _container.appendChild(viewport);
 
-  // C5: Show empty matrix hint when no routes exist
-  const routeCount = st.routeList().length;
-  if (routeCount === 0) {
+  // C5: Show empty matrix hint when no routes exist (only after state has loaded — channels populated)
+  const routeCount = (st.routeList?.() ?? []).length;
+  const stateLoaded = st.state.channels.size > 0;
+  if (routeCount === 0 && stateLoaded) {
     const hint = document.createElement('div');
     hint.className = 'matrix-empty-hint';
     hint.innerHTML = `
@@ -72,7 +73,7 @@ export function render(container) {
         <button class="matrix-hint-dismiss">Got it</button>
       </div>
     `;
-    hint.querySelector('.matrix-hint-dismiss').addEventListener('click', () => hint.remove());
+    hint.querySelector('.matrix-hint-dismiss').addEventListener('click', e => { e.stopPropagation(); hint.remove(); });
     viewport.appendChild(hint);
   }
 

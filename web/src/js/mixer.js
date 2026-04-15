@@ -8,6 +8,7 @@ import { DSP_COLOURS } from './dsp/colours.js';
 let _animFrame = null;
 let _soloSet = new Set();
 let _pressTimer = null;
+let _pressStartX = 0, _pressStartY = 0;
 
 export function render(container) {
   container.innerHTML = '';
@@ -261,12 +262,16 @@ function _buildInputStrip(ch) {
   };
 
   // Long-press (500ms) on label to edit — same logic as dblclick
-  dbLabel.addEventListener('pointerdown', () => {
+  // Only cancel on significant movement (>8px) to avoid touchscreen jitter canceling the timer
+  dbLabel.addEventListener('pointerdown', e => {
+    _pressStartX = e.clientX; _pressStartY = e.clientY;
     _pressTimer = setTimeout(() => { dbLabel.ondblclick?.call(dbLabel); }, 500);
   });
   dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
   dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
-  dbLabel.addEventListener('pointermove', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('pointermove', e => {
+    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
+  });
 
   // Fader + meter side by side
   const fmWrap = document.createElement('div');
@@ -446,12 +451,15 @@ function _buildOutputMaster(out) {
   };
 
   // Long-press (500ms) on label to edit — same logic as dblclick
-  volLabel.addEventListener('pointerdown', () => {
+  volLabel.addEventListener('pointerdown', e => {
+    _pressStartX = e.clientX; _pressStartY = e.clientY;
     _pressTimer = setTimeout(() => { volLabel.ondblclick?.call(volLabel); }, 500);
   });
   volLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
   volLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
-  volLabel.addEventListener('pointermove', () => clearTimeout(_pressTimer));
+  volLabel.addEventListener('pointermove', e => {
+    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
+  });
 
   // Fader + meter side by side
   const fmWrap = document.createElement('div');
