@@ -766,7 +766,7 @@ function _refreshSoloButtons() {
   });
 }
 
-function _applySoloDimming() {
+function _applySoloVisual() {
   const strips = document.querySelectorAll('.mixer-strip');
   if (st.state.soloSet.size === 0) {
     strips.forEach(s => s.classList.remove('solo-dimmed'));
@@ -804,7 +804,7 @@ window.addEventListener('pb:buses-changed', () => {
 
 window.addEventListener('pb:solo-update', () => {
   _refreshSoloButtons();
-  _applySoloDimming();
+  _applySoloVisual();
   _updateSoloIndicator();
 });
 
