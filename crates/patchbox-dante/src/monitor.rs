@@ -2,43 +2,35 @@
 #![cfg(feature = "inferno")]
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u32 = 2; // stereo: L=R (mono PFL duplicated to both ears)
-const PERIOD_FRAMES: i64 = 128;  // Match Dante block size — eliminates sub-period writes
+const PERIOD_FRAMES: i64 = 128;
 const NUM_PERIODS: i64 = 8;      // 8 × 128 = 1024 frames = 21.3 ms headroom
 const BUFFER_FRAMES: i64 = PERIOD_FRAMES * NUM_PERIODS;
-const MAX_FRAMES: usize = 1024;
 
 pub struct MonitorWriter {
     device_name: String,
-    tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
-    nframes: Arc<AtomicUsize>,
+    /// FIFO queue of f32 samples from the RT callback (producer) to the ALSA writer (consumer).
+    /// Replaces triple_buffer: triple-buffer only keeps the latest value, dropping intermediate
+    /// frames. Dante fires 32-frame blocks; we accumulate four blocks per 128-frame ALSA period.
+    audio_queue: Arc<std::sync::Mutex<VecDeque<f32>>>,
     solo_active: Arc<AtomicBool>,
-    /// Incremented by RT callback each time a new buffer is published.
-    pub generation: Arc<AtomicU64>,
-    /// Volume in integer dB (e.g. 0 = unity, -20 = -20 dB). Shared with config poller.
-    pub volume_db: Arc<AtomicI32>,
     pub shutdown: Arc<AtomicBool>,
 }
 
 impl MonitorWriter {
     pub fn new(
         device_name: String,
-        tb_output: Arc<std::sync::Mutex<triple_buffer::Output<[f32; MAX_FRAMES]>>>,
-        nframes: Arc<AtomicUsize>,
+        audio_queue: Arc<std::sync::Mutex<VecDeque<f32>>>,
         solo_active: Arc<AtomicBool>,
-        generation: Arc<AtomicU64>,
-        volume_db: Arc<AtomicI32>,
     ) -> Self {
         Self {
             device_name,
-            tb_output,
-            nframes,
+            audio_queue,
             solo_active,
-            generation,
-            volume_db,
             shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -117,43 +109,36 @@ impl MonitorWriter {
 
         let period = PERIOD_FRAMES as usize;
         let mut write_buf = vec![0i32; period * CHANNELS as usize];
-        let mut cached_audio = vec![0i32; period * CHANNELS as usize];
-        let mut have_audio = false;
-        let mut last_gen: u64 = 0;
+        let silence_buf   = vec![0i32; period * CHANNELS as usize];
+        // Local accumulator: drains from the shared queue each ALSA period.
+        let mut accum: VecDeque<f32> = VecDeque::with_capacity(period * 8);
 
         while !self.shutdown.load(Ordering::Relaxed) {
             let active = self.solo_active.load(Ordering::Acquire);
 
             if active {
-                let cur_gen = self.generation.load(Ordering::Acquire);
-                if cur_gen != last_gen {
-                    last_gen = cur_gen;
-                    let nf = self.nframes.load(Ordering::Acquire).min(MAX_FRAMES);
-                    if nf > 0 {
-                        let src = {
-                            let mut tb = self.tb_output.lock().unwrap();
-                            *tb.read()
-                        };
-                        for i in 0..nf.min(period) {
-                            let s = f32_to_i32_alsa(src[i]);
-                            write_buf[i * 2] = s;
-                            write_buf[i * 2 + 1] = s;
-                        }
-                        for i in nf.min(period)..period {
-                            write_buf[i * 2] = 0;
-                            write_buf[i * 2 + 1] = 0;
-                        }
-                        cached_audio.copy_from_slice(&write_buf);
-                        have_audio = true;
-                    }
+                // Drain all queued samples into local accumulator (hold lock minimally)
+                {
+                    let mut q = self.audio_queue.lock().unwrap();
+                    accum.extend(q.drain(..));
                 }
-                // Replay cached audio when no new generation arrived.
-                // ALSA's blocking writei paces us at the hardware rate — no sleep polling needed.
-                let buf = if have_audio { &cached_audio } else { &write_buf };
-                self.write_frames(&pcm, buf)?;
+
+                // Fill exactly one ALSA period from the accumulator; pad with silence if needed
+                for i in 0..period {
+                    let s = accum.pop_front().map_or(0, f32_to_i32_alsa);
+                    write_buf[i * 2]     = s;
+                    write_buf[i * 2 + 1] = s;
+                }
+
+                self.write_frames(&pcm, &write_buf)?;
             } else {
-                have_audio = false;
-                self.write_frames(&pcm, &vec![0i32; period * CHANNELS as usize])?;
+                // Discard stale audio so it doesn't replay on next solo activation
+                {
+                    let mut q = self.audio_queue.lock().unwrap();
+                    q.clear();
+                }
+                accum.clear();
+                self.write_frames(&pcm, &silence_buf)?;
             }
         }
         Ok(())

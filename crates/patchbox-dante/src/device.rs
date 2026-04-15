@@ -203,25 +203,15 @@ impl DanteDevice {
         let initial_cfg = config.read().await.clone();
         let (mut tb_input, mut tb_output) = triple_buffer(&initial_cfg);
 
-        // Monitor audio triple-buffer (RT → ALSA writer)
-        let (mut mon_tb_input, mon_tb_output) = triple_buffer(&[0.0f32; patchbox_core::matrix::MAX_FRAMES]);
-        let mon_tb_output_arc = Arc::new(std::sync::Mutex::new(mon_tb_output));
-        let mon_nframes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mon_audio_queue: Arc<std::sync::Mutex<std::collections::VecDeque<f32>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(9600)));
         let mon_active  = Arc::new(AtomicBool::new(false));
         let mon_active_cb  = mon_active.clone();
-        let mon_nframes_cb = mon_nframes.clone();
-        let mon_generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let mon_generation_cb = mon_generation.clone();
-        let mon_volume_db  = Arc::new(std::sync::atomic::AtomicI32::new(initial_cfg.monitor_volume_db as i32));
 
-        // Background task: push config updates into triple buffer every 10ms
-        // Also manages ALSA monitor writer lifecycle — spawns/restarts on device change.
+        // Background task: manages ALSA monitor writer lifecycle — spawns/restarts on device change.
         let config_ref = config.clone();
-        let mon_tb_output_watcher = mon_tb_output_arc.clone();
-        let mon_nframes_watcher   = mon_nframes.clone();
-        let mon_active_watcher    = mon_active.clone();
-        let mon_generation_watcher = mon_generation.clone();
-        let mon_volume_watcher    = mon_volume_db.clone();
+        let mon_queue_watcher  = mon_audio_queue.clone();
+        let mon_active_watcher = mon_active.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             let mut last_monitor_device: Option<String> = initial_cfg.monitor_device.clone();
@@ -233,11 +223,8 @@ impl DanteDevice {
             if let Some(ref dev) = initial_dev {
                 let writer = crate::monitor::MonitorWriter::new(
                     dev.clone(),
-                    mon_tb_output_watcher.clone(),
-                    mon_nframes_watcher.clone(),
+                    mon_queue_watcher.clone(),
                     mon_active_watcher.clone(),
-                    mon_generation_watcher.clone(),
-                    mon_volume_watcher.clone(),
                 );
                 let sh = writer.shutdown.clone();
                 monitor_shutdown = Some(sh);
@@ -253,9 +240,6 @@ impl DanteDevice {
                 if let Ok(cfg) = config_ref.try_read() {
                     tb_input.write(cfg.clone());
 
-                    // Update software volume_db live
-                    mon_volume_watcher.store(cfg.monitor_volume_db as i32, std::sync::atomic::Ordering::Relaxed);
-
                     // Hot-reconfigure: device changed?
                     if cfg.monitor_device != last_monitor_device {
                         // Stop old writer
@@ -269,11 +253,8 @@ impl DanteDevice {
                         if let Some(ref dev) = new_dev {
                             let writer = crate::monitor::MonitorWriter::new(
                                 dev.clone(),
-                                mon_tb_output_watcher.clone(),
-                                mon_nframes_watcher.clone(),
+                                mon_queue_watcher.clone(),
                                 mon_active_watcher.clone(),
-                                mon_generation_watcher.clone(),
-                                mon_volume_watcher.clone(),
                             );
                             let sh = writer.shutdown.clone();
                             monitor_shutdown = Some(sh);
@@ -346,17 +327,6 @@ impl DanteDevice {
             let actual_rx = channels.len().min(n_rx);
             let block     = samples_count;
 
-            // One-shot block-size diagnostic: log first 5 non-zero block sizes
-            {
-                use std::sync::atomic::{AtomicU8, Ordering as O};
-                static LOG_COUNT: AtomicU8 = AtomicU8::new(0);
-                let c = LOG_COUNT.load(O::Relaxed);
-                if c < 5 && block > 0 {
-                    LOG_COUNT.fetch_add(1, O::Relaxed);
-                    tracing::info!(block, channels = actual_rx, "RT callback block size diagnostic");
-                }
-            }
-
             // Sync DSP state from latest config (RT-safe: no alloc when vecs already sized)
             matrix_proc.sync(cfg);
 
@@ -375,12 +345,19 @@ impl DanteDevice {
             // Run DSP matrix (input DSP → routing → output DSP)
             matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
 
-            // Write monitor buffer to triple-buffer for ALSA writer
+            // Push monitor buffer samples to FIFO queue for ALSA writer.
+            // Queue is bounded to 9600 frames (200ms) — drop oldest if overflowing.
             mon_active_cb.store(matrix_proc.solo_active, AOrdering::Release);
             if matrix_proc.solo_active {
-                mon_nframes_cb.store(block, AOrdering::Release);
-                mon_tb_input.write(matrix_proc.monitor_buf);
-                mon_generation_cb.fetch_add(1, AOrdering::Release);
+                let nf = block.min(patchbox_core::matrix::MAX_FRAMES);
+                if let Ok(mut q) = mon_audio_queue.try_lock() {
+                    for &s in &matrix_proc.monitor_buf[..nf] {
+                        q.push_back(s);
+                    }
+                    while q.len() > 9600 {
+                        q.pop_front();
+                    }
+                }
             }
 
             // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
@@ -416,7 +393,7 @@ impl DanteDevice {
                 if m.bus_rms.len() != n_buses { m.bus_rms.resize(n_buses, 0.0); }
                 for (b, bp) in matrix_proc.bus_processors.iter().enumerate().take(n_buses) {
                     if b < m.bus_rms.len() {
-                        m.bus_rms[b] = rms_linear(&bp.sum_buf[..block]);
+                        m.bus_rms[b] = rms_linear(&bp.sum_buf[..block.min(bp.sum_buf.len())]);
                     }
                 }
             }
