@@ -297,6 +297,7 @@ function _buildHdrRow(outputs, txZoneMap) {
     const col = document.createElement('div');
     col.className = 'out-hdr' + (isZoneStart ? ' zone-start' : '');
     col.dataset.outId = out.id;
+    col.dataset.txId  = out.id;
     if (isZoneStart && zone) {
       col.style.setProperty('--zone-color', st.getZoneColour(zone.colour_index ?? 0));
     }
@@ -335,16 +336,8 @@ function _buildHdrRow(outputs, txZoneMap) {
       col.appendChild(badge);
     });
 
-    const vuWrap = document.createElement('div');
-    vuWrap.className = 'out-vu-wrap';
-    const vuFill = document.createElement('div');
-    vuFill.className = 'out-vu-fill';
-    vuFill.id = `vu-out-${out.id}`;
-    vuWrap.appendChild(vuFill);
-    col.appendChild(vuWrap);
-
     row.appendChild(col);
-  });
+  });  // end outputs.forEach
 
   return row;
 }
@@ -388,15 +381,6 @@ function _buildRow(ch, idx, outputs, txZoneMap) {
     badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, ch.id, badge); };
     label.appendChild(badge);
   });
-
-  const vu = document.createElement('span');
-  vu.className = 'ch-vu';
-  vu.id = 'vu-rx-' + ch.id;
-  const vuFill = document.createElement('span');
-  vuFill.className = 'vu-fill';
-  vuFill.id = 'vu-fill-' + ch.id;
-  vu.appendChild(vuFill);
-  label.appendChild(vu);
 
   // Right-edge resize affordance on every label cell
   label.addEventListener('mousedown', e => {
@@ -510,12 +494,6 @@ export function updateMetering(rxData, txData) {
         _clipMap.set(id, nowClipping);
         _updateAllStats();
       }
-      const fill = document.getElementById(`vu-fill-${id}`);
-      if (fill) {
-        const pct = _dbToPercent(db);
-        fill.style.height = pct + '%';
-        fill.style.background = _dbToColour(db);
-      }
       // Signal-flow bar on channel label
       const label = _container?.querySelector(`.ch-label[data-ch-id="${id}"]`);
       if (label) {
@@ -537,11 +515,11 @@ export function updateMetering(rxData, txData) {
   }
   if (txData) {
     Object.entries(txData).forEach(([id, db]) => {
-      const fill = document.getElementById(`vu-out-${id}`);
-      if (!fill) return;
+      const col = _container?.querySelector(`.out-hdr[data-tx-id="${id}"]`);
+      if (!col) return;
       const pct = _dbToPercent(db);
-      fill.style.width = pct + '%';
-      fill.style.background = _dbToColour(db);
+      col.style.setProperty('--signal-pct', pct + '%');
+      col.style.setProperty('--signal-color', _dbToColour(db));
     });
   }
 }

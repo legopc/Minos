@@ -246,6 +246,21 @@
   border-right: 1px solid var(--border-subtle);
   font-size: 11px;
   color: var(--text-muted);
+  position: relative;
+  overflow: hidden;
+}
+
+.out-hdr::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 3px;
+  height: var(--signal-pct, 0%);
+  background: var(--signal-color, var(--vu-green));
+  transition: height 0.08s linear;
+  border-radius: 1px 1px 0 0;
+  pointer-events: none;
 }
 
 .out-hdr.zone-start {
@@ -403,28 +418,6 @@
   max-width: 100%;
 }
 
-.ch-label .ch-vu {
-  width: 22px;
-  height: 30px;
-  background: rgba(255, 255, 255, 0.06);
-  position: relative;
-  border-radius: 3px;
-  flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-  margin-left: auto;
-}
-
-.ch-label .ch-vu .vu-fill {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 0%;
-  background: var(--vu-green);
-  transition: height 0.05s;
-  border-radius: 2px;
-}
-
 /* ── DSP Badge (shared input + output) ─────────────────────────────────── */
 .ch-dsp-badge {
   display: inline-flex;
@@ -464,28 +457,6 @@
   min-width: 48px !important;
   font-size: 12px !important;
   padding: 4px 6px !important;
-}
-
-/* ── Output Column VU bar ───────────────────────────────────────────────── */
-.out-vu-wrap {
-  width: 100%;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 1px;
-  overflow: hidden;
-  margin-top: auto;
-  position: relative;
-}
-
-.out-vu-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0%;
-  background: var(--vu-green);
-  border-radius: 1px;
-  transition: width 0.05s linear;
 }
 
 /* ── Crosspoint Cell ────────────────────────────────────────────────────── */
