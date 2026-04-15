@@ -56,6 +56,35 @@ export function login(username, password) {
   });
 }
 
+let _refreshTimer = null;
+
+/** Schedule a token refresh 15 min before expiry. Call after login or page load. */
+export function scheduleRefresh(token) {
+  if (_refreshTimer) { clearTimeout(_refreshTimer); _refreshTimer = null; }
+  try {
+    const { exp } = JSON.parse(atob(token.split('.')[1]));
+    const msUntilRefresh = (exp - 15 * 60) * 1000 - Date.now();
+    if (msUntilRefresh <= 0) return; // already near/past expiry — don't schedule
+    _refreshTimer = setTimeout(async () => {
+      try {
+        const r = await fetch(BASE + '/auth/refresh', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${_token}` },
+        });
+        if (r.ok) {
+          const data = await r.json();
+          setToken(data.token);
+          scheduleRefresh(data.token);
+        } else {
+          // Refresh rejected — force re-login
+          clearToken();
+          window.dispatchEvent(new CustomEvent('pb:unauthorized'));
+        }
+      } catch { /* network error — will be caught on next API call */ }
+    }, msUntilRefresh);
+  } catch { /* malformed token — ignore */ }
+}
+
 // ── Channels (RX inputs) ───────────────────────────────────────────────────
 export const getChannels     = ()          => get('/channels');
 export const getChannel      = (id)        => get(`/channels/${id}`);

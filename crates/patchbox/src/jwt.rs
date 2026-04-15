@@ -62,6 +62,39 @@ pub fn validate(token: &str, secret: &[u8]) -> Result<Claims, jsonwebtoken::erro
     Ok(data.claims)
 }
 
+const KEY_PATH: &str = "/etc/patchbox/jwt.key";
+
+/// Load 32-byte secret from KEY_PATH, or generate-and-save a new one.
+/// Falls back to ephemeral secret (with warning) if path is not writable.
+pub fn load_or_generate_secret() -> Vec<u8> {
+    if let Ok(bytes) = std::fs::read(KEY_PATH) {
+        if bytes.len() == 32 {
+            tracing::info!("JWT secret loaded from {KEY_PATH}");
+            return bytes;
+        }
+        tracing::warn!("JWT key at {KEY_PATH} invalid ({} bytes) — regenerating", bytes.len());
+    }
+    let secret = generate_secret();
+    match save_secret(&secret) {
+        Ok(()) => tracing::info!("JWT secret written to {KEY_PATH}"),
+        Err(e) => tracing::warn!(error = %e, "Cannot persist JWT secret — ephemeral this session"),
+    }
+    secret
+}
+
+fn save_secret(secret: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    opts.mode(0o600);
+    let mut f = opts.open(KEY_PATH)?;
+    f.write_all(secret)?;
+    f.sync_all()
+}
+
 /// Generate a cryptographically random 32-byte secret at startup.
 pub fn generate_secret() -> Vec<u8> {
     use std::collections::hash_map::DefaultHasher;

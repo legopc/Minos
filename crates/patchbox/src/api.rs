@@ -1287,6 +1287,8 @@ async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl Int
 async fn handle_ws(socket: WebSocket, s: AppState) {
     use axum::extract::ws::Message;
     use futures_util::{SinkExt, StreamExt};
+    use tokio::sync::oneshot;
+    use tokio::time::Duration;
 
     let (mut sender, mut receiver) = socket.split();
 
@@ -1312,12 +1314,18 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
     let subscribed: Arc<Mutex<Option<Vec<String>>>> = Arc::new(Mutex::new(None));
     let subscribed_send = subscribed.clone();
 
+    // Cancel channel: either side can signal the other to stop
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    let (cancel_tx2, cancel_rx2) = oneshot::channel::<()>();
+
     // --- Send task: metering loop + broadcast relay ---
     let state_send = s.clone();
     let send_task = tokio::spawn(async move {
         let mut meter_tick = interval(Duration::from_millis(200));
+        tokio::pin!(cancel_rx);
         loop {
             tokio::select! {
+                _ = &mut cancel_rx => break,   // receive loop signalled us to stop
                 _ = meter_tick.tick() => {
                     let meters = state_send.meters.read().await;
                     let filter = subscribed_send.lock().await;
@@ -1356,40 +1364,69 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                         break;
                     }
                 }
-                Ok(event) = rx.recv() => {
-                    if sender.send(Message::Text(event.into())).await.is_err() {
-                        break;
+                result = rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if sender.send(Message::Text(event.into())).await.is_err() { break; }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!(n, "WS broadcast lagged — closing connection");
+                            break;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
             }
         }
+        // Signal receive loop that send died
+        let _ = cancel_tx2.send(());
+        // Best-effort close frame
+        let _ = tokio::time::timeout(Duration::from_millis(500), sender.close()).await;
     });
 
-    // --- Receive task: handle client messages ---
-    while let Some(Ok(msg)) = receiver.next().await {
-        let text = match msg {
-            Message::Text(t) => t,
-            Message::Close(_) => break,
-            _ => continue,
-        };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
-        match v.get("type").and_then(|t| t.as_str()) {
-            Some("ping") => {
-                let _ = s.ws_tx.send(serde_json::json!({"type":"pong"}).to_string());
+    // --- Receive loop with 30s inactivity deadline ---
+    let mut deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    tokio::pin!(cancel_rx2);
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep_until(deadline) => {
+                tracing::debug!("WS inactivity timeout — closing");
+                break;
             }
-            Some("subscribe_metering") => {
-                if let Some(ids) = v.get("ids").and_then(|i| i.as_array()) {
-                    let list: Vec<String> = ids.iter()
-                        .filter_map(|x| x.as_str().map(String::from))
-                        .collect();
-                    *subscribed.lock().await = Some(list);
+            _ = &mut cancel_rx2 => break,  // send task died
+            msg = receiver.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+                        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+                        match v.get("type").and_then(|t| t.as_str()) {
+                            Some("ping") => {
+                                let _ = s.ws_tx.send(serde_json::json!({"type":"pong"}).to_string());
+                            }
+                            Some("subscribe_metering") => {
+                                if let Some(ids) = v.get("ids").and_then(|i| i.as_array()) {
+                                    let list: Vec<String> = ids.iter()
+                                        .filter_map(|x| x.as_str().map(String::from))
+                                        .collect();
+                                    *subscribed.lock().await = Some(list);
+                                }
+                            }
+                            Some("resync") => { /* no-op for now */ }
+                            _ => {}
+                        }
+                    }
+                    Some(Ok(Message::Ping(_))) => {
+                        deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(_)) => break,
+                    _ => {}
                 }
             }
-            Some("resync") => { /* no-op for now */ }
-            _ => {}
         }
     }
 
+    let _ = cancel_tx.send(());  // signal send task if still running
     send_task.abort();
 }
 
@@ -1571,6 +1608,7 @@ pub fn router(state: AppState) -> Router {
         .route("/ws", get(ws_handler))
         .route("/api/v1/health", get(get_health))
         .route("/api/v1/login", post(auth_api::login))
+        .route("/api/v1/auth/refresh", post(auth_api::refresh_token))
         .route("/api/v1/config", get(get_config))
         .merge(protected);
 

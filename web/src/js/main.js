@@ -143,6 +143,7 @@ function setupLogin() {
     try {
       const res = await api.login(user.value.trim(), pass.value);
       api.setToken(res.token);
+      api.scheduleRefresh(res.token);
       st.setUserRole(res.role ?? 'admin');
       hideLogin();
       await loadAll();
@@ -221,6 +222,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     showLogin();
     return;
   }
+
+  // Re-schedule refresh for any token already in localStorage
+  api.scheduleRefresh(localStorage.getItem('pb_token') ?? '');
 
   try {
     await api.getHealth();

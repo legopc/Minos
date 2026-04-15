@@ -461,6 +461,42 @@ impl PatchboxConfig {
                 .collect();
         }
     }
+
+    /// Semantic validation after normalize(). Returns first error found.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rx_channels == 0 || self.rx_channels > 64 {
+            return Err(format!("rx_channels {} out of range [1, 64]", self.rx_channels));
+        }
+        if self.tx_channels == 0 || self.tx_channels > 64 {
+            return Err(format!("tx_channels {} out of range [1, 64]", self.tx_channels));
+        }
+        if self.matrix.len() != self.tx_channels {
+            return Err(format!(
+                "matrix has {} rows but tx_channels = {}", self.matrix.len(), self.tx_channels
+            ));
+        }
+        for (tx, row) in self.matrix.iter().enumerate() {
+            if row.len() != self.rx_channels {
+                return Err(format!(
+                    "matrix[{tx}] has {} cols but rx_channels = {}", row.len(), self.rx_channels
+                ));
+            }
+        }
+        for (i, g) in self.input_gain_db.iter().enumerate() {
+            if !g.is_finite() {
+                return Err(format!("input_gain_db[{i}] = {g} is not finite"));
+            }
+        }
+        for (i, g) in self.output_gain_db.iter().enumerate() {
+            if !g.is_finite() {
+                return Err(format!("output_gain_db[{i}] = {g} is not finite"));
+            }
+        }
+        if self.port == 0 {
+            return Err("port must be > 0".into());
+        }
+        Ok(())
+    }
 }
 
 fn default_channel_enabled() -> bool { true }

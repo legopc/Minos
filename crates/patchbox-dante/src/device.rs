@@ -251,7 +251,15 @@ impl DanteDevice {
         // ────────────────────────────────────────────────────────────────
         let lead_samples = initial_cfg.lead_samples;
 
+        let panic_count_cb    = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let panic_reset_ts_cb = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let panic_count_inner    = Arc::clone(&panic_count_cb);
+        let panic_reset_ts_inner = Arc::clone(&panic_reset_ts_cb);
+
         server.receive_with_callback(Box::new(move |samples_count, channels| {
+            use std::panic::{self, AssertUnwindSafe};
+
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
             use crate::sample_conv::{i32_to_f32, f32_to_i32};
 
             // Elevate DSP thread to SCHED_FIFO once per thread
@@ -411,6 +419,39 @@ impl DanteDevice {
                     }
                 }
             }
+            })); // end catch_unwind
+
+            if let Err(payload) = result {
+                let msg = payload.downcast_ref::<&str>().copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("unknown");
+                tracing::error!(panic = msg, "RT audio callback panicked — zeroing TX");
+
+                // Zero TX ring to silence outputs
+                for buf in &tx_bufs_cb {
+                    for s in buf.iter() { s.store(0, std::sync::atomic::Ordering::Relaxed); }
+                }
+
+                // Circuit breaker: >3 panics in 60s → drop SCHED_FIFO
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default().as_secs();
+                let reset_ts = panic_reset_ts_inner.load(std::sync::atomic::Ordering::Relaxed);
+                if now.saturating_sub(reset_ts) > 60 {
+                    panic_count_inner.store(1, std::sync::atomic::Ordering::Relaxed);
+                    panic_reset_ts_inner.store(now, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    let n = panic_count_inner.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if n > 3 {
+                        tracing::error!("RT panic circuit breaker: dropping SCHED_FIFO");
+                        #[cfg(all(feature = "inferno", target_os = "linux"))]
+                        unsafe {
+                            let param = libc::sched_param { sched_priority: 0 };
+                            libc::sched_setscheduler(0, libc::SCHED_OTHER, &param);
+                        }
+                    }
+                }
+            }
         })).await;
 
         // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
@@ -452,7 +493,7 @@ fn try_set_rt_priority_once() {
             #[cfg(target_arch = "x86_64")]
             unsafe {
                 // Read MXCSR, set FTZ (bit15) + DAZ (bit6), write back.
-                let mut mxcsr: u32;
+                let mut mxcsr: u32 = 0;
                 std::arch::asm!("stmxcsr [{0}]", in(reg) &mut mxcsr);
                 mxcsr |= 0x8040;
                 std::arch::asm!("ldmxcsr [{0}]", in(reg) &mxcsr);

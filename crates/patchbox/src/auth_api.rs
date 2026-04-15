@@ -63,8 +63,45 @@ pub async fn login(
     }).into_response()
 }
 
-/// Axum middleware: validate Bearer token, inject claims into request extensions.
-/// Routes that don't need auth can skip this middleware.
+/// POST /api/v1/auth/refresh
+/// Validates the existing Bearer token itself (not via middleware).
+/// Returns a new token with same sub/role/zone and a fresh expiry.
+/// Must be registered on the unprotected router (no JWT middleware layer).
+pub async fn refresh_token(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    let token_str = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    let Some(tok) = token_str else {
+        return (StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "missing token"}))).into_response();
+    };
+
+    let secret = state.jwt_secret.read().await;
+    match jwt::validate(tok, &secret) {
+        Ok(old) => {
+            let new_claims = jwt::Claims::new(&old.sub, &old.role, old.zone);
+            match jwt::generate(&new_claims, &secret) {
+                Ok(token) => Json(serde_json::json!({
+                    "token": token,
+                    "expires_in": jwt::TOKEN_EXPIRY_SECS,
+                    "role": new_claims.role,
+                })).into_response(),
+                Err(e) => {
+                    tracing::error!("jwt refresh generation failed: {e}");
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Err(_) => (StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "invalid or expired token"}))).into_response(),
+    }
+}
+
 pub async fn require_auth(
     State(state): State<AppState>,
     mut req: Request,

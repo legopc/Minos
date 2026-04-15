@@ -33,7 +33,7 @@ impl AppState {
         let scenes_path = config_path.with_extension("scenes.toml");
         let scenes = SceneStore::load(&scenes_path);
         let meters = MeterState::new(config.rx_channels, config.tx_channels);
-        let jwt_secret = jwt::generate_secret();
+        let jwt_secret = jwt::load_or_generate_secret();
         let (ws_tx, _) = broadcast::channel(256);
         Self {
             config: Arc::new(RwLock::new(config)),

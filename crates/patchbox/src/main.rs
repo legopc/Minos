@@ -30,6 +30,14 @@ async fn main() {
         let s = std::fs::read_to_string(&args.config).expect("read config");
         let mut c: PatchboxConfig = toml::from_str(&s).expect("parse config");
         c.normalize();
+        // After normalize(), validate before use
+        if let Err(e) = c.validate() {
+            tracing::error!(error = %e, path = %args.config.display(),
+                "Config validation failed — falling back to defaults. Check your config.toml.");
+            eprintln!("ERROR: Config validation failed: {e}\nUsing default config.");
+            c = PatchboxConfig::default();
+            c.normalize();
+        }
         c
     } else {
         tracing::info!("creating default config at {:?}", args.config);
