@@ -626,7 +626,38 @@
   border-color: color-mix(in srgb, var(--border) 70%, var(--accent-gold) 30%);
 }
 
-/* Input→bus routing crosspoints */
+/* Input→bus column divider */
+.bus-col-div-hdr,
+.bus-col-div-cell {
+  width: 16px !important;
+  min-width: 16px !important;
+  max-width: 16px !important;
+  background: color-mix(in srgb, var(--bg-base) 80%, var(--vu-amber) 20%);
+  border-left: 2px solid var(--vu-amber);
+  border-right: 2px solid var(--vu-amber);
+  padding: 0;
+  pointer-events: none;
+}
+
+.bus-col-div-hdr {
+  position: relative;
+  overflow: hidden;
+}
+
+.bus-col-div-hdr::after {
+  content: 'BUSES';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  font-size: 8px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--vu-amber);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .xp-cell.bus-src .xp-dot {
   border-color: var(--bus-route-color);
 }

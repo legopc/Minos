@@ -53,7 +53,9 @@ export function render(container) {
 
   const grid = document.createElement('div');
   grid.className = 'matrix-grid';
-  grid.style.setProperty('--num-cols', orderedOutputs.length + buses.length);
+  // +1 for the bus-column divider (only when buses exist)
+  const busDividerCols = buses.length > 0 ? 1 : 0;
+  grid.style.setProperty('--num-cols', orderedOutputs.length + busDividerCols + buses.length);
 
   grid.appendChild(_buildHdrRow(orderedOutputs, txZoneMap, buses));
   channels.forEach((ch, i) => grid.appendChild(_buildRow(ch, i, orderedOutputs, txZoneMap, buses)));
@@ -65,12 +67,16 @@ export function render(container) {
     sepLabel.className = 'ch-label bus-sep-label';
     sepLabel.textContent = 'BUSES';
     sep.appendChild(sepLabel);
-    // spacers for output cols + bus cols
+    // spacers for output cols + bus-col divider + bus cols
     orderedOutputs.forEach(() => {
       const spacer = document.createElement('div');
       spacer.className = 'xp-cell bus-sep-cell';
       sep.appendChild(spacer);
     });
+    // bus-column divider spacer
+    const divSpacer = document.createElement('div');
+    divSpacer.className = 'xp-cell bus-sep-cell bus-col-div-cell';
+    sep.appendChild(divSpacer);
     buses.forEach(() => {
       const spacer = document.createElement('div');
       spacer.className = 'xp-cell bus-sep-cell';
@@ -395,6 +401,11 @@ function _buildHdrRow(outputs, txZoneMap, buses) {
 
   // Bus column headers (input→bus routing)
   if (buses && buses.length > 0) {
+    // Vertical divider column
+    const divHdr = document.createElement('div');
+    divHdr.className = 'out-hdr bus-col-div-hdr';
+    row.appendChild(divHdr);
+
     buses.forEach((bus, bi) => {
       const col = document.createElement('div');
       col.className = 'out-hdr bus-col-hdr';
@@ -536,13 +547,17 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
 
   // Bus crosspoint columns (input→bus routing)
   if (buses && buses.length > 0) {
+    // Vertical divider cell
+    const divCell = document.createElement('div');
+    divCell.className = 'xp-cell bus-col-div-cell';
+    row.appendChild(divCell);
+
     buses.forEach(bus => {
       const active = Array.isArray(bus.routing) && bus.routing[idx] === true;
       const cell = document.createElement('div');
       cell.className = 'xp-cell bus-src' + (active ? ' active' : '');
       cell.dataset.rxId = ch.id;
       cell.dataset.busId = bus.id;
-      cell.style.borderLeft = '2px solid var(--vu-amber)';
 
       const dot = document.createElement('div');
       dot.className = 'xp-dot';
@@ -615,6 +630,11 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
 
   // Empty spacers for bus columns (bus→bus routing n/a)
   if (buses && buses.length > 0) {
+    // Divider spacer
+    const divSpacer = document.createElement('div');
+    divSpacer.className = 'xp-cell bus-col-div-cell';
+    row.appendChild(divSpacer);
+
     buses.forEach(() => {
       const spacer = document.createElement('div');
       spacer.className = 'xp-cell';

@@ -497,8 +497,8 @@
 .mixer-zone-strip,
 .mixer-output-strip {
   flex: 1 1 0;
-  min-width: 100px;
-  max-width: 200px;
+  min-width: 60px;
+  max-width: 110px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -694,7 +694,8 @@
 }
 
 /* ── Internal Bus Strips ─────────────────────────────────── */
-.mixer-bus-separator {
+.mixer-bus-separator,
+.mixer-output-separator {
   writing-mode: vertical-lr;
   color: var(--text-muted, #888);
   font-size: 10px;
@@ -706,6 +707,10 @@
   background: var(--surface-0, #111);
   border-left: 1px solid var(--border, #333);
   min-height: 80px;
+}
+
+.mixer-output-separator {
+  border-left: 2px solid var(--border-primary, #555);
 }
 
 .bus-strip {

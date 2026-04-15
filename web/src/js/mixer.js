@@ -144,6 +144,10 @@ function _renderStrips(strips, masters) {
   }
 
   // Output master strips (one per output, replaces zone-based iteration)
+  const outSep = document.createElement('div');
+  outSep.className = 'mixer-output-separator';
+  outSep.textContent = 'OUTPUTS';
+  masters.appendChild(outSep);
   outputs.forEach(out => {
     const m = _buildOutputMaster(out);
     masters.appendChild(m);
