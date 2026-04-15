@@ -209,8 +209,8 @@ impl Default for PerInputDsp {
     fn default() -> Self { Self::new() }
 }
 
-const MAX_FRAMES: usize = 1024;
-const MAX_INPUT_CHANNELS: usize = 64;
+pub const MAX_FRAMES: usize = 1024;
+pub const MAX_INPUT_CHANNELS: usize = 64;
 pub const MAX_BUSES: usize = 8;
 
 
@@ -278,6 +278,9 @@ pub struct MatrixProcessor {
     /// Pre-allocated scratch buffer for input DSP (heap to avoid 256 KB stack frames).
     scratch: Box<[[f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]>,
     pub bus_processors: Vec<BusProcessor>,
+    pub solo_mask: [bool; MAX_INPUT_CHANNELS],
+    pub solo_active: bool,
+    pub monitor_buf: [f32; MAX_FRAMES],
 }
 
 impl MatrixProcessor {
@@ -288,6 +291,9 @@ impl MatrixProcessor {
             sample_rate,
             scratch: Box::new([[0f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]),
             bus_processors: (0..MAX_BUSES).map(|_| BusProcessor::new()).collect(),
+            solo_mask: [false; MAX_INPUT_CHANNELS],
+            solo_active: false,
+            monitor_buf: [0.0f32; MAX_FRAMES],
         }
     }
 
@@ -326,6 +332,15 @@ impl MatrixProcessor {
                 bp.sync(&bus_cfg.dsp, self.sample_rate);
             }
         }
+
+        // Sync solo state
+        self.solo_mask = [false; MAX_INPUT_CHANNELS];
+        self.solo_active = !cfg.solo_channels.is_empty();
+        for &rx in &cfg.solo_channels {
+            if rx < MAX_INPUT_CHANNELS {
+                self.solo_mask[rx] = true;
+            }
+        }
     }
 
     /// Process one audio block: input DSP → matrix routing → output DSP.
@@ -352,6 +367,23 @@ impl MatrixProcessor {
             }
         }
 
+        // --- PFL monitor mix: tap post-input-DSP, before routing (only when solo active) ---
+        if self.solo_active {
+            for s in self.monitor_buf[..nf].iter_mut() { *s = 0.0; }
+            for rx_idx in 0..max_inputs {
+                if self.solo_mask[rx_idx] {
+                    for (s_out, &s_in) in self.monitor_buf[..nf].iter_mut()
+                        .zip(self.scratch[rx_idx][..nf].iter())
+                    {
+                        *s_out += s_in;
+                    }
+                }
+            }
+            let mon_gain = db_to_linear(config.monitor_volume_db);
+            if (mon_gain - 1.0).abs() > 1e-6 {
+                for s in self.monitor_buf[..nf].iter_mut() { *s *= mon_gain; }
+            }
+        }
 
         // --- Bus stage: sum inputs into each bus, then apply bus DSP ---
         let n_buses = config.internal_buses.len().min(MAX_BUSES);

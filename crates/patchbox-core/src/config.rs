@@ -407,6 +407,15 @@ pub struct PatchboxConfig {
     /// Bus→TX routing: bus_matrix[tx_idx][bus_idx] = true
     #[serde(default)]
     pub bus_matrix: Option<Vec<Vec<bool>>>,
+    /// ALSA device for PFL monitor output. None = solo disabled.
+    #[serde(default)]
+    pub monitor_device: Option<String>,
+    /// Monitor volume in dB, -60 to +12.
+    #[serde(default)]
+    pub monitor_volume_db: f32,
+    /// Soloed RX channel indices. Session-only, NOT persisted.
+    #[serde(skip)]
+    pub solo_channels: Vec<usize>,
 }
 
 impl Default for PatchboxConfig {
@@ -437,6 +446,9 @@ impl Default for PatchboxConfig {
             internal_buses: vec![],
             show_buses_in_mixer: true,
             bus_matrix: None,
+            monitor_device: None,
+            monitor_volume_db: 0.0,
+            solo_channels: vec![],
         }
     }
 }
@@ -515,6 +527,8 @@ impl PatchboxConfig {
                 row.resize(n_buses, false);
             }
         }
+
+        self.monitor_volume_db = self.monitor_volume_db.clamp(-60.0, 12.0);
     }
 
     /// Semantic validation after normalize(). Returns first error found.

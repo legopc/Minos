@@ -26,6 +26,10 @@ pub struct AppState {
     pub resyncs: Arc<AtomicU64>,
     /// Broadcast channel — WS handler subscribes; API mutation handlers send events
     pub ws_tx: Arc<broadcast::Sender<String>>,
+    /// Shutdown signal for the ALSA monitor writer thread.
+    pub monitor_shutdown: Arc<std::sync::atomic::AtomicBool>,
+    /// Handle to monitor writer thread for restart.
+    pub monitor_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl AppState {
@@ -47,6 +51,8 @@ impl AppState {
             audio_callbacks: Arc::new(AtomicU64::new(0)),
             resyncs: Arc::new(AtomicU64::new(0)),
             ws_tx: Arc::new(ws_tx),
+            monitor_shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            monitor_thread: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 

@@ -81,7 +81,7 @@ impl DanteDevice {
         };
         use inferno_aoip::device_server::Clock;
         use std::sync::atomic::Ordering as AOrdering;
-        use std::sync::atomic::AtomicUsize;
+        use std::sync::atomic::{AtomicBool, AtomicUsize};
         use std::time::Duration;
         use triple_buffer::triple_buffer;
 
@@ -256,6 +256,14 @@ impl DanteDevice {
         let panic_count_inner    = Arc::clone(&panic_count_cb);
         let panic_reset_ts_inner = Arc::clone(&panic_reset_ts_cb);
 
+        // Monitor audio triple-buffer (RT → ALSA writer)
+        let (mut mon_tb_input, mon_tb_output) = triple_buffer(&[0.0f32; patchbox_core::matrix::MAX_FRAMES]);
+        let mon_tb_output_arc = Arc::new(std::sync::Mutex::new(mon_tb_output));
+        let mon_nframes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mon_active  = Arc::new(AtomicBool::new(false));
+        let mon_active_cb  = mon_active.clone();
+        let mon_nframes_cb = mon_nframes.clone();
+
         server.receive_with_callback(Box::new(move |samples_count, channels| {
             use std::panic::{self, AssertUnwindSafe};
 
@@ -289,6 +297,13 @@ impl DanteDevice {
 
             // Run DSP matrix (input DSP → routing → output DSP)
             matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
+
+            // Write monitor buffer to triple-buffer for ALSA writer
+            mon_active_cb.store(matrix_proc.solo_active, AOrdering::Release);
+            if matrix_proc.solo_active {
+                mon_nframes_cb.store(block, AOrdering::Release);
+                mon_tb_input.write(matrix_proc.monitor_buf);
+            }
 
             // Update meters with linear RMS and limiter GR (best-effort, non-blocking)
             if let Ok(mut m) = meters.try_write() {
@@ -462,6 +477,24 @@ impl DanteDevice {
                 }
             }
         })).await;
+
+        // Spawn ALSA monitor writer if configured
+        {
+            let cfg_snap = config.read().await;
+            if let Some(ref dev) = cfg_snap.monitor_device {
+                let writer = crate::monitor::MonitorWriter::new(
+                    dev.clone(),
+                    mon_tb_output_arc.clone(),
+                    mon_nframes.clone(),
+                    mon_active.clone(),
+                );
+                std::thread::Builder::new()
+                    .name("monitor-alsa".into())
+                    .spawn(move || writer.run())
+                    .expect("failed to spawn monitor writer thread");
+                tracing::info!(device = %dev, "ALSA monitor writer started");
+            }
+        }
 
         // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
         // which kills the mDNS broadcaster and removes the device from Dante Controller.

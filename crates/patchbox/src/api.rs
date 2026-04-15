@@ -306,6 +306,18 @@ async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl
     persist_or_500!(s);
     persist_scenes_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"scene_loaded","scene_id":&name,"name":&name}).to_string());
+    // Clear solo state on scene load — solo does not persist across scene changes
+    {
+        let mut cfg = s.config.write().await;
+        cfg.solo_channels.clear();
+        let monitor_device = cfg.monitor_device.clone();
+        drop(cfg);
+        ws_broadcast(&s, serde_json::json!({
+            "type": "solo_update",
+            "channels": Vec::<usize>::new(),
+            "monitor_device": monitor_device,
+        }).to_string());
+    }
     StatusCode::OK.into_response()
 }
 
@@ -1629,6 +1641,132 @@ fn ws_broadcast(s: &AppState, msg: String) {
     let _ = s.ws_tx.send(msg);
 }
 
+// ─── Sprint F: Solo / PFL + Monitor endpoints ────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct SoloRequest { channels: Vec<usize> }
+
+#[derive(serde::Serialize)]
+struct SoloResponse {
+    channels: Vec<usize>,
+    monitor_device: Option<String>,
+}
+
+async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    })
+}
+
+async fn put_solo(State(s): State<AppState>, Json(body): Json<SoloRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.solo_channels = body.channels.into_iter()
+        .filter(|&rx| rx < cfg.rx_channels)
+        .collect();
+    cfg.solo_channels.sort_unstable();
+    cfg.solo_channels.dedup();
+    let resp = SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    };
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": &resp.channels,
+        "monitor_device": &resp.monitor_device,
+    }).to_string());
+    Json(resp)
+}
+
+async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if rx >= cfg.rx_channels {
+        return (StatusCode::BAD_REQUEST, "Invalid RX index").into_response();
+    }
+    if let Some(pos) = cfg.solo_channels.iter().position(|&c| c == rx) {
+        cfg.solo_channels.remove(pos);
+    } else {
+        cfg.solo_channels.push(rx);
+        cfg.solo_channels.sort_unstable();
+    }
+    let resp = SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    };
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": &resp.channels,
+        "monitor_device": &resp.monitor_device,
+    }).to_string());
+    Json(resp).into_response()
+}
+
+async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.solo_channels.clear();
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": Vec::<usize>::new(),
+        "monitor_device": &cfg.monitor_device,
+    }).to_string());
+    StatusCode::NO_CONTENT
+}
+
+#[derive(serde::Deserialize)]
+struct MonitorRequest {
+    device: Option<String>,
+    #[serde(default)]
+    volume_db: f32,
+}
+
+#[derive(serde::Serialize)]
+struct MonitorResponse {
+    device: Option<String>,
+    volume_db: f32,
+}
+
+async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(MonitorResponse {
+        device: cfg.monitor_device.clone(),
+        volume_db: cfg.monitor_volume_db,
+    })
+}
+
+async fn put_monitor(State(s): State<AppState>, Json(body): Json<MonitorRequest>) -> impl IntoResponse {
+    if body.volume_db < -60.0 || body.volume_db > 12.0 {
+        return (StatusCode::BAD_REQUEST, "volume_db out of range [-60, 12]").into_response();
+    }
+    {
+        let mut cfg = s.config.write().await;
+        cfg.monitor_device = body.device.clone();
+        cfg.monitor_volume_db = body.volume_db;
+    }
+    if let Err(e) = s.persist().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    ws_broadcast(&s, serde_json::json!({
+        "type": "monitor_config_update",
+        "device": &body.device,
+        "volume_db": body.volume_db,
+    }).to_string());
+    Json(MonitorResponse { device: body.device, volume_db: body.volume_db }).into_response()
+}
+
+async fn list_audio_devices() -> impl IntoResponse {
+    #[cfg(feature = "inferno")]
+    {
+        let devs = patchbox_dante::monitor::enumerate_devices();
+        let list: Vec<serde_json::Value> = devs.iter().map(|(name, desc)| {
+            serde_json::json!({ "name": name, "description": desc })
+        }).collect();
+        return Json(serde_json::json!({ "devices": list })).into_response();
+    }
+    #[cfg(not(feature = "inferno"))]
+    Json(serde_json::json!({ "devices": [] })).into_response()
+}
+
 // ─── WebSocket handler ────────────────────────────────────────────────────────
 
 async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl IntoResponse {
@@ -1652,7 +1790,9 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
             "version": env!("CARGO_PKG_VERSION"),
             "rx_count": cfg.rx_channels,
             "tx_count": cfg.tx_channels,
-            "zone_count": cfg.zone_config.len()
+            "zone_count": cfg.zone_config.len(),
+            "solo_channels": &cfg.solo_channels,
+            "monitor_device": &cfg.monitor_device,
         });
         let _ = sender.send(Message::Text(hello.to_string().into())).await;
     }
@@ -1992,6 +2132,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/buses/:id/mute", put(put_bus_mute))
         .route("/api/v1/buses/:id/routing", put(put_bus_routing))
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
+        .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
+        .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
+        .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))
+        .route("/api/v1/system/audio-devices", get(list_audio_devices))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required
