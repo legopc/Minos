@@ -280,6 +280,7 @@ function _buildInputStrip(ch) {
   });
   dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
   dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('contextmenu', e => e.preventDefault());
   dbLabel.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
   });
@@ -467,6 +468,7 @@ function _buildBusStrip(bus) {
   });
   dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
   dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  dbLabel.addEventListener('contextmenu', e => e.preventDefault());
   dbLabel.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
   });
@@ -651,6 +653,7 @@ function _buildOutputMaster(out) {
   });
   volLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
   volLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
+  volLabel.addEventListener('contextmenu', e => e.preventDefault());
   volLabel.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
   });

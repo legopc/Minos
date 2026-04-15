@@ -583,6 +583,9 @@
 .strip-fader-label-editable {
   cursor: pointer;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 .strip-fader-label-editable::after {
   content: '✎';
@@ -594,6 +597,7 @@
   right: 0;
   transition: opacity 0.2s;
 }
+.strip-fader-label-editable:hover::after,
 .strip-fader-label-editable:focus-visible::after {
   opacity: 0.6;
 }
