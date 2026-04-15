@@ -41,6 +41,12 @@ impl MonitorWriter {
     pub fn run(self) {
         tracing::info!(device = %self.device_name, "monitor ALSA writer starting");
 
+        // Set hardware mixer volume unconditionally at start — independent of PCM open.
+        // Headphone amp defaults to minimum at boot; must be set before audio can come out.
+        if let Some(card_idx) = parse_card_idx(&self.device_name) {
+            set_hardware_volume(card_idx);
+        }
+
         // Elevate to FIFO 70 (below Dante RT at 90, above normal)
         #[cfg(target_os = "linux")]
         unsafe {
@@ -83,10 +89,6 @@ impl MonitorWriter {
         }
         pcm.prepare()?;
 
-        // Set hardware mixer controls to max so software volume_db is sole level control.
-        if let Some(card_idx) = parse_card_idx(&self.device_name) {
-            set_hardware_volume(card_idx);
-        }
         tracing::info!(device = %self.device_name, "monitor ALSA device opened");
 
         let silence = vec![0i32; PERIOD_FRAMES as usize * CHANNELS as usize];
