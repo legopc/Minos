@@ -626,15 +626,16 @@
   border-color: color-mix(in srgb, var(--border) 70%, var(--accent-gold) 30%);
 }
 
-/* Input→bus column divider */
+/* Input→bus column divider — matches .bus-separator-row style */
 .bus-col-div-hdr,
 .bus-col-div-cell {
-  width: 16px !important;
-  min-width: 16px !important;
-  max-width: 16px !important;
-  background: color-mix(in srgb, var(--bg-base) 80%, var(--vu-amber) 20%);
-  border-left: 2px solid var(--vu-amber);
-  border-right: 2px solid var(--vu-amber);
+  width: 20px !important;
+  min-width: 20px !important;
+  max-width: 20px !important;
+  background: var(--surface-0);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  opacity: 0.8;
   padding: 0;
   pointer-events: none;
 }
@@ -653,7 +654,7 @@
   font-size: 8px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--vu-amber);
+  color: var(--text-muted);
   white-space: nowrap;
   pointer-events: none;
 }

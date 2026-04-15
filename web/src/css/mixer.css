@@ -498,7 +498,7 @@
 .mixer-output-strip {
   flex: 1 1 0;
   min-width: 60px;
-  max-width: 110px;
+  max-width: 130px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -714,6 +714,9 @@
 }
 
 .bus-strip {
+  flex: 1 1 0;
+  min-width: 50px;
+  max-width: 90px;
   border-top: 2px solid var(--accent-gold, #e3b341);
   background: color-mix(in srgb, var(--surface-1, #1a1a1a) 92%, var(--accent-gold, #e3b341) 8%);
 }
