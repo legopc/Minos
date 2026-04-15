@@ -768,7 +768,9 @@ function _updateAllStats() {
 // ── Corner button state refresh (no full re-render) ────────────────────────
 function _refreshCornerButtons() {
   if (!_container) return;
-  document.body.style.cursor = (_soloMode === 'pending' || _copyMode) ? 'crosshair' : '';
+  const picking = _soloMode === 'pending' || _copyMode === 'pick-src' || (typeof _copyMode === 'object' && _copyMode !== null);
+  document.body.style.cursor = picking ? 'crosshair' : '';
+  _container.querySelector('.matrix-grid')?.classList.toggle('pick-mode', picking);
 
   const btnSolo = _container.querySelector('.corner-btn-solo');
   if (btnSolo) {
