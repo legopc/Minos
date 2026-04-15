@@ -1880,13 +1880,14 @@ async fn post_admin_channels(
         cfg.tx_channels = body.tx;
         if let Some(count) = body.bus_count {
             let count = count.min(8);
+            let rx = cfg.rx_channels;
             // Grow: add buses with unique sequential IDs
             while cfg.internal_buses.len() < count {
                 let idx = cfg.internal_buses.len();
                 cfg.internal_buses.push(InternalBusConfig {
                     id: format!("bus_{}", idx),
                     name: format!("Bus {}", idx + 1),
-                    routing: vec![false; cfg.rx_channels],
+                    routing: vec![false; rx],
                     dsp: patchbox_core::config::InputChannelDsp::default(),
                     muted: false,
                 });
