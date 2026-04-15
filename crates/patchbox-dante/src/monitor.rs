@@ -163,17 +163,21 @@ fn set_hardware_volume(card_idx: i32) {
                 let selem = match Selem::new(elem) { Some(s) => s, None => continue };
                 let sid = selem.get_id();
                 let name = match sid.get_name() { Ok(n) => n, Err(_) => continue };
-                let relevant = name.contains("Headphone")
+                // Mute internal speakers; unmute headphone/line output only.
+                let is_speaker = name.contains("Speaker");
+                let is_headphone = name.contains("Headphone")
                     || name.contains("Master")
-                    || name.contains("PCM")
-                    || name.contains("Speaker");
-                if !relevant { continue; }
-                if selem.has_playback_volume() {
-                    let (_, max) = selem.get_playback_volume_range();
-                    let _ = selem.set_playback_volume_all(max);
-                }
-                if selem.has_playback_switch() {
-                    let _ = selem.set_playback_switch_all(1);
+                    || name.contains("PCM");
+                if !is_speaker && !is_headphone { continue; }
+                if is_speaker {
+                    if selem.has_playback_switch() { let _ = selem.set_playback_switch_all(0); }
+                    if selem.has_playback_volume() { let _ = selem.set_playback_volume_all(0); }
+                } else {
+                    if selem.has_playback_volume() {
+                        let (_, max) = selem.get_playback_volume_range();
+                        let _ = selem.set_playback_volume_all(max);
+                    }
+                    if selem.has_playback_switch() { let _ = selem.set_playback_switch_all(1); }
                 }
                 tracing::debug!(name, "hardware volume set to max");
             }
