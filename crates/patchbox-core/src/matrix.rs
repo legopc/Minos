@@ -211,6 +211,62 @@ impl Default for PerInputDsp {
 
 const MAX_FRAMES: usize = 1024;
 const MAX_INPUT_CHANNELS: usize = 64;
+pub const MAX_BUSES: usize = 8;
+
+
+/// Per-bus DSP and summation buffer. Stack-allocated, zero heap use in RT path.
+pub struct BusProcessor {
+    pub dsp: PerInputDsp,
+    pub sum_buf: [f32; MAX_FRAMES],
+}
+
+impl BusProcessor {
+    pub fn new() -> Self {
+        Self {
+            dsp: PerInputDsp::new(),
+            sum_buf: [0.0f32; MAX_FRAMES],
+        }
+    }
+
+    pub fn sync(&mut self, cfg: &InputChannelDsp, sample_rate: f32) {
+        self.dsp.sync(cfg, sample_rate);
+    }
+
+    /// Sum routed post-input-DSP buffers into sum_buf. No heap alloc.
+    #[inline]
+    pub fn sum_inputs(
+        &mut self,
+        routed: &[bool],
+        post_input_dsp: &[[f32; MAX_FRAMES]],
+        nframes: usize,
+        n_inputs: usize,
+    ) {
+        let nf = nframes.min(MAX_FRAMES);
+        for s in self.sum_buf[..nf].iter_mut() { *s = 0.0; }
+        for (rx_idx, &is_routed) in routed.iter().enumerate().take(n_inputs) {
+            if is_routed {
+                for i in 0..nf {
+                    self.sum_buf[i] += post_input_dsp[rx_idx][i];
+                }
+            }
+        }
+    }
+
+    /// Apply bus DSP in-place on sum_buf. No heap alloc.
+    #[inline]
+    pub fn process(&mut self, nframes: usize, muted: bool) {
+        let nf = nframes.min(MAX_FRAMES);
+        if muted {
+            for s in self.sum_buf[..nf].iter_mut() { *s = 0.0; }
+            return;
+        }
+        self.dsp.process_block(&mut self.sum_buf[..nf]);
+    }
+}
+
+impl Default for BusProcessor {
+    fn default() -> Self { Self::new() }
+}
 
 /// Stateful routing matrix processor owning both input and output DSP chains.
 ///
@@ -221,6 +277,7 @@ pub struct MatrixProcessor {
     pub sample_rate: f32,
     /// Pre-allocated scratch buffer for input DSP (heap to avoid 256 KB stack frames).
     scratch: Box<[[f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]>,
+    pub bus_processors: Vec<BusProcessor>,
 }
 
 impl MatrixProcessor {
@@ -230,6 +287,7 @@ impl MatrixProcessor {
             output_dsp: (0..n_outputs).map(|_| PerOutputDsp::new()).collect(),
             sample_rate,
             scratch: Box::new([[0f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]),
+            bus_processors: (0..MAX_BUSES).map(|_| BusProcessor::new()).collect(),
         }
     }
 
@@ -262,6 +320,12 @@ impl MatrixProcessor {
         for dsp in self.output_dsp.iter_mut() {
             dsp.gain_ramp.alpha = alpha;
         }
+        let n_buses = cfg.internal_buses.len().min(MAX_BUSES);
+        for (i, bp) in self.bus_processors.iter_mut().enumerate().take(n_buses) {
+            if let Some(bus_cfg) = cfg.internal_buses.get(i) {
+                bp.sync(&bus_cfg.dsp, self.sample_rate);
+            }
+        }
     }
 
     /// Process one audio block: input DSP → matrix routing → output DSP.
@@ -286,6 +350,18 @@ impl MatrixProcessor {
             if let Some(dsp) = self.input_dsp.get_mut(i) {
                 dsp.process_block(&mut self.scratch[i][..nf]);
             }
+        }
+
+
+        // --- Bus stage: sum inputs into each bus, then apply bus DSP ---
+        let n_buses = config.internal_buses.len().min(MAX_BUSES);
+        for (b, bp) in self.bus_processors.iter_mut().enumerate().take(n_buses) {
+            let routed = config.internal_buses.get(b)
+                .map(|bc| bc.routing.as_slice())
+                .unwrap_or(&[]);
+            let muted = config.internal_buses.get(b).map(|bc| bc.muted).unwrap_or(false);
+            bp.sum_inputs(routed, &self.scratch[..], nf, max_inputs);
+            bp.process(nf, muted);
         }
 
         for (tx_idx, output) in outputs.iter_mut().enumerate() {
@@ -320,6 +396,26 @@ impl MatrixProcessor {
                     };
                     for (s_out, s_in) in output[..nf].iter_mut().zip(src.iter()) {
                         *s_out += s_in * in_gain;
+                    }
+                }
+            }
+
+
+            // Sum bus outputs into this TX output
+            for b in 0..n_buses {
+                let bus_routed = config.bus_matrix
+                    .as_ref()
+                    .and_then(|bm| bm.get(tx_idx))
+                    .and_then(|row| row.get(b))
+                    .copied()
+                    .unwrap_or(false);
+                if bus_routed {
+                    if let Some(bp) = self.bus_processors.get(b) {
+                        for (s_out, &s_bus) in output[..nf].iter_mut()
+                            .zip(bp.sum_buf[..nf].iter())
+                        {
+                            *s_out += s_bus;
+                        }
                     }
                 }
             }

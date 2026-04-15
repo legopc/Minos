@@ -317,6 +317,15 @@ impl DanteDevice {
                         m.gr_db[i] = d.last_gr_db;
                     }
                 }
+
+                // Bus metering
+                let n_buses = cfg.internal_buses.len().min(patchbox_core::matrix::MAX_BUSES);
+                if m.bus_rms.len() != n_buses { m.bus_rms.resize(n_buses, 0.0); }
+                for (b, bp) in matrix_proc.bus_processors.iter().enumerate().take(n_buses) {
+                    if b < m.bus_rms.len() {
+                        m.bus_rms[b] = rms_linear(&bp.sum_buf[..block]);
+                    }
+                }
             }
 
             // Write processed samples into TX ring buffers.

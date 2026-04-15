@@ -420,7 +420,7 @@ async fn put_limiter_enabled(State(s): State<AppState>, Path(tx): Path<usize>, J
 use patchbox_core::config::{
     PatchboxConfig,
     ZoneConfig,
-    InputChannelDsp, OutputChannelDsp,
+    InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
 };
 
@@ -669,6 +669,10 @@ fn parse_tx_id(id: &str) -> Option<usize> {
     id.strip_prefix("tx_")?.parse().ok()
 }
 
+fn parse_bus_id(id: &str) -> Option<usize> {
+    id.strip_prefix("bus_")?.parse().ok()
+}
+
 fn parse_zone_id(id: &str) -> Option<usize> {
     id.strip_prefix("zone_")?.parse().ok()
 }
@@ -710,6 +714,15 @@ fn output_dsp_to_value(dsp: &OutputChannelDsp) -> serde_json::Value {
 fn linear_to_dbfs(v: f32) -> f32 {
     if v <= 0.0 { return -60.0; }
     (20.0 * v.log10()).max(-60.0)
+}
+
+fn bus_to_response(idx: usize, bus: &InternalBusConfig) -> BusResponse {
+    BusResponse {
+        id: bus.id.clone(),
+        name: bus.name.clone(),
+        muted: bus.muted,
+        dsp: input_dsp_to_value(&bus.dsp),
+    }
 }
 
 // --- Response types ---
@@ -763,6 +776,16 @@ struct SystemResponse {
     dante_status: String,
     ptp_locked: bool,
     audio_drops: u64,
+    bus_count: usize,
+    show_buses_in_mixer: bool,
+}
+
+#[derive(Serialize)]
+struct BusResponse {
+    id: String,
+    name: String,
+    muted: bool,
+    dsp: serde_json::Value,
 }
 
 // --- Request types ---
@@ -806,6 +829,29 @@ struct UpdateSceneRequest {
     name: Option<String>,
     description: Option<String>,
     is_favourite: Option<bool>,
+}
+
+// --- Request types: buses ---
+
+#[derive(Deserialize)]
+struct CreateBusRequest {
+    name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UpdateBusRequest {
+    name: Option<String>,
+    muted: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct BusRoutingBody {
+    routing: Vec<bool>,
+}
+
+#[derive(Deserialize)]
+struct BusMatrixBody {
+    matrix: Vec<Vec<bool>>,
 }
 
 // --- Channel endpoints ---
@@ -1027,6 +1073,240 @@ async fn delete_zone_resource(State(s): State<AppState>, Path(zone_id): Path<Str
     StatusCode::NO_CONTENT.into_response()
 }
 
+
+// ===========================================================================
+// Sprint E — Internal bus endpoints
+// ===========================================================================
+
+// GET /api/v1/buses
+async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let buses: Vec<BusResponse> = cfg.internal_buses.iter().enumerate()
+        .map(|(i, b)| bus_to_response(i, b))
+        .collect();
+    Json(buses)
+}
+
+// POST /api/v1/buses
+async fn post_bus(State(s): State<AppState>, Json(body): Json<CreateBusRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let idx = cfg.internal_buses.len();
+    let id = format!("bus_{}", idx);
+    let name = body.name.unwrap_or_else(|| format!("Bus {}", idx + 1));
+    let bus = patchbox_core::config::InternalBusConfig {
+        id: id.clone(),
+        name: name.clone(),
+        routing: vec![false; cfg.rx_channels],
+        dsp: patchbox_core::config::InputChannelDsp::default(),
+        muted: false,
+    };
+    if let Some(bm) = cfg.bus_matrix.as_mut() {
+        for row in bm.iter_mut() {
+            row.push(false);
+        }
+    } else if cfg.tx_channels > 0 {
+        cfg.bus_matrix = Some(vec![vec![false]; cfg.tx_channels]);
+    }
+    let resp = bus_to_response(idx, &bus);
+    cfg.internal_buses.push(bus);
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_created","bus":serde_json::to_value(&resp).unwrap_or_default()}).to_string());
+    (StatusCode::CREATED, Json(resp)).into_response()
+}
+
+// GET /api/v1/buses/:id
+async fn get_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
+    };
+    let cfg = s.config.read().await;
+    match cfg.internal_buses.get(i) {
+        Some(b) => Json(bus_to_response(i, b)).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/buses/:id
+async fn put_bus(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateBusRequest>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
+    };
+    let mut cfg = s.config.write().await;
+    if i >= cfg.internal_buses.len() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Some(name) = body.name { cfg.internal_buses[i].name = name; }
+    if let Some(muted) = body.muted { cfg.internal_buses[i].muted = muted; }
+    let ev = serde_json::json!({"type":"bus_update","id":&id,"name":cfg.internal_buses[i].name.clone(),"muted":cfg.internal_buses[i].muted});
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, ev.to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/buses/:id
+async fn delete_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
+    };
+    let mut cfg = s.config.write().await;
+    if i >= cfg.internal_buses.len() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    cfg.internal_buses.remove(i);
+    if let Some(bm) = cfg.bus_matrix.as_mut() {
+        for row in bm.iter_mut() {
+            if i < row.len() { row.remove(i); }
+        }
+    }
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_deleted","id":&id}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/gain
+async fn put_bus_gain(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<GainBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
+    let ev = serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"am","params":{"gain_db":bus.dsp.gain_db}});
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, ev.to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/polarity
+async fn put_bus_polarity(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<PolarityBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.polarity = body.invert;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"am","params":{"invert_polarity":body.invert}}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/hpf
+async fn put_bus_hpf(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.hpf = body;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"flt"}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/lpf
+async fn put_bus_lpf(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.lpf = body;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"flt"}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/eq
+async fn put_bus_eq(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<EqConfig>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.eq = body;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"peq"}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/eq/enabled
+async fn put_bus_eq_enabled(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.eq.enabled = body.enabled;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"peq","params":{"enabled":body.enabled}}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/gate
+async fn put_bus_gate(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<GateConfig>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.gate = body;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"gte"}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/compressor
+async fn put_bus_compressor(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<CompressorConfig>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.dsp.compressor = body;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"cmp"}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/mute
+async fn put_bus_mute(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<MutedBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    let Some(bus) = cfg.internal_buses.get_mut(i) else { return StatusCode::NOT_FOUND.into_response(); };
+    bus.muted = body.muted;
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_update","id":&id,"muted":body.muted}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/buses/:id/routing
+async fn put_bus_routing(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<BusRoutingBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    if i >= cfg.internal_buses.len() { return StatusCode::NOT_FOUND.into_response(); }
+    let rx_channels = cfg.rx_channels;
+    let mut routing = body.routing;
+    routing.resize(rx_channels, false);
+    cfg.internal_buses[i].routing = routing.clone();
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_routing_update","id":&id,"routing":routing}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/bus-matrix
+async fn put_bus_matrix(State(s): State<AppState>, Json(body): Json<BusMatrixBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let n_buses = cfg.internal_buses.len();
+    let tx_channels = cfg.tx_channels;
+    let mut matrix = body.matrix;
+    matrix.resize(tx_channels, vec![false; n_buses]);
+    for row in matrix.iter_mut() {
+        row.resize(n_buses, false);
+    }
+    cfg.bus_matrix = Some(matrix.clone());
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_matrix_update","matrix":matrix}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // --- Route resource endpoints ---
 
 // GET /api/v1/routes
@@ -1045,11 +1325,59 @@ async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
             }
         }
     }
+    // Bus→TX routes
+    if let Some(bm) = cfg.bus_matrix.as_ref() {
+        for (tx, row) in bm.iter().enumerate() {
+            for (b, &enabled) in row.iter().enumerate() {
+                if enabled {
+                    routes.push(RouteResponse {
+                        id: format!("bus_{}|tx_{}", b, tx),
+                        rx_id: format!("bus_{}", b),
+                        tx_id: format!("tx_{}", tx),
+                        route_type: "bus",
+                    });
+                }
+            }
+        }
+    }
     Json(routes)
 }
 
 // POST /api/v1/routes
 async fn post_route(State(s): State<AppState>, Json(body): Json<CreateRouteRequest>) -> impl IntoResponse {
+    // Handle bus→TX route
+    if body.rx_id.starts_with("bus_") {
+        let Some(b) = parse_bus_id(&body.rx_id) else {
+            return (StatusCode::BAD_REQUEST, "invalid bus rx_id").into_response();
+        };
+        let Some(tx) = parse_tx_id(&body.tx_id) else {
+            return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
+        };
+        let mut cfg = s.config.write().await;
+        if tx >= cfg.tx_channels || b >= cfg.internal_buses.len() {
+            return (StatusCode::BAD_REQUEST, "index out of range").into_response();
+        }
+        let n_buses = cfg.internal_buses.len();
+        let tx_channels = cfg.tx_channels;
+        if cfg.bus_matrix.is_none() {
+            cfg.bus_matrix = Some(vec![vec![false; n_buses]; tx_channels]);
+        }
+        if let Some(bm) = cfg.bus_matrix.as_mut() {
+            if tx < bm.len() && b < bm[tx].len() {
+                bm[tx][b] = true;
+            }
+        }
+        drop(cfg);
+        persist_or_500!(s);
+        ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"bus"}).to_string());
+        let route_id = format!("bus_{}|tx_{}", b, tx);
+        return (StatusCode::CREATED, Json(serde_json::json!({
+            "id": route_id,
+            "rx_id": body.rx_id,
+            "tx_id": body.tx_id,
+            "route_type": "bus"
+        }))).into_response();
+    }
     let Some(rx) = parse_rx_id(&body.rx_id) else {
         return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response();
     };
@@ -1078,6 +1406,25 @@ async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl
     let parts: Vec<&str> = id.splitn(2, '|').collect();
     if parts.len() != 2 {
         return (StatusCode::BAD_REQUEST, "invalid route id — expected rx_N|tx_M").into_response();
+    }
+    // Handle bus→TX route: "bus_N|tx_M"
+    if parts[0].starts_with("bus_") {
+        let Some(b) = parse_bus_id(parts[0]) else {
+            return (StatusCode::BAD_REQUEST, "invalid bus part in route id").into_response();
+        };
+        let Some(tx) = parse_tx_id(parts[1]) else {
+            return (StatusCode::BAD_REQUEST, "invalid tx part in route id").into_response();
+        };
+        let mut cfg = s.config.write().await;
+        if let Some(bm) = cfg.bus_matrix.as_mut() {
+            if let Some(row) = bm.get_mut(tx) {
+                if b < row.len() { row[b] = false; }
+            }
+        }
+        drop(cfg);
+        persist_or_500!(s);
+        ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":format!("bus_{}",b),"tx_id":format!("tx_{}",tx),"state":"off","route_type":"bus"}).to_string());
+        return StatusCode::NO_CONTENT.into_response();
     }
     let Some(rx) = parse_rx_id(parts[0]) else {
         return (StatusCode::BAD_REQUEST, "invalid rx part in route id").into_response();
@@ -1157,6 +1504,8 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let zone_count = cfg.zone_config.len();
     let rx_count = cfg.rx_channels;
     let tx_count = cfg.tx_channels;
+    let bus_count = cfg.internal_buses.len();
+    let show_buses_in_mixer = cfg.show_buses_in_mixer;
     drop(cfg);
     let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
     let ptp_locked = dante_connected;
@@ -1172,6 +1521,8 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
         dante_status,
         ptp_locked,
         audio_drops: s.resyncs.load(AOrdering::Relaxed),
+        bus_count,
+        show_buses_in_mixer,
     })
 }
 
@@ -1348,6 +1699,13 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                     for (i, &v) in meters.tx_gr_db.iter().enumerate() {
                         gr_map.insert(format!("tx_{}_lim", i), serde_json::json!(v));
                     }
+                    let mut bus_map = serde_json::Map::new();
+                    for (i, &v) in meters.bus_rms.iter().enumerate() {
+                        let id = format!("bus_{}", i);
+                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                            bus_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
+                        }
+                    }
                     for (i, &v) in meters.rx_gr_db.iter().enumerate() {
                         gr_map.insert(format!("rx_{}_cmp", i), serde_json::json!(v));
                     }
@@ -1358,7 +1716,8 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                         "type": "metering",
                         "rx": rx_map,
                         "tx": tx_map,
-                        "gr": gr_map
+                        "gr": gr_map,
+                        "bus": bus_map
                     });
                     if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
                         break;
@@ -1601,6 +1960,20 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/system/config/import", post(post_system_config_import))
         .route("/api/v1/admin/channels", post(post_admin_channels))
         .route("/api/v1/admin/restart", post(post_admin_restart))
+        // Sprint E — Internal buses
+        .route("/api/v1/buses", get(get_buses).post(post_bus))
+        .route("/api/v1/buses/:id", get(get_bus).put(put_bus).delete(delete_bus))
+        .route("/api/v1/buses/:id/gain", put(put_bus_gain))
+        .route("/api/v1/buses/:id/polarity", put(put_bus_polarity))
+        .route("/api/v1/buses/:id/hpf", put(put_bus_hpf))
+        .route("/api/v1/buses/:id/lpf", put(put_bus_lpf))
+        .route("/api/v1/buses/:id/eq", put(put_bus_eq))
+        .route("/api/v1/buses/:id/eq/enabled", put(put_bus_eq_enabled))
+        .route("/api/v1/buses/:id/gate", put(put_bus_gate))
+        .route("/api/v1/buses/:id/compressor", put(put_bus_compressor))
+        .route("/api/v1/buses/:id/mute", put(put_bus_mute))
+        .route("/api/v1/buses/:id/routing", put(put_bus_routing))
+        .route("/api/v1/bus-matrix", put(put_bus_matrix))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
 
     // Public routes — no auth required

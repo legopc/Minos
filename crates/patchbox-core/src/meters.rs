@@ -17,6 +17,8 @@ pub struct MeterState {
     pub tx_gr_db: Vec<f32>,
     /// Per-RX gate open state
     pub rx_gate_open: Vec<bool>,
+    /// Per-bus linear RMS
+    pub bus_rms: Vec<f32>,
     /// Deprecated: kept for backward compat, same as tx_gr_db
     #[deprecated = "use tx_gr_db instead"]
     pub gr_db: Vec<f32>,
@@ -32,6 +34,7 @@ impl MeterState {
             rx_gr_db: vec![0.0; rx],
             tx_gr_db: vec![0.0; tx],
             rx_gate_open: vec![false; rx],
+            bus_rms: vec![],
             gr_db: vec![0.0; tx],
         }
     }

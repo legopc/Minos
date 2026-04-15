@@ -318,6 +318,31 @@ pub struct ZoneConfig {
     pub tx_ids: Vec<String>,
 }
 
+/// Internal submix bus — N RX inputs summed and DSP-processed, then routable to TX outputs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InternalBusConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub routing: Vec<bool>,   // len == rx_channels, which RX inputs feed this bus
+    #[serde(default)]
+    pub dsp: InputChannelDsp,
+    #[serde(default)]
+    pub muted: bool,
+}
+
+impl Default for InternalBusConfig {
+    fn default() -> Self {
+        Self {
+            id: "bus_0".to_string(),
+            name: "Bus 1".to_string(),
+            routing: vec![],
+            dsp: InputChannelDsp::default(),
+            muted: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchboxConfig {
     /// Number of Dante RX channels (sources in)
@@ -373,6 +398,15 @@ pub struct PatchboxConfig {
     /// Gain ramp time in ms for zipper-free transitions. Default 10ms.
     #[serde(default = "default_gain_ramp_ms")]
     pub gain_ramp_ms: f32,
+    /// Internal submix buses
+    #[serde(default)]
+    pub internal_buses: Vec<InternalBusConfig>,
+    /// Show buses as faders in the mixer view
+    #[serde(default = "default_true")]
+    pub show_buses_in_mixer: bool,
+    /// Bus→TX routing: bus_matrix[tx_idx][bus_idx] = true
+    #[serde(default)]
+    pub bus_matrix: Option<Vec<Vec<bool>>>,
 }
 
 impl Default for PatchboxConfig {
@@ -400,6 +434,9 @@ impl Default for PatchboxConfig {
             rx_jitter_samples: default_rx_jitter_samples(),
             lead_samples: default_lead_samples(),
             gain_ramp_ms: default_gain_ramp_ms(),
+            internal_buses: vec![],
+            show_buses_in_mixer: true,
+            bus_matrix: None,
         }
     }
 }
@@ -464,6 +501,20 @@ impl PatchboxConfig {
                 })
                 .collect();
         }
+        // Normalize internal buses
+        for bus in &mut self.internal_buses {
+            bus.routing.resize(self.rx_channels, false);
+        }
+
+        // Resize bus_matrix: [tx_channels][n_buses]
+        let n_buses = self.internal_buses.len();
+        if n_buses > 0 {
+            let bm = self.bus_matrix.get_or_insert_with(Vec::new);
+            bm.resize(self.tx_channels, vec![false; n_buses]);
+            for row in bm.iter_mut() {
+                row.resize(n_buses, false);
+            }
+        }
     }
 
     /// Semantic validation after normalize(). Returns first error found.
@@ -504,6 +555,8 @@ impl PatchboxConfig {
 }
 
 fn default_channel_enabled() -> bool { true }
+
+fn default_true() -> bool { true }
 
 fn default_clock_path() -> String {
     "/tmp/ptp-usrvclock".to_string()
