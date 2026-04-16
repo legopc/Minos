@@ -728,7 +728,7 @@ function _buildInputStrip(ch, nextCh) {
   meter.appendChild(clipBadge);
 
   // Gain fader label
-  const vol = st.state.channels.get(ch.id)?.input_gain_db ?? 0;
+  const vol = st.state.channels.get(ch.id)?.gain_db ?? 0;
   const dbLabel = document.createElement('div');
   dbLabel.className = 'strip-fader-label strip-fader-label-editable';
   dbLabel.id = `mix-lbl-${ch.id}`;
@@ -746,7 +746,8 @@ function _buildInputStrip(ch, nextCh) {
     const db = st.sliderToDb(+fader.value);
     dbLabel.textContent = _db(db);
     const chanState = st.state.channels.get(ch.id);
-    if (chanState) chanState.input_gain_db = db;
+    if (chanState) chanState.gain_db = db;
+    if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
       api.putInputGain(chIdx, db).catch(e => toast(e.message, true));

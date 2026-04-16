@@ -4,7 +4,7 @@
 .gen-separator-row .gen-sep-label { color: #0891b2; font-size: 10px; letter-spacing: 0.1em; font-weight: 700; }
 .gen-row .ch-label { border-left: 2px solid #0891b2; }
 .gen-row .xp-cell.disabled-cell { opacity: 0.15; pointer-events: none; }
-.gen-bus-active .xp-dot { background: #0891b2; border-color: #0891b2; box-shadow: 0 0 8px 2px #0891b2; }
+.xp-cell.gen-bus-active .xp-dot { background: #0891b2; border-color: #0891b2; box-shadow: 0 0 8px 2px #0891b2; }
 .gen-type-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #0891b2; color: #fff; margin-left: 4px; flex-shrink: 0; }
 
 /* ── Stereo link tags ────────────────────────────────────────────────────── */

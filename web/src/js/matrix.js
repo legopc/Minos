@@ -490,7 +490,22 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
   name.addEventListener('dblclick', e => { e.stopPropagation(); _startRename(name, ch); });
   label.appendChild(name);
 
-  // DSP badges inline to the right of name
+  // Stereo link tag — rendered BEFORE DSP badges so it appears to the left
+  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+  const stereoLink = st.getStereoLink(chIdx);
+  if (stereoLink && stereoLink.linked) {
+    const isLeft = stereoLink.left_channel === chIdx;
+    const stereoTag = document.createElement('span');
+    stereoTag.className = 'ch-stereo-tag';
+    stereoTag.textContent = isLeft ? 'L' : 'R';
+    stereoTag.title = isLeft
+      ? `Stereo L — linked with ch ${stereoLink.right_channel + 1}`
+      : `Stereo R — linked with ch ${stereoLink.left_channel + 1}`;
+    label.appendChild(stereoTag);
+    row.classList.add(isLeft ? 'stereo-left' : 'stereo-right');
+  }
+
+  // DSP badges inline to the right of stereo tag
   const dsp = ch.dsp ?? {};
   Object.keys(dsp).forEach(blk => {
     const block = dsp[blk];
@@ -507,21 +522,6 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, ch.id, badge); };
     label.appendChild(badge);
   });
-
-  // Stereo link tag
-  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
-  const stereoLink = st.getStereoLink(chIdx);
-  if (stereoLink && stereoLink.linked) {
-    const isLeft = stereoLink.left_channel === chIdx;
-    const stereoTag = document.createElement('span');
-    stereoTag.className = 'ch-stereo-tag';
-    stereoTag.textContent = isLeft ? 'L' : 'R';
-    stereoTag.title = isLeft
-      ? `Stereo L — linked with ch ${stereoLink.right_channel + 1}`
-      : `Stereo R — linked with ch ${stereoLink.left_channel + 1}`;
-    label.appendChild(stereoTag);
-    row.classList.add(isLeft ? 'stereo-left' : 'stereo-right');
-  }
 
   // Right-edge resize affordance on every label cell
   label.addEventListener('pointerdown', e => {
