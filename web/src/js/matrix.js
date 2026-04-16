@@ -702,17 +702,29 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
     row.appendChild(cell);
   });
 
-  // Empty spacers for bus columns (bus→bus routing n/a)
+  // Bus-to-bus crosspoint columns (this bus as destination, other buses as sources)
   if (buses && buses.length > 0) {
-    // Divider spacer
     const divSpacer = document.createElement('div');
     divSpacer.className = 'xp-cell bus-col-div-cell';
     row.appendChild(divSpacer);
 
-    buses.forEach(() => {
-      const spacer = document.createElement('div');
-      spacer.className = 'xp-cell';
-      row.appendChild(spacer);
+    buses.forEach((srcBus, srcIdx) => {
+      const cell = document.createElement('div');
+      if (srcBus.id === bus.id) {
+        // Self — always disabled
+        cell.className = 'xp-cell bus-feed-self';
+        row.appendChild(cell);
+        return;
+      }
+      const active = st.hasBusFeed(srcBus.id, bus.id);
+      cell.className = 'xp-cell bus-feed' + (active ? ' active' : '');
+      cell.dataset.srcBusId = srcBus.id;
+      cell.dataset.dstBusId = bus.id;
+      const dot = document.createElement('div');
+      dot.className = 'xp-dot';
+      cell.appendChild(dot);
+      cell.addEventListener('click', () => _toggleBusFeed(srcBus.id, bus.id, cell));
+      row.appendChild(cell);
     });
   }
 
@@ -749,6 +761,36 @@ async function _toggleBusRoute(busId, txId, cell) {
   } finally {
     _pendingCrosspoints.delete(key);
     cell.classList.remove('pending');
+    cell.style.pointerEvents = '';
+  }
+}
+
+// ── Bus→Bus feed crosspoint toggle ────────────────────────────────────────
+async function _toggleBusFeed(srcId, dstId, cell) {
+  if (_locked) return;
+  const key = `feed:${srcId}|${dstId}`;
+  if (_pendingCrosspoints.has(key)) return;
+  _pendingCrosspoints.set(key, Date.now());
+  cell.style.pointerEvents = 'none';
+
+  const active = st.hasBusFeed(srcId, dstId);
+  const newActive = !active;
+  cell.classList.toggle('active', newActive);
+
+  try {
+    await api.putBusFeed(srcId, dstId, newActive);
+    const srcIdx = parseInt(srcId.replace('bus_', ''), 10);
+    const dstIdx = parseInt(dstId.replace('bus_', ''), 10);
+    const matrix = st.state.busFeedMatrix.map(row => [...row]);
+    while (matrix.length <= dstIdx) matrix.push([]);
+    while ((matrix[dstIdx] ?? []).length <= srcIdx) matrix[dstIdx].push(false);
+    matrix[dstIdx][srcIdx] = newActive;
+    st.setBusFeedMatrix(matrix);
+  } catch (e) {
+    cell.classList.toggle('active', active);
+    toast('Bus feed error: ' + e.message, true);
+  } finally {
+    _pendingCrosspoints.delete(key);
     cell.style.pointerEvents = '';
   }
 }

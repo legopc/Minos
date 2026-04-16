@@ -603,9 +603,9 @@ impl MatrixProcessor {
         // --- Automixer: apply Dugan gain-sharing (and optional NOM gating) ---
         self.automixer.process_block(&mut self.scratch[..max_inputs.max(1)], nf);
 
-        // --- Bus stage: sum inputs into each bus, then apply bus DSP ---
+        // --- Bus stage: sum inputs into each bus, apply bus-to-bus feeds, then bus DSP ---
         let n_buses = config.internal_buses.len().min(MAX_BUSES);
-        for (b, bp) in self.bus_processors.iter_mut().enumerate().take(n_buses) {
+        for b in 0..n_buses {
             let routed = config.internal_buses.get(b)
                 .map(|bc| bc.routing.as_slice())
                 .unwrap_or(&[]);
@@ -613,7 +613,26 @@ impl MatrixProcessor {
                 .map(|bc| bc.routing_gain.as_slice())
                 .unwrap_or(&[]);
             let muted = config.internal_buses.get(b).map(|bc| bc.muted).unwrap_or(false);
+
+            // Sum RX inputs into bus b
+            let (left, right) = self.bus_processors[..n_buses].split_at_mut(b);
+            let bp = &mut right[0];
             bp.sum_inputs(routed, routing_gain, &self.scratch[..], nf, max_inputs);
+
+            // Accumulate already-processed source buses (src < b) into bus b before DSP
+            if let Some(fm) = config.bus_feed_matrix.as_ref() {
+                if let Some(dst_row) = fm.get(b) {
+                    for (src_b, &feeds) in dst_row.iter().enumerate().take(b) {
+                        if feeds {
+                            let src_buf = &left[src_b].sum_buf;
+                            for i in 0..nf {
+                                bp.sum_buf[i] += src_buf[i];
+                            }
+                        }
+                    }
+                }
+            }
+
             bp.process(nf, muted);
         }
 

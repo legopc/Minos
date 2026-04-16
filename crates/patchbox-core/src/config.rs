@@ -631,6 +631,9 @@ pub struct PatchboxConfig {
     /// Bus→TX routing: bus_matrix[tx_idx][bus_idx] = true
     #[serde(default)]
     pub bus_matrix: Option<Vec<Vec<bool>>>,
+    /// Bus→Bus feed: bus_feed_matrix[dst_bus_idx][src_bus_idx] = true (self always false)
+    #[serde(default)]
+    pub bus_feed_matrix: Option<Vec<Vec<bool>>>,
     /// ALSA device for PFL monitor output. None = solo disabled.
     #[serde(default)]
     pub monitor_device: Option<String>,
@@ -697,6 +700,7 @@ impl Default for PatchboxConfig {
             internal_buses: vec![],
             show_buses_in_mixer: true,
             bus_matrix: None,
+            bus_feed_matrix: None,
             monitor_device: None,
             monitor_volume_db: 0.0,
             statime_observation_path: None,
@@ -789,6 +793,16 @@ impl PatchboxConfig {
             bm.resize(self.tx_channels, vec![false; n_buses]);
             for row in bm.iter_mut() {
                 row.resize(n_buses, false);
+            }
+        }
+
+        // Normalize bus_feed_matrix: [n_buses][n_buses], diagonal always false
+        if n_buses > 0 {
+            let fm = self.bus_feed_matrix.get_or_insert_with(Vec::new);
+            fm.resize(n_buses, vec![false; n_buses]);
+            for (dst, row) in fm.iter_mut().enumerate() {
+                row.resize(n_buses, false);
+                row[dst] = false; // no self-feed
             }
         }
 

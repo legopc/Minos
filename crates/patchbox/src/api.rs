@@ -1624,7 +1624,34 @@ async fn put_bus_matrix(State(s): State<AppState>, Json(body): Json<BusMatrixBod
     StatusCode::NO_CONTENT.into_response()
 }
 
-// --- Route resource endpoints ---
+#[derive(Deserialize)]
+struct BusFeedBody { src_id: String, dst_id: String, active: bool }
+
+// GET /api/v1/bus-feed-matrix
+async fn get_bus_feed_matrix(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(cfg.bus_feed_matrix.clone().unwrap_or_default())
+}
+
+// PUT /api/v1/bus-feed — set one crosspoint in the bus→bus feed matrix
+async fn put_bus_feed(State(s): State<AppState>, Json(body): Json<BusFeedBody>) -> impl IntoResponse {
+    let src_idx = body.src_id.strip_prefix("bus_").and_then(|s| s.parse::<usize>().ok());
+    let dst_idx = body.dst_id.strip_prefix("bus_").and_then(|s| s.parse::<usize>().ok());
+    let (Some(src), Some(dst)) = (src_idx, dst_idx) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    if src == dst { return StatusCode::BAD_REQUEST.into_response(); }
+    let mut cfg = s.config.write().await;
+    let n_buses = cfg.internal_buses.len();
+    if src >= n_buses || dst >= n_buses { return StatusCode::NOT_FOUND.into_response(); }
+    let fm = cfg.bus_feed_matrix.get_or_insert_with(|| vec![vec![false; n_buses]; n_buses]);
+    fm[dst][src] = body.active;
+    let matrix = fm.clone();
+    drop(cfg);
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"bus_feed_update","matrix":matrix}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
 
 // GET /api/v1/routes
 async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
@@ -2934,6 +2961,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/buses/:id/routing", put(put_bus_routing))
         .route("/api/v1/buses/:id/input-gain", put(put_bus_input_gain))
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
+        .route("/api/v1/bus-feed-matrix", get(get_bus_feed_matrix))
+        .route("/api/v1/bus-feed", put(put_bus_feed))
         .route("/api/v1/vca-groups", get(get_vca_groups).post(post_vca_group))
         .route("/api/v1/vca-groups/:id", put(put_vca_group).delete(delete_vca_group))
         .route("/api/v1/automixer-groups", get(get_automixer_groups).post(post_automixer_group))

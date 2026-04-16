@@ -722,3 +722,27 @@
 .corner-dot-bus {
   background: var(--bus-route-color);
 }
+
+/* Bus→Bus feed crosspoints */
+.xp-cell.bus-feed {
+  cursor: pointer;
+}
+.xp-cell.bus-feed .xp-dot {
+  border-color: var(--accent-secondary, #e3b341);
+}
+.xp-cell.bus-feed.active .xp-dot {
+  background: var(--accent-secondary, #e3b341);
+  border-color: var(--accent-secondary, #e3b341);
+  box-shadow: 0 0 8px 2px var(--accent-secondary, #e3b341);
+}
+.xp-cell.bus-feed-self {
+  cursor: not-allowed;
+  opacity: 0.2;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    rgba(255,255,255,0.05) 3px,
+    rgba(255,255,255,0.05) 6px
+  );
+}

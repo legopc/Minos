@@ -148,6 +148,13 @@ function _dispatch(msg) {
       }
       break;
 
+    case 'bus_feed_update':
+      if (msg.matrix) {
+        st.setBusFeedMatrix(msg.matrix);
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+      }
+      break;
+
     case 'output_update':
       if (msg.output) {
         st.setOutput(msg.output);

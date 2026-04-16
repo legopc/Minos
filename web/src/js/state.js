@@ -8,6 +8,7 @@ const _state = {
   scenes:        [],         // SceneMeta[]
   buses:         new Map(),  // id → Bus
   busMatrix:     {},         // busMatrix[tx_id][bus_id] = true
+  busFeedMatrix: [],         // busFeedMatrix[dst_bus_idx][src_bus_idx] = true
   matrixGain:    [],         // matrixGain[tx_idx][rx_idx] = dB (float, 0 = unity)
   metering:      new Map(),  // id → dBFS float
   gr:            new Map(),  // "id_block" → GR dB float
@@ -41,6 +42,12 @@ export function setZone(z)                 { _state.zones.set(z.id, z); }
 export function setBus(bus)                { _state.buses.set(bus.id, bus); }
 export function removeBus(id)              { _state.buses.delete(id); }
 export function setBusMatrix(matrix)       { _state.busMatrix = matrix ?? {}; }
+export function setBusFeedMatrix(matrix)   { _state.busFeedMatrix = matrix ?? []; }
+export function hasBusFeed(srcId, dstId) {
+  const src = parseInt(srcId.replace('bus_', ''), 10);
+  const dst = parseInt(dstId.replace('bus_', ''), 10);
+  return !!_state.busFeedMatrix[dst]?.[src];
+}
 export function setBusRoutingGainCell(busId, rxIdx, db) {
   const bus = _state.buses.get(busId);
   if (!bus) return;
