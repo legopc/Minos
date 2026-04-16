@@ -328,7 +328,9 @@ pub struct InternalBusConfig {
     pub id: String,
     pub name: String,
     #[serde(default)]
-    pub routing: Vec<bool>,   // len == rx_channels, which RX inputs feed this bus
+    pub routing: Vec<bool>,       // len == rx_channels, which RX inputs feed this bus
+    #[serde(default)]
+    pub routing_gain: Vec<f32>,   // len == rx_channels, per-input gain in dB (0.0 = unity)
     #[serde(default)]
     pub dsp: InputChannelDsp,
     #[serde(default)]
@@ -535,6 +537,7 @@ impl PatchboxConfig {
         // Normalize internal buses
         for bus in &mut self.internal_buses {
             bus.routing.resize(self.rx_channels, false);
+            bus.routing_gain.resize(self.rx_channels, 0.0);
         }
 
         // Resize bus_matrix: [tx_channels][n_buses]

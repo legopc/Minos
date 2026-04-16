@@ -1394,6 +1394,22 @@ async fn put_bus_routing(State(s): State<AppState>, Path(id): Path<String>, Json
     StatusCode::NO_CONTENT.into_response()
 }
 
+// PUT /api/v1/buses/:id/input-gain
+#[derive(Deserialize)]
+struct BusInputGainBody { rx: usize, gain_db: f32 }
+
+async fn put_bus_input_gain(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<BusInputGainBody>) -> impl IntoResponse {
+    let Some(i) = parse_bus_id(&id) else { return StatusCode::BAD_REQUEST.into_response(); };
+    let mut cfg = s.config.write().await;
+    if i >= cfg.internal_buses.len() { return StatusCode::NOT_FOUND.into_response(); }
+    if body.rx >= cfg.rx_channels { return StatusCode::BAD_REQUEST.into_response(); }
+    let clamped = body.gain_db.clamp(-40.0, 12.0);
+    cfg.internal_buses[i].routing_gain[body.rx] = clamped;
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // PUT /api/v1/bus-matrix
 async fn put_bus_matrix(State(s): State<AppState>, Json(body): Json<BusMatrixBody>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
@@ -2379,6 +2395,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/buses/:id/compressor", put(put_bus_compressor))
         .route("/api/v1/buses/:id/mute", put(put_bus_mute))
         .route("/api/v1/buses/:id/routing", put(put_bus_routing))
+        .route("/api/v1/buses/:id/input-gain", put(put_bus_input_gain))
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))

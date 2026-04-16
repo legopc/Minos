@@ -273,11 +273,12 @@ impl BusProcessor {
         self.dsp.sync(cfg, sample_rate);
     }
 
-    /// Sum routed post-input-DSP buffers into sum_buf. No heap alloc.
+    /// Sum routed post-input-DSP buffers into sum_buf, applying per-input gain. No heap alloc.
     #[inline]
     pub fn sum_inputs(
         &mut self,
         routed: &[bool],
+        routing_gain: &[f32],
         post_input_dsp: &[[f32; MAX_FRAMES]],
         nframes: usize,
         n_inputs: usize,
@@ -286,8 +287,9 @@ impl BusProcessor {
         for s in self.sum_buf[..nf].iter_mut() { *s = 0.0; }
         for (rx_idx, &is_routed) in routed.iter().enumerate().take(n_inputs) {
             if is_routed {
+                let gain = db_to_linear(*routing_gain.get(rx_idx).unwrap_or(&0.0));
                 for i in 0..nf {
-                    self.sum_buf[i] += post_input_dsp[rx_idx][i];
+                    self.sum_buf[i] += post_input_dsp[rx_idx][i] * gain;
                 }
             }
         }
@@ -437,8 +439,11 @@ impl MatrixProcessor {
             let routed = config.internal_buses.get(b)
                 .map(|bc| bc.routing.as_slice())
                 .unwrap_or(&[]);
+            let routing_gain = config.internal_buses.get(b)
+                .map(|bc| bc.routing_gain.as_slice())
+                .unwrap_or(&[]);
             let muted = config.internal_buses.get(b).map(|bc| bc.muted).unwrap_or(false);
-            bp.sum_inputs(routed, &self.scratch[..], nf, max_inputs);
+            bp.sum_inputs(routed, routing_gain, &self.scratch[..], nf, max_inputs);
             bp.process(nf, muted);
         }
 

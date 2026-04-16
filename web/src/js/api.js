@@ -160,6 +160,7 @@ export const deleteBus     = (id)           => reqWithRetry('DELETE', `/buses/${
 export const updateBus     = (id, body)     => reqWithRetry('PUT', `/buses/${id}`, body);
 export const setBusRouting = (id, routing)  => reqWithRetry('PUT', `/buses/${id}/routing`, { routing });
 export const setBusMatrix  = (matrix)       => reqWithRetry('PUT', '/bus-matrix', { matrix });
+export const setBusInputGain  = (busId, rxIdx, gain_db) => reqWithRetry('PUT', `/buses/${busId}/input-gain`, { rx: rxIdx, gain_db });
 export const setBusGain    = (id, gain_db)  => reqWithRetry('PUT', `/buses/${id}/gain`, { gain_db });
 export const setBusMute    = (id, muted)    => reqWithRetry('PUT', `/buses/${id}/mute`, { muted });
 

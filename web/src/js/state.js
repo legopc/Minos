@@ -36,6 +36,12 @@ export function setZone(z)                 { _state.zones.set(z.id, z); }
 export function setBus(bus)                { _state.buses.set(bus.id, bus); }
 export function removeBus(id)              { _state.buses.delete(id); }
 export function setBusMatrix(matrix)       { _state.busMatrix = matrix ?? {}; }
+export function setBusRoutingGainCell(busId, rxIdx, db) {
+  const bus = _state.buses.get(busId);
+  if (!bus) return;
+  if (!bus.routing_gain) bus.routing_gain = [];
+  bus.routing_gain[rxIdx] = db;
+}
 export function setMatrixGain(gain)        { _state.matrixGain = gain ?? []; }
 export function getMatrixGain(txIdx, rxIdx) {
   return _state.matrixGain[txIdx]?.[rxIdx] ?? 0.0;

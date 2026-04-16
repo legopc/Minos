@@ -554,6 +554,7 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     const gainDb = st.getMatrixGain(txIdx, rxIdx);
     gainLabel.textContent = gainDb !== 0 ? (gainDb > 0 ? `+${gainDb.toFixed(1)}` : gainDb.toFixed(1)) : '';
     gainLabel.style.display = gainDb !== 0 ? '' : 'none';
+    if (gainDb !== 0) cell.classList.add('xp-gain-nonunity');
     cell.appendChild(gainLabel);
 
     cell.addEventListener('click', () => _toggleRoute(ch.id, out.id, cell));
@@ -579,7 +580,17 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       dot.className = 'xp-dot';
       cell.appendChild(dot);
 
+      // Gain label for bus crosspoints
+      const busGainLabel = document.createElement('span');
+      busGainLabel.className = 'xp-gain-label';
+      const busGainDb = bus.routing_gain?.[idx] ?? 0;
+      busGainLabel.textContent = busGainDb !== 0 ? (busGainDb > 0 ? `+${busGainDb.toFixed(1)}` : busGainDb.toFixed(1)) : '';
+      busGainLabel.style.display = busGainDb !== 0 ? '' : 'none';
+      if (busGainDb !== 0) cell.classList.add('xp-gain-nonunity');
+      cell.appendChild(busGainLabel);
+
       cell.addEventListener('click', () => _toggleInputToBus(bus, idx, cell));
+      cell.addEventListener('wheel', (e) => _onBusXpWheel(e, bus, idx, cell, busGainLabel), { passive: false });
       row.appendChild(cell);
     });
   }
@@ -782,6 +793,34 @@ function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
   cell.classList.toggle('xp-gain-nonunity', clamped !== 0);
 
   api.putMatrixGain(txIdx, rxIdx, clamped).catch(err => toast('Gain error: ' + err.message, true));
+}
+
+function _onBusXpWheel(e, bus, rxIdx, cell, gainLabel) {
+  if (!(Array.isArray(bus.routing) && bus.routing[rxIdx])) return; // only active routes
+  e.preventDefault();
+  e.stopPropagation();
+
+  const now = Date.now();
+  const key = `bus:${bus.id}|${rxIdx}`;
+  const last = _xpWheelThrottle.get(key) ?? 0;
+  if (now - last < 80) return;
+  _xpWheelThrottle.set(key, now);
+
+  const step = e.shiftKey ? 0.1 : 1.0;
+  const delta = e.deltaY < 0 ? step : -step;
+  const current = bus.routing_gain?.[rxIdx] ?? 0;
+  const next = Math.round((current + delta) * 10) / 10;
+  const clamped = Math.max(-40, Math.min(12, next));
+
+  st.setBusRoutingGainCell(bus.id, rxIdx, clamped);
+  if (!bus.routing_gain) bus.routing_gain = [];
+  bus.routing_gain[rxIdx] = clamped;
+
+  gainLabel.textContent = clamped !== 0 ? (clamped > 0 ? `+${clamped.toFixed(1)}` : clamped.toFixed(1)) : '';
+  gainLabel.style.display = clamped !== 0 ? '' : 'none';
+  cell.classList.toggle('xp-gain-nonunity', clamped !== 0);
+
+  api.setBusInputGain(bus.id, rxIdx, clamped).catch(err => toast('Bus gain error: ' + err.message, true));
 }
 
 // ── Metering update (called from ws.js) ───────────────────────────────────
