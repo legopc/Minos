@@ -211,32 +211,41 @@ function _buildStereoLinkBtn(leftCh, rightCh) {
   const link     = st.getStereoLink(leftIdx);
   const linked   = !!(link?.linked);
 
-  const btn = document.createElement('button');
-  btn.className = 'mixer-stereo-link-btn' + (linked ? ' linked' : '');
-  btn.id = `stereo-link-${leftIdx}`;
-  btn.textContent = linked ? '⋈' : '—';
-  btn.title = linked ? `Unlink stereo pair ${leftIdx}/${rightIdx}` : `Link stereo pair ${leftIdx}/${rightIdx}`;
+  const wrap = document.createElement('div');
+  wrap.className = 'stereo-link-connector' + (linked ? ' linked' : '');
+  wrap.id = `stereo-link-${leftIdx}`;
 
-  btn.onclick = async () => {
+  const btn = document.createElement('button');
+  btn.className = 'stereo-link-btn';
+  btn.textContent = linked ? '⛓ UNLINK' : '⛓ LINK';
+  btn.title = linked
+    ? `Unlink stereo pair ${leftIdx + 1}/${rightIdx + 1}`
+    : `Link as stereo pair ${leftIdx + 1}/${rightIdx + 1}`;
+  wrap.appendChild(btn);
+
+  wrap.onclick = async (e) => {
+    e.stopPropagation();
     try {
       if (linked) {
         await api.deleteStereoLink(leftIdx);
         st.setStereoLinks(st.state.stereoLinks.filter(sl => sl.left_channel !== leftIdx));
-        btn.classList.remove('linked');
-        btn.textContent = '—';
-        btn.title = `Link stereo pair ${leftIdx}/${rightIdx}`;
+        wrap.classList.remove('linked');
+        btn.textContent = '⛓ LINK';
       } else {
         await api.postStereoLink(leftIdx, rightIdx);
         const sl = { left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 };
         const existing = st.state.stereoLinks.filter(s => s.left_channel !== leftIdx);
         st.setStereoLinks([...existing, sl]);
-        btn.classList.add('linked');
-        btn.textContent = '⋈';
-        btn.title = `Unlink stereo pair ${leftIdx}/${rightIdx}`;
+        wrap.classList.add('linked');
+        btn.textContent = '⛓ UNLINK';
       }
+      // Trigger matrix re-render to update L/R badges
+      const matCont = document.getElementById('tab-matrix');
+      if (matCont) { const { render } = await import('./matrix.js'); render(matCont); }
     } catch(e) { toast(e.message, true); }
   };
-  return btn;
+
+  return wrap;
 }
 
 function _buildVcaStrip(vca) {
@@ -391,9 +400,12 @@ function _openVcaMemberEditor(vca, membersEl) {
   footer.appendChild(cancelBtn);
   pop.appendChild(footer);
 
-  // Position below the members label
-  membersEl.parentElement.style.position = 'relative';
-  membersEl.parentElement.appendChild(pop);
+  // Position below the members label (body-level to escape overflow clipping)
+  document.body.appendChild(pop);
+  const rect = membersEl.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.left = rect.left + 'px';
+  pop.style.top  = (rect.bottom + 4) + 'px';
 
   // Close on outside click
   const closeHandler = (e) => {
@@ -499,16 +511,7 @@ function _buildGenStrip(gen) {
   };
   strip.appendChild(enableBtn);
 
-  const outputs = st.outputList();
-  const matrix = st.getGeneratorMatrix ? st.getGeneratorMatrix() : [];
-  const genIdx = (st.generatorList ? st.generatorList() : []).indexOf(gen);
-  const routeBtn = document.createElement('button');
-  routeBtn.className = 'bus-sources-badge gen-route-btn';
-  const routedCount = (matrix[genIdx] ?? []).filter(g => isFinite(g) && g > -96).length;
-  routeBtn.textContent = `→ ${routedCount}`;
-  routeBtn.title = 'Route to outputs';
-  routeBtn.onclick = (e) => _showGenRoutingPopover(gen, genIdx, routeBtn, e);
-  strip.appendChild(routeBtn);
+  // Routing is handled in the matrix tab (generator rows)
 
   const delBtn = document.createElement('button');
   delBtn.className = 'vca-delete-btn gen-delete-btn';

@@ -91,6 +91,37 @@ export function render(container) {
     });
   }
 
+  // Generator rows section
+  const generators = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
+  if (generators.length > 0) {
+    const genSep = document.createElement('div');
+    genSep.className = 'xp-row gen-separator-row';
+    const genSepLabel = document.createElement('div');
+    genSepLabel.className = 'ch-label gen-sep-label';
+    genSepLabel.textContent = 'GENERATORS';
+    genSep.appendChild(genSepLabel);
+    orderedOutputs.forEach(() => {
+      const s = document.createElement('div');
+      s.className = 'xp-cell gen-sep-cell';
+      genSep.appendChild(s);
+    });
+    if (buses.length > 0) {
+      const d = document.createElement('div');
+      d.className = 'xp-cell gen-sep-cell bus-col-div-cell';
+      genSep.appendChild(d);
+      buses.forEach(() => {
+        const s = document.createElement('div');
+        s.className = 'xp-cell gen-sep-cell';
+        genSep.appendChild(s);
+      });
+    }
+    grid.appendChild(genSep);
+
+    generators.forEach((gen, genIdx) => {
+      grid.appendChild(_buildGenRow(gen, genIdx, orderedOutputs, buses));
+    });
+  }
+
   viewport.appendChild(grid);
   _container.appendChild(viewport);
 
@@ -477,6 +508,21 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     label.appendChild(badge);
   });
 
+  // Stereo link tag
+  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+  const stereoLink = st.getStereoLink(chIdx);
+  if (stereoLink && stereoLink.linked) {
+    const isLeft = stereoLink.left_channel === chIdx;
+    const stereoTag = document.createElement('span');
+    stereoTag.className = 'ch-stereo-tag';
+    stereoTag.textContent = isLeft ? 'L' : 'R';
+    stereoTag.title = isLeft
+      ? `Stereo L — linked with ch ${stereoLink.right_channel + 1}`
+      : `Stereo R — linked with ch ${stereoLink.left_channel + 1}`;
+    label.appendChild(stereoTag);
+    row.classList.add(isLeft ? 'stereo-left' : 'stereo-right');
+  }
+
   // Right-edge resize affordance on every label cell
   label.addEventListener('pointerdown', e => {
     const r = label.getBoundingClientRect();
@@ -766,6 +812,32 @@ async function _toggleRoute(rxId, txId, cell) {
     _pendingCrosspoints.delete(key);
     cell.classList.remove('pending');
     cell.style.pointerEvents = '';
+  }
+
+  // Auto-mirror stereo partner
+  const rxIdx = parseInt(rxId.replace('rx_', ''), 10);
+  const link = st.getStereoLink(rxIdx);
+  if (link && link.linked) {
+    const partnerId = link.left_channel === rxIdx
+      ? `rx_${link.right_channel}`
+      : `rx_${link.left_channel}`;
+    const partnerHasRoute = st.hasRoute(partnerId, txId);
+    const thisHasRoute = st.hasRoute(rxId, txId);
+    if (partnerHasRoute !== thisHasRoute) {
+      try {
+        if (thisHasRoute) {
+          await api.postRoute(partnerId, txId, 'local');
+          st.setRoute({ rx_id: partnerId, tx_id: txId, route_type: 'local' });
+        } else {
+          await api.deleteRoute(`${partnerId}|${txId}`);
+          st.removeRoute(partnerId, txId);
+        }
+        const partnerCell = document.querySelector(`[data-rx-id="${partnerId}"][data-tx-id="${txId}"]`);
+        if (partnerCell) {
+          partnerCell.className = 'xp-cell' + (thisHasRoute ? ' local' : '');
+        }
+      } catch(_) {} // silent — best effort mirror
+    }
   }
 }
 
@@ -1233,6 +1305,96 @@ async function _execCopy(srcId, dstId) {
   render(_container);
 }
 
+
+// ── Generator row builder ──────────────────────────────────────────────────
+function _buildGenRow(gen, genIdx, outputs, buses) {
+  const row = document.createElement('div');
+  row.className = 'xp-row gen-row';
+  row.dataset.genId = gen.id;
+
+  const label = document.createElement('div');
+  label.className = 'ch-label';
+  label.dataset.genId = gen.id;
+
+  const num = document.createElement('span');
+  num.className = 'ch-num';
+  num.textContent = 'G' + (genIdx + 1);
+  label.appendChild(num);
+
+  const name = document.createElement('span');
+  name.className = 'ch-name';
+  name.textContent = gen.name ?? gen.id;
+  label.appendChild(name);
+
+  const typeBadge = document.createElement('span');
+  typeBadge.className = 'gen-type-badge';
+  typeBadge.textContent = gen.gen_type === 'sine' ? 'SINE' : gen.gen_type === 'white_noise' ? 'WHT' : 'PNK';
+  label.appendChild(typeBadge);
+
+  row.appendChild(label);
+
+  // Output columns — disabled (generators don't route directly to outputs)
+  outputs.forEach(() => {
+    const cell = document.createElement('div');
+    cell.className = 'xp-cell disabled-cell';
+    const dot = document.createElement('div');
+    dot.className = 'xp-dot';
+    cell.appendChild(dot);
+    row.appendChild(cell);
+  });
+
+  // Bus columns
+  if (buses && buses.length > 0) {
+    const divCell = document.createElement('div');
+    divCell.className = 'xp-cell bus-col-div-cell';
+    row.appendChild(divCell);
+
+    buses.forEach((bus, busIdx) => {
+      const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[busIdx];
+      const isActive = currentGain !== undefined && currentGain !== null && currentGain > -90;
+      const cell = document.createElement('div');
+      cell.className = 'xp-cell' + (isActive ? ' gen-bus-active' : '');
+      cell.dataset.genId = gen.id;
+      cell.dataset.busId = bus.id;
+
+      const dot = document.createElement('div');
+      dot.className = 'xp-dot';
+      cell.appendChild(dot);
+
+      cell.addEventListener('click', () => _toggleGenBus(gen, genIdx, busIdx, bus.id, cell));
+      row.appendChild(cell);
+    });
+  }
+
+  return row;
+}
+
+// ── Generator→Bus crosspoint toggle ───────────────────────────────────────
+async function _toggleGenBus(gen, genIdx, busIdx, busId, cell) {
+  if (_locked) return;
+  const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[busIdx];
+  const isActive = currentGain !== undefined && currentGain !== null && currentGain > -90;
+  const newGain = isActive ? -96.0 : 0.0;
+  cell.classList.toggle('gen-bus-active', !isActive);
+  cell.classList.add('pending');
+  try {
+    const busList = st.busList();
+    const gains = busList.map((_, bi) => {
+      if (bi === busIdx) return newGain;
+      return st.state.generatorBusMatrix?.[genIdx]?.[bi] ?? -96.0;
+    });
+    await api.putGeneratorRouting(gen.id, gains);
+    const mat = [...(st.state.generatorBusMatrix ?? [])];
+    while (mat.length <= genIdx) mat.push([]);
+    mat[genIdx] = gains;
+    st.setGeneratorMatrix(mat);
+  } catch(e) {
+    toast(e.message, true);
+    cell.classList.toggle('gen-bus-active', isActive);
+  } finally {
+    cell.classList.remove('pending');
+  }
+}
 
 // ── Bus change listener ───────────────────────────────────────────────────
 window.addEventListener('pb:buses-changed', () => {

@@ -995,40 +995,41 @@
   opacity: 1;
 }
 
-/* ── Stereo Link Buttons ─────────────────────────────────────────────────────── */
-.mixer-stereo-link-btn {
-  width: 14px;
-  align-self: center;
-  background: transparent;
-  color: var(--text-muted, #888);
-  border: 1px solid var(--border, #333);
-  border-radius: 2px;
-  font-size: 12px;
-  padding: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s;
-  writing-mode: horizontal-tb;
-  margin: 0 -1px;
-  z-index: 1;
+/* ── Stereo Link Connector ─────────────────────────────────────────────────── */
+.stereo-link-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 2px 0;
 }
 
-.mixer-stereo-link-btn.linked {
-  color: var(--accent-blue, #58a6ff);
-  border-color: var(--accent-blue, #58a6ff);
+.stereo-link-btn {
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  background: transparent;
+  color: #6e7681;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.stereo-link-connector.linked .stereo-link-btn {
+  border-color: #58a6ff;
+  color: #58a6ff;
   background: rgba(88,166,255,0.1);
 }
 
-.mixer-stereo-link-btn:hover {
-  color: var(--accent-blue, #58a6ff);
-  border-color: var(--accent-blue, #58a6ff);
+.stereo-link-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
 }
 
 /* VCA member editor popover */
 .vca-member-popover {
-  position: absolute;
-  top: 100%;
-  left: 0;
+  position: fixed;
   z-index: 200;
   background: #1a1f2e;
   border: 1px solid #a855f7;

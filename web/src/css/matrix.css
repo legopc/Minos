@@ -1,5 +1,27 @@
 /* Matrix Tab Routing Grid CSS */
 
+/* ── Generator rows ─────────────────────────────────────────────────────── */
+.gen-separator-row .gen-sep-label { color: #0891b2; font-size: 10px; letter-spacing: 0.1em; font-weight: 700; }
+.gen-row .ch-label { border-left: 2px solid #0891b2; }
+.gen-row .xp-cell.disabled-cell { opacity: 0.15; pointer-events: none; }
+.gen-bus-active .xp-dot { background: #0891b2; }
+.xp-cell.gen-bus-active { background: rgba(8,145,178,0.2); }
+.gen-type-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #0891b2; color: #fff; margin-left: 4px; flex-shrink: 0; }
+
+/* ── Stereo link tags ────────────────────────────────────────────────────── */
+.ch-stereo-tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #58a6ff;
+  color: #0d1117;
+  margin-left: 4px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.xp-row.stereo-left { border-left: 2px solid rgba(88,166,255,0.4); }
+.xp-row.stereo-right { border-left: 2px solid rgba(88,166,255,0.2); }
+
 /* ── Layout when active ─────────────────────────────────────────────────── */
 /* Do NOT set display here — let .tab-content / .tab-content.active control
    visibility. Setting display:flex on #tab-matrix (ID specificity 1,0,0)
