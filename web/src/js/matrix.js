@@ -51,6 +51,7 @@ export function render(container) {
   // Single scroll container wraps everything
   const viewport = document.createElement('div');
   viewport.className = 'matrix-viewport';
+  _applyStoredLabelW(viewport);
 
   const grid = document.createElement('div');
   grid.className = 'matrix-grid';
@@ -947,6 +948,13 @@ function _toggleDspPicker(btn, ch) {
 let _lastBtn = null;
 
 // ── Label column drag-resize ────────────────────────────────────────────────
+const _LABEL_W_KEY = 'minos:matrix:label-w';
+
+function _applyStoredLabelW(viewport) {
+  const stored = localStorage.getItem(_LABEL_W_KEY);
+  if (stored) viewport.style.setProperty('--label-w', stored);
+}
+
 function _initLabelResize(handle) {
   handle.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -963,6 +971,8 @@ function _initLabelResize(handle) {
     };
     const onUp = () => {
       handle.classList.remove('dragging');
+      const finalW = getComputedStyle(viewport).getPropertyValue('--label-w').trim();
+      localStorage.setItem(_LABEL_W_KEY, finalW);
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onUp);
     };
