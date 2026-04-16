@@ -813,32 +813,6 @@ async function _toggleRoute(rxId, txId, cell) {
     cell.classList.remove('pending');
     cell.style.pointerEvents = '';
   }
-
-  // Auto-mirror stereo partner
-  const rxIdx = parseInt(rxId.replace('rx_', ''), 10);
-  const link = st.getStereoLink(rxIdx);
-  if (link && link.linked) {
-    const partnerId = link.left_channel === rxIdx
-      ? `rx_${link.right_channel}`
-      : `rx_${link.left_channel}`;
-    const partnerHasRoute = st.hasRoute(partnerId, txId);
-    const thisHasRoute = st.hasRoute(rxId, txId);
-    if (partnerHasRoute !== thisHasRoute) {
-      try {
-        if (thisHasRoute) {
-          await api.postRoute(partnerId, txId, 'local');
-          st.setRoute({ rx_id: partnerId, tx_id: txId, route_type: 'local' });
-        } else {
-          await api.deleteRoute(`${partnerId}|${txId}`);
-          st.removeRoute(partnerId, txId);
-        }
-        const partnerCell = document.querySelector(`[data-rx-id="${partnerId}"][data-tx-id="${txId}"]`);
-        if (partnerCell) {
-          partnerCell.className = 'xp-cell' + (thisHasRoute ? ' local' : '');
-        }
-      } catch(_) {} // silent — best effort mirror
-    }
-  }
 }
 
 // ── Per-crosspoint gain scroll wheel ──────────────────────────────────────
