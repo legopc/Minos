@@ -350,6 +350,44 @@ impl Default for InternalBusConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum VcaGroupType {
+    #[serde(rename = "input")]
+    Input,
+    #[serde(rename = "output")]
+    Output,
+}
+impl Default for VcaGroupType { fn default() -> Self { Self::Input } }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VcaGroupConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
+    /// Member channel IDs: "rx_0", "tx_2", etc.
+    #[serde(default)]
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub group_type: VcaGroupType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StereoLinkConfig {
+    /// Left channel index (0-based rx index, should be even)
+    pub left_channel: usize,
+    /// Right channel index (0-based rx index, = left + 1)
+    pub right_channel: usize,
+    #[serde(default = "default_true")]
+    pub linked: bool,
+    /// Pan -1.0 (full left) to +1.0 (full right), 0.0 = center.
+    /// NOTE: stored but not applied in RT path (future: RT pan).
+    #[serde(default)]
+    pub pan: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchboxConfig {
     /// Number of Dante RX channels (sources in)
@@ -432,6 +470,18 @@ pub struct PatchboxConfig {
     /// Soloed RX channel indices. Session-only, NOT persisted.
     #[serde(skip)]
     pub solo_channels: Vec<usize>,
+    /// Scene crossfade time in ms (0 = instant)
+    #[serde(default)]
+    pub scene_crossfade_ms: f32,
+    /// Session-only: temporarily overrides xp ramp speed during crossfade
+    #[serde(skip)]
+    pub xp_ramp_ms: f32,
+    /// VCA groups
+    #[serde(default)]
+    pub vca_groups: Vec<VcaGroupConfig>,
+    /// Stereo linked input pairs
+    #[serde(default)]
+    pub stereo_links: Vec<StereoLinkConfig>,
 }
 
 impl Default for PatchboxConfig {
@@ -467,6 +517,10 @@ impl Default for PatchboxConfig {
             monitor_volume_db: 0.0,
             statime_observation_path: None,
             solo_channels: vec![],
+            scene_crossfade_ms: 0.0,
+            xp_ramp_ms: 0.0,
+            vca_groups: vec![],
+            stereo_links: vec![],
         }
     }
 }

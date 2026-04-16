@@ -891,3 +891,135 @@
   opacity: 0.45;
   transition: opacity 0.15s;
 }
+
+/* ── VCA Groups ─────────────────────────────────────────────────────────────── */
+.mixer-vca-separator {
+  writing-mode: vertical-lr;
+  color: var(--accent-purple, #a371f7);
+  font-size: 10px;
+  padding: 8px 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  background: var(--surface-0, #111);
+  border-left: 1px solid var(--border, #333);
+  min-height: 80px;
+}
+
+.vca-strip {
+  flex: 1 1 0;
+  min-width: 50px;
+  max-width: 90px;
+  border-top: 2px solid var(--accent-purple, #a371f7);
+  background: color-mix(in srgb, var(--surface-1, #1a1a1a) 92%, var(--accent-purple, #a371f7) 8%);
+  position: relative;
+}
+
+.vca-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  gap: 2px;
+}
+
+.vca-strip .strip-name {
+  color: var(--accent-purple, #a371f7);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vca-badge {
+  font-size: 9px;
+  color: var(--text-muted, #888);
+  background: rgba(163,113,247,0.15);
+  border: 1px solid var(--accent-purple, #a371f7);
+  border-radius: 2px;
+  padding: 0 3px;
+  flex-shrink: 0;
+}
+
+.vca-members {
+  font-size: 9px;
+  color: var(--text-muted, #888);
+  padding: 2px 4px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.vca-delete-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  background: transparent;
+  color: var(--text-muted, #888);
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.vca-strip:hover .vca-delete-btn {
+  opacity: 1;
+}
+
+.vca-delete-btn:hover {
+  color: #f85149;
+}
+
+.mixer-add-vca-btn {
+  width: 32px;
+  align-self: stretch;
+  background: transparent;
+  color: var(--accent-purple, #a371f7);
+  border: 1px dashed var(--accent-purple, #a371f7);
+  border-radius: 4px;
+  font-size: 18px;
+  cursor: pointer;
+  margin: 4px 2px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.mixer-add-vca-btn:hover {
+  opacity: 1;
+}
+
+/* ── Stereo Link Buttons ─────────────────────────────────────────────────────── */
+.mixer-stereo-link-btn {
+  width: 14px;
+  align-self: center;
+  background: transparent;
+  color: var(--text-muted, #888);
+  border: 1px solid var(--border, #333);
+  border-radius: 2px;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+  writing-mode: horizontal-tb;
+  margin: 0 -1px;
+  z-index: 1;
+}
+
+.mixer-stereo-link-btn.linked {
+  color: var(--accent-blue, #58a6ff);
+  border-color: var(--accent-blue, #58a6ff);
+  background: rgba(88,166,255,0.1);
+}
+
+.mixer-stereo-link-btn:hover {
+  color: var(--accent-blue, #58a6ff);
+  border-color: var(--accent-blue, #58a6ff);
+}

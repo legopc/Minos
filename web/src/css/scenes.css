@@ -172,7 +172,29 @@
   flex-shrink: 0;
 }
 
-.scenes-layout {
+.scenes-xf-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+.scenes-xf-select {
+  height: 26px;
+  padding: 0 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.scenes-xf-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+
   flex: 1;
   display: flex;
   overflow: hidden;

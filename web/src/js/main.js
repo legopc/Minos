@@ -160,7 +160,7 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system, buses, matrixState] = await Promise.all([
+    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks] = await Promise.all([
       api.getChannels(),
       api.getOutputs(),
       api.getZones(),
@@ -169,6 +169,8 @@ async function loadAll() {
       api.getSystem(),
       api.getBuses(),
       api.getMatrix().catch(() => null),
+      api.getVcaGroups().catch(() => []),
+      api.getStereoLinks().catch(() => []),
     ]);
 
     channels.forEach(c => st.setChannel(c));
@@ -182,6 +184,8 @@ async function loadAll() {
     if (system.ptp_locked !== undefined) {
       st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
     }
+    st.setVcaGroups(Array.isArray(vcaGroups) ? vcaGroups : []);
+    st.setStereoLinks(Array.isArray(stereoLinks) ? stereoLinks : []);
 
     // Build busMatrix from routes with route_type === 'bus'
     const busMatrix = {};

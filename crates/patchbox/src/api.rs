@@ -368,14 +368,26 @@ async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl
         None => return (StatusCode::NOT_FOUND, "scene not found").into_response(),
     };
     drop(store);
-    let mut cfg = s.config.write().await;
-    scene.apply_to_config(&mut cfg);
-    drop(cfg);
+
+    let crossfade_ms = {
+        let cfg = s.config.read().await;
+        cfg.scene_crossfade_ms
+    };
+
+    {
+        let mut cfg = s.config.write().await;
+        if crossfade_ms > 0.0 {
+            cfg.xp_ramp_ms = crossfade_ms;
+        }
+        scene.apply_to_config(&mut cfg);
+    }
+
     s.scenes.write().await.active = Some(name.clone());
     persist_or_500!(s);
     persist_scenes_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"scene_loaded","scene_id":&name,"name":&name}).to_string());
-    // Clear solo state on scene load — solo does not persist across scene changes
+
+    // Clear solo state on scene load
     {
         let mut cfg = s.config.write().await;
         cfg.solo_channels.clear();
@@ -387,6 +399,17 @@ async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl
             "monitor_device": monitor_device,
         }).to_string());
     }
+
+    // After crossfade completes, restore xp_ramp_ms to 0
+    if crossfade_ms > 0.0 {
+        let state = s.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis((crossfade_ms * 5.0) as u64)).await;
+            let mut cfg = state.config.write().await;
+            cfg.xp_ramp_ms = 0.0;
+        });
+    }
+
     StatusCode::OK.into_response()
 }
 
@@ -537,7 +560,19 @@ async fn get_input_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> impl
 async fn put_input_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GainBody>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
-    dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
+    let clamped = body.gain_db.clamp(-60.0, 24.0);
+    dsp.gain_db = clamped;
+    // Stereo link mirroring
+    let pair_ch = cfg.stereo_links.iter().find_map(|sl| {
+        if sl.linked {
+            if sl.left_channel == ch { Some(sl.right_channel) }
+            else if sl.right_channel == ch { Some(sl.left_channel) }
+            else { None }
+        } else { None }
+    });
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.input_dsp.get_mut(p) { pdsp.gain_db = clamped; }
+    }
     drop(cfg);
     persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -618,6 +653,16 @@ async fn put_input_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Jso
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.enabled = body.enabled;
+    let pair_ch = cfg.stereo_links.iter().find_map(|sl| {
+        if sl.linked {
+            if sl.left_channel == ch { Some(sl.right_channel) }
+            else if sl.right_channel == ch { Some(sl.left_channel) }
+            else { None }
+        } else { None }
+    });
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.input_dsp.get_mut(p) { pdsp.enabled = body.enabled; }
+    }
     drop(cfg);
     persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -937,6 +982,44 @@ struct UpdateSceneRequest {
     name: Option<String>,
     description: Option<String>,
     is_favourite: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct UpdateSystemConfig {
+    scene_crossfade_ms: Option<f32>,
+    gain_ramp_ms: Option<f32>,
+    show_buses_in_mixer: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct CreateVcaRequest {
+    pub name: String,
+    #[serde(default)]
+    pub group_type: patchbox_core::config::VcaGroupType,
+    #[serde(default)]
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub gain_db: f32,
+}
+
+#[derive(Deserialize)]
+struct UpdateVcaRequest {
+    pub name: Option<String>,
+    pub gain_db: Option<f32>,
+    pub muted: Option<bool>,
+    pub members: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct CreateStereoLinkRequest {
+    pub left_channel: usize,
+    pub right_channel: usize,
+}
+
+#[derive(Deserialize)]
+struct UpdateStereoLinkRequest {
+    pub linked: Option<bool>,
+    pub pan: Option<f32>,
 }
 
 // --- Request types: buses ---
@@ -1653,6 +1736,128 @@ async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
         monitor_device,
         monitor_volume_db,
     })
+}
+
+// PUT /api/v1/system/config — update system-level config settings
+async fn put_system_config(State(s): State<AppState>, Json(body): Json<UpdateSystemConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if let Some(v) = body.scene_crossfade_ms {
+        cfg.scene_crossfade_ms = v.max(0.0);
+    }
+    if let Some(v) = body.gain_ramp_ms {
+        cfg.gain_ramp_ms = v.clamp(0.0, 5000.0);
+    }
+    if let Some(v) = body.show_buses_in_mixer {
+        cfg.show_buses_in_mixer = v;
+    }
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/vca-groups
+async fn get_vca_groups(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(serde_json::json!({"vca_groups": cfg.vca_groups})).into_response()
+}
+
+// POST /api/v1/vca-groups
+async fn post_vca_group(State(s): State<AppState>, Json(body): Json<CreateVcaRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let id = format!("vca_{}", cfg.vca_groups.len());
+    let vca = patchbox_core::config::VcaGroupConfig {
+        id: id.clone(),
+        name: body.name,
+        gain_db: body.gain_db,
+        muted: false,
+        members: body.members,
+        group_type: body.group_type,
+    };
+    cfg.vca_groups.push(vca.clone());
+    drop(cfg);
+    let vca_groups = s.config.read().await.vca_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+}
+
+// PUT /api/v1/vca-groups/:id
+async fn put_vca_group(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateVcaRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(vca) = cfg.vca_groups.iter_mut().find(|v| v.id == id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Some(n) = body.name { vca.name = n; }
+    if let Some(g) = body.gain_db { vca.gain_db = g.clamp(-60.0, 24.0); }
+    if let Some(m) = body.muted { vca.muted = m; }
+    if let Some(members) = body.members { vca.members = members; }
+    drop(cfg);
+    let vca_groups = s.config.read().await.vca_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/vca-groups/:id
+async fn delete_vca_group(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let before = cfg.vca_groups.len();
+    cfg.vca_groups.retain(|v| v.id != id);
+    if cfg.vca_groups.len() == before {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    drop(cfg);
+    let vca_groups = s.config.read().await.vca_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/stereo-links
+async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(serde_json::json!({"stereo_links": cfg.stereo_links})).into_response()
+}
+
+// POST /api/v1/stereo-links
+async fn post_stereo_link(State(s): State<AppState>, Json(body): Json<CreateStereoLinkRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.stereo_links.retain(|sl| sl.left_channel != body.left_channel && sl.right_channel != body.right_channel);
+    cfg.stereo_links.push(patchbox_core::config::StereoLinkConfig {
+        left_channel: body.left_channel,
+        right_channel: body.right_channel,
+        linked: true,
+        pan: 0.0,
+    });
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::CREATED.into_response()
+}
+
+// PUT /api/v1/stereo-links/:left_ch
+async fn put_stereo_link(State(s): State<AppState>, Path(left_ch): Path<usize>, Json(body): Json<UpdateStereoLinkRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(sl) = cfg.stereo_links.iter_mut().find(|sl| sl.left_channel == left_ch) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Some(l) = body.linked { sl.linked = l; }
+    if let Some(p) = body.pan { sl.pan = p.clamp(-1.0, 1.0); }
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/stereo-links/:left_ch
+async fn delete_stereo_link(State(s): State<AppState>, Path(left_ch): Path<usize>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let before = cfg.stereo_links.len();
+    cfg.stereo_links.retain(|sl| sl.left_channel != left_ch);
+    if cfg.stereo_links.len() == before {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // GET /api/v1/system/config/export — download current config as TOML
@@ -2381,6 +2586,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/routes/:id", delete(delete_route))
         .route("/api/v1/metering", get(get_metering))
         .route("/api/v1/system", get(get_system))
+        .route("/api/v1/system/config", put(put_system_config))
         .route("/api/v1/system/config/export", get(get_system_config_export))
         .route("/api/v1/system/config/import", post(post_system_config_import))
         .route("/api/v1/system/config/backups", get(get_config_backups))
@@ -2403,6 +2609,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/buses/:id/routing", put(put_bus_routing))
         .route("/api/v1/buses/:id/input-gain", put(put_bus_input_gain))
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
+        .route("/api/v1/vca-groups", get(get_vca_groups).post(post_vca_group))
+        .route("/api/v1/vca-groups/:id", put(put_vca_group).delete(delete_vca_group))
+        .route("/api/v1/stereo-links", get(get_stereo_links).post(post_stereo_link))
+        .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))

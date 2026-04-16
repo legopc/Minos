@@ -1,6 +1,6 @@
 //! Routing matrix — routes N inputs to M outputs with gain staging
 
-use crate::config::{EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig};
+use crate::config::{EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig, VcaGroupType};
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::eq::ParametricEq;
@@ -253,6 +253,7 @@ impl Default for PerInputDsp {
 pub const MAX_FRAMES: usize = 1024;
 pub const MAX_INPUT_CHANNELS: usize = 64;
 pub const MAX_BUSES: usize = 8;
+pub const MAX_VCA_GROUPS: usize = 16;
 
 
 /// Per-bus DSP and summation buffer. Stack-allocated, zero heap use in RT path.
@@ -324,6 +325,14 @@ pub struct MatrixProcessor {
     pub solo_mask: [bool; MAX_INPUT_CHANNELS],
     pub solo_active: bool,
     pub monitor_buf: [f32; MAX_FRAMES],
+    /// Per-crosspoint gain ramps [tx_idx][rx_idx]. Heap-allocated to avoid 48KB stack frame.
+    pub xp_ramps: Box<[[RampState; MAX_INPUT_CHANNELS]; MAX_INPUT_CHANNELS]>,
+    /// Per-VCA-group gain ramps.
+    pub vca_ramps: [RampState; MAX_VCA_GROUPS],
+    /// vca_input_map[rx_idx] = Some(vca_group_idx) if that input is in a VCA input group.
+    pub vca_input_map: [Option<usize>; MAX_INPUT_CHANNELS],
+    /// vca_output_map[tx_idx] = Some(vca_group_idx) if that output is in a VCA output group.
+    pub vca_output_map: [Option<usize>; MAX_INPUT_CHANNELS],
 }
 
 impl MatrixProcessor {
@@ -337,6 +346,10 @@ impl MatrixProcessor {
             solo_mask: [false; MAX_INPUT_CHANNELS],
             solo_active: false,
             monitor_buf: [0.0f32; MAX_FRAMES],
+            xp_ramps: Box::new([[RampState::new(0.0); MAX_INPUT_CHANNELS]; MAX_INPUT_CHANNELS]),
+            vca_ramps: std::array::from_fn(|_| RampState::new(1.0)),
+            vca_input_map: [None; MAX_INPUT_CHANNELS],
+            vca_output_map: [None; MAX_INPUT_CHANNELS],
         }
     }
 
@@ -384,6 +397,39 @@ impl MatrixProcessor {
                 self.solo_mask[rx] = true;
             }
         }
+
+        // --- Per-crosspoint ramp sync ---
+        let xp_alpha = if cfg.xp_ramp_ms > 0.0 {
+            compute_ramp_alpha(cfg.xp_ramp_ms, self.sample_rate)
+        } else {
+            compute_ramp_alpha(cfg.gain_ramp_ms, self.sample_rate)
+        };
+        for tx_idx in 0..cfg.tx_channels.min(MAX_INPUT_CHANNELS) {
+            for rx_idx in 0..cfg.rx_channels.min(MAX_INPUT_CHANNELS) {
+                let enabled = cfg.matrix.get(tx_idx).and_then(|r| r.get(rx_idx)).copied().unwrap_or(false);
+                let gain_db = cfg.matrix_gain_db.get(tx_idx).and_then(|r| r.get(rx_idx)).copied().unwrap_or(0.0);
+                let target_linear = if enabled { db_to_linear(gain_db) } else { 0.0 };
+                self.xp_ramps[tx_idx][rx_idx].set_target(target_linear);
+                self.xp_ramps[tx_idx][rx_idx].alpha = xp_alpha;
+            }
+        }
+
+        // --- VCA group sync ---
+        self.vca_input_map = [None; MAX_INPUT_CHANNELS];
+        self.vca_output_map = [None; MAX_INPUT_CHANNELS];
+        for (vca_idx, vca) in cfg.vca_groups.iter().enumerate().take(MAX_VCA_GROUPS) {
+            let target = if vca.muted { 0.0 } else { db_to_linear(vca.gain_db) };
+            self.vca_ramps[vca_idx].set_target(target);
+            self.vca_ramps[vca_idx].alpha = compute_ramp_alpha(cfg.gain_ramp_ms, self.sample_rate);
+            for member_id in &vca.members {
+                if let Some(idx) = parse_channel_id(member_id) {
+                    match vca.group_type {
+                        VcaGroupType::Input  => { if idx < MAX_INPUT_CHANNELS { self.vca_input_map[idx]  = Some(vca_idx); } }
+                        VcaGroupType::Output => { if idx < MAX_INPUT_CHANNELS { self.vca_output_map[idx] = Some(vca_idx); } }
+                    }
+                }
+            }
+        }
     }
 
     /// Process one audio block: input DSP → matrix routing → output DSP.
@@ -426,10 +472,23 @@ impl MatrixProcessor {
             }
         }
 
+        // Tick all VCA ramps once per block
+        let mut vca_gains = [1.0f32; MAX_VCA_GROUPS];
+        for i in 0..config.vca_groups.len().min(MAX_VCA_GROUPS) {
+            vca_gains[i] = self.vca_ramps[i].tick();
+        }
+
         for (i, inp) in inputs.iter().enumerate().take(max_inputs) {
             self.scratch[i][..nf].copy_from_slice(&inp[..nf]);
             if let Some(dsp) = self.input_dsp.get_mut(i) {
                 dsp.process_block(&mut self.scratch[i][..nf]);
+            }
+            // Apply input VCA multiplier after input DSP
+            if let Some(vca_idx) = self.vca_input_map[i] {
+                let vca_gain = vca_gains[vca_idx];
+                if (vca_gain - 1.0).abs() > 1e-6 {
+                    for s in self.scratch[i][..nf].iter_mut() { *s *= vca_gain; }
+                }
             }
         }
 
@@ -461,30 +520,24 @@ impl MatrixProcessor {
             }
 
             for rx_idx in 0..inputs.len() {
-                let routed = config
-                    .matrix
-                    .get(tx_idx)
-                    .and_then(|row| row.get(rx_idx))
-                    .copied()
-                    .unwrap_or(false);
+                // Tick xp_ramp once per block (block-level approximation for crossfade)
+                let xp_linear = if tx_idx < MAX_INPUT_CHANNELS && rx_idx < MAX_INPUT_CHANNELS {
+                    self.xp_ramps[tx_idx][rx_idx].tick()
+                } else {
+                    0.0
+                };
+                if xp_linear < 1e-6 { continue; }
 
-                if routed {
-                    let xp_gain_db = config.matrix_gain_db
-                        .get(tx_idx)
-                        .and_then(|row| row.get(rx_idx))
-                        .copied()
-                        .unwrap_or(0.0);
-                    let in_gain = db_to_linear(
-                        config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
-                    ) * db_to_linear(xp_gain_db);
-                    let src = if rx_idx < max_inputs {
-                        &self.scratch[rx_idx][..nf]
-                    } else {
-                        &inputs[rx_idx][..nf]
-                    };
-                    for (s_out, s_in) in output[..nf].iter_mut().zip(src.iter()) {
-                        *s_out += s_in * in_gain;
-                    }
+                let in_gain = db_to_linear(
+                    config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
+                ) * xp_linear;
+                let src = if rx_idx < max_inputs {
+                    &self.scratch[rx_idx][..nf]
+                } else {
+                    &inputs[rx_idx][..nf]
+                };
+                for (s_out, s_in) in output[..nf].iter_mut().zip(src.iter()) {
+                    *s_out += s_in * in_gain;
                 }
             }
 
@@ -509,6 +562,14 @@ impl MatrixProcessor {
             }
 
             for s in output[..nf].iter_mut() { *s *= out_gain; }
+
+            // Apply output VCA multiplier before output DSP
+            if let Some(vca_idx) = self.vca_output_map[tx_idx] {
+                let vca_gain = vca_gains[vca_idx];
+                if (vca_gain - 1.0).abs() > 1e-6 {
+                    for s in output[..nf].iter_mut() { *s *= vca_gain; }
+                }
+            }
 
             if let Some(d) = self.output_dsp.get_mut(tx_idx) {
                 // sync_output_dsp called from MatrixProcessor::sync(); just process
@@ -572,4 +633,10 @@ pub fn process(
             d.process_block(&mut output[..nframes], false);
         }
     }
+}
+
+/// Parse "rx_3" → Some(3), "tx_7" → Some(7), anything else → None
+fn parse_channel_id(id: &str) -> Option<usize> {
+    id.strip_prefix("rx_").or_else(|| id.strip_prefix("tx_"))
+       .and_then(|n| n.parse().ok())
 }

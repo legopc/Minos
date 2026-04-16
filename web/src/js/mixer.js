@@ -141,10 +141,16 @@ function _renderStrips(strips, masters) {
   const channels = st.channelList();
   const outputs  = st.outputList();
 
-  // Input strips
-  channels.forEach(ch => {
+  // Input strips with stereo link buttons between pairs
+  channels.forEach((ch, idx) => {
     const s = _buildInputStrip(ch);
     strips.appendChild(s);
+
+    // Stereo link connector between this strip and the next (even-indexed channels form left of pair)
+    const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+    if (idx < channels.length - 1 && chIdx % 2 === 0) {
+      strips.appendChild(_buildStereoLinkBtn(ch, channels[idx + 1]));
+    }
   });
 
   // Bus strips (in masters, before output strips — buses are outputs not inputs)
@@ -157,6 +163,23 @@ function _renderStrips(strips, masters) {
     buses.forEach(bus => masters.appendChild(_buildBusStrip(bus)));
   }
 
+  // VCA Groups section
+  const vcas = st.state.vcaGroups ?? [];
+  if (vcas.length > 0 || true /* always show VCA section with add button */) {
+    const vcaSep = document.createElement('div');
+    vcaSep.className = 'mixer-vca-separator';
+    vcaSep.textContent = 'VCA';
+    masters.appendChild(vcaSep);
+    vcas.forEach(vca => masters.appendChild(_buildVcaStrip(vca)));
+    // Add VCA button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'mixer-add-vca-btn';
+    addBtn.textContent = '+';
+    addBtn.title = 'Add VCA group';
+    addBtn.onclick = () => _showAddVcaDialog();
+    masters.appendChild(addBtn);
+  }
+
   // Output master strips (one per output, replaces zone-based iteration)
   const outSep = document.createElement('div');
   outSep.className = 'mixer-output-separator';
@@ -166,6 +189,134 @@ function _renderStrips(strips, masters) {
     const m = _buildOutputMaster(out);
     masters.appendChild(m);
   });
+}
+
+function _buildStereoLinkBtn(leftCh, rightCh) {
+  const leftIdx  = parseInt(leftCh.id.replace('rx_', ''), 10);
+  const rightIdx = parseInt(rightCh.id.replace('rx_', ''), 10);
+  const link     = st.getStereoLink(leftIdx);
+  const linked   = !!(link?.linked);
+
+  const btn = document.createElement('button');
+  btn.className = 'mixer-stereo-link-btn' + (linked ? ' linked' : '');
+  btn.id = `stereo-link-${leftIdx}`;
+  btn.textContent = linked ? '⋈' : '—';
+  btn.title = linked ? `Unlink stereo pair ${leftIdx}/${rightIdx}` : `Link stereo pair ${leftIdx}/${rightIdx}`;
+
+  btn.onclick = async () => {
+    try {
+      if (linked) {
+        await api.deleteStereoLink(leftIdx);
+        st.setStereoLinks(st.state.stereoLinks.filter(sl => sl.left_channel !== leftIdx));
+        btn.classList.remove('linked');
+        btn.textContent = '—';
+        btn.title = `Link stereo pair ${leftIdx}/${rightIdx}`;
+      } else {
+        const sl = await api.postStereoLink(leftIdx, rightIdx);
+        const existing = st.state.stereoLinks.filter(s => s.left_channel !== leftIdx);
+        st.setStereoLinks([...existing, sl]);
+        btn.classList.add('linked');
+        btn.textContent = '⋈';
+        btn.title = `Unlink stereo pair ${leftIdx}/${rightIdx}`;
+      }
+    } catch(e) { toast(e.message, true); }
+  };
+  return btn;
+}
+
+function _buildVcaStrip(vca) {
+  const strip = document.createElement('div');
+  strip.className = 'mixer-strip vca-strip';
+  strip.id = `vca-strip-${vca.id}`;
+
+  // Name + type badge
+  const header = document.createElement('div');
+  header.className = 'vca-strip-header';
+  const nm = document.createElement('div');
+  nm.className = 'strip-name';
+  nm.textContent = vca.name ?? vca.id;
+  nm.title = `${vca.group_type} VCA`;
+  const badge = document.createElement('span');
+  badge.className = 'vca-badge';
+  badge.textContent = vca.group_type === 'input' ? 'IN' : 'OUT';
+  header.appendChild(nm);
+  header.appendChild(badge);
+  strip.appendChild(header);
+
+  // Members count
+  const members = document.createElement('div');
+  members.className = 'vca-members';
+  const memberIds = vca.members ?? vca.channel_ids ?? [];
+  members.textContent = memberIds.length ? memberIds.join(', ') : 'no members';
+  members.title = 'VCA members';
+  strip.appendChild(members);
+
+  // Gain fader
+  const gainDb = vca.gain_db ?? 0;
+  const dbLabel = document.createElement('div');
+  dbLabel.className = 'strip-fader-label';
+  dbLabel.textContent = _db(gainDb);
+
+  const fader = document.createElement('input');
+  fader.type = 'range';
+  fader.className = 'strip-fader';
+  fader.min = 0; fader.max = 1000; fader.step = 1;
+  fader.value = st.dbToSlider(gainDb);
+  let fTimer;
+  fader.oninput = () => {
+    const db = st.sliderToDb(+fader.value);
+    dbLabel.textContent = _db(db);
+    clearTimeout(fTimer);
+    fTimer = setTimeout(() => {
+      api.putVcaGroup(vca.id, { gain_db: db }).catch(e => toast(e.message, true));
+    }, 80);
+  };
+  strip.appendChild(dbLabel);
+  strip.appendChild(fader);
+
+  // Mute button
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'strip-mute-btn' + (vca.muted ? ' active' : '');
+  muteBtn.textContent = 'MUTE';
+  muteBtn.onclick = async () => {
+    const nowMuted = muteBtn.classList.contains('active');
+    try {
+      await api.putVcaGroup(vca.id, { muted: !nowMuted });
+      muteBtn.classList.toggle('active', !nowMuted);
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(muteBtn);
+
+  // Delete button
+  const delBtn = document.createElement('button');
+  delBtn.className = 'vca-delete-btn';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete VCA group';
+  delBtn.onclick = async () => {
+    if (!confirm(`Delete VCA group "${vca.name}"?`)) return;
+    try {
+      await api.deleteVcaGroup(vca.id);
+      st.removeVcaGroup(vca.id);
+      strip.remove();
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(delBtn);
+
+  return strip;
+}
+
+async function _showAddVcaDialog() {
+  const name = prompt('VCA group name:');
+  if (!name) return;
+  const type = prompt('Type (input or output):', 'input');
+  if (type !== 'input' && type !== 'output') { toast('Type must be "input" or "output"', true); return; }
+  try {
+    const vca = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
+    st.setVcaGroup(vca);
+    const masters = document.getElementById('mixer-masters');
+    const strips  = document.querySelector('.mixer-strips');
+    if (strips && masters) _renderStrips(strips, masters);
+  } catch(e) { toast(e.message, true); }
 }
 
 function _buildInputStrip(ch) {

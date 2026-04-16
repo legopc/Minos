@@ -24,6 +24,8 @@ const _state = {
     monitor_device: null,
     monitor_volume_db: 0,
   },
+  vcaGroups:     [],    // VcaGroupConfig[]
+  stereoLinks:   [],    // StereoLinkConfig[]
 };
 
 export const state = _state;
@@ -69,6 +71,17 @@ export function setActiveScene(id)         { _state.activeSceneId = id; }
 export function setUserRole(role)          { _state.userRole = role; }
 export function setActiveTab(tab)          { _state.activeTab = tab; }
 export function setSoloed(id, on)          { on ? _state.soloSet.add(id) : _state.soloSet.delete(id); }
+export function setVcaGroups(arr)          { _state.vcaGroups = arr ?? []; }
+export function setVcaGroup(vca)           {
+  const i = _state.vcaGroups.findIndex(v => v.id === vca.id);
+  if (i >= 0) _state.vcaGroups[i] = vca; else _state.vcaGroups.push(vca);
+}
+export function removeVcaGroup(id)         { _state.vcaGroups = _state.vcaGroups.filter(v => v.id !== id); }
+export function setStereoLinks(arr)        { _state.stereoLinks = arr ?? []; }
+export function getStereoLink(rxIdx)       {
+  return _state.stereoLinks.find(sl => sl.left_channel === rxIdx || sl.right_channel === rxIdx) ?? null;
+}
+export function isStereoLinked(rxIdx)      { return !!getStereoLink(rxIdx)?.linked; }
 
 export function getZoneColour(colourIndex) {
   return `var(--zone-color-${(colourIndex ?? 0) % 10})`;

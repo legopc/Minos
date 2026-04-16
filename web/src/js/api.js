@@ -213,3 +213,15 @@ export const clearSolo     = ()      => del('/solo');
 export const getMonitor       = ()      => get('/system/monitor');
 export const putMonitor       = (body)  => put('/system/monitor', body);
 export const getAudioDevices  = ()      => get('/system/audio-devices');
+
+// ── VCA Groups ───────────────────────────────────────────────────────────────
+export const getVcaGroups   = ()           => get('/vca-groups');
+export const postVcaGroup   = (body)       => post('/vca-groups', body);
+export const putVcaGroup    = (id, body)   => put(`/vca-groups/${id}`, body);
+export const deleteVcaGroup = (id)         => del(`/vca-groups/${id}`);
+
+// ── Stereo Links ─────────────────────────────────────────────────────────────
+export const getStereoLinks   = ()              => get('/stereo-links');
+export const postStereoLink   = (left, right)   => post('/stereo-links', { left_channel: left, right_channel: right });
+export const putStereoLink    = (left_ch, body) => put(`/stereo-links/${left_ch}`, body);
+export const deleteStereoLink = (left_ch)       => del(`/stereo-links/${left_ch}`);

@@ -48,6 +48,38 @@ export async function render(container) {
     });
   };
   toolbar.appendChild(saveBtn);
+
+  // Crossfade time control
+  const xfLabel = document.createElement('label');
+  xfLabel.className = 'scenes-xf-label';
+  xfLabel.textContent = 'Crossfade:';
+  toolbar.appendChild(xfLabel);
+
+  const xfSelect = document.createElement('select');
+  xfSelect.className = 'scenes-xf-select';
+  [
+    { label: 'Instant', value: 0 },
+    { label: '100ms',   value: 100 },
+    { label: '250ms',   value: 250 },
+    { label: '500ms',   value: 500 },
+    { label: '1s',      value: 1000 },
+    { label: '2s',      value: 2000 },
+  ].forEach(({ label, value }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    xfSelect.appendChild(opt);
+  });
+  // Read current system crossfade if available
+  xfSelect.value = st.state.system?.scene_crossfade_ms ?? 0;
+  xfSelect.onchange = async () => {
+    try {
+      await api.putSystemConfig({ scene_crossfade_ms: Number(xfSelect.value) });
+      if (st.state.system) st.state.system.scene_crossfade_ms = Number(xfSelect.value);
+    } catch(e) { toast('Crossfade update failed: ' + e.message, true); }
+  };
+  toolbar.appendChild(xfSelect);
+
   container.insertBefore(toolbar, layout);
 }
 
