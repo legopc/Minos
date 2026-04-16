@@ -995,36 +995,41 @@
   opacity: 1;
 }
 
-/* ── Stereo Link Connector ─────────────────────────────────────────────────── */
-.stereo-link-connector {
+/* ── Stereo Link inline button (inside strip name row) ─────────────────────── */
+.strip-name-row {
   display: flex;
   align-items: center;
-  justify-content: center;
   width: 100%;
-  padding: 2px 0;
+  gap: 2px;
 }
 
-.stereo-link-btn {
+.strip-name-row .strip-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.strip-stereo-btn {
+  flex-shrink: 0;
   font-size: 10px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  border: 1px solid #30363d;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
   background: transparent;
-  color: #6e7681;
+  color: #3d4451;
   cursor: pointer;
-  white-space: nowrap;
+  line-height: 1;
   transition: all 0.15s;
 }
 
-.stereo-link-connector.linked .stereo-link-btn {
+.strip-stereo-btn:hover {
   border-color: #58a6ff;
   color: #58a6ff;
-  background: rgba(88,166,255,0.1);
 }
 
-.stereo-link-btn:hover {
+.strip-stereo-btn.linked {
   border-color: #58a6ff;
   color: #58a6ff;
+  background: rgba(88,166,255,0.12);
 }
 
 /* VCA member editor popover */

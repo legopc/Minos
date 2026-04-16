@@ -1333,35 +1333,35 @@ function _buildGenRow(gen, genIdx, outputs, buses) {
 
   row.appendChild(label);
 
-  // Output columns — disabled (generators don't route directly to outputs)
-  outputs.forEach(() => {
+  // Output columns — generators route directly to outputs
+  outputs.forEach((out, txIdx) => {
+    const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[txIdx];
+    const isActive = currentGain !== undefined && currentGain !== null && currentGain > -90;
     const cell = document.createElement('div');
-    cell.className = 'xp-cell disabled-cell';
+    cell.className = 'xp-cell gen-out-cell' + (isActive ? ' gen-bus-active' : '');
+    cell.dataset.genId = gen.id;
+    cell.dataset.txId  = out.id;
+
     const dot = document.createElement('div');
     dot.className = 'xp-dot';
     cell.appendChild(dot);
+
+    cell.addEventListener('click', () => _toggleGenOutput(gen, genIdx, txIdx, out.id, cell, outputs));
     row.appendChild(cell);
   });
 
-  // Bus columns
+  // Bus columns — disabled (bus routing not used for generators)
   if (buses && buses.length > 0) {
     const divCell = document.createElement('div');
     divCell.className = 'xp-cell bus-col-div-cell';
     row.appendChild(divCell);
 
-    buses.forEach((bus, busIdx) => {
-      const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[busIdx];
-      const isActive = currentGain !== undefined && currentGain !== null && currentGain > -90;
+    buses.forEach(() => {
       const cell = document.createElement('div');
-      cell.className = 'xp-cell' + (isActive ? ' gen-bus-active' : '');
-      cell.dataset.genId = gen.id;
-      cell.dataset.busId = bus.id;
-
+      cell.className = 'xp-cell disabled-cell';
       const dot = document.createElement('div');
       dot.className = 'xp-dot';
       cell.appendChild(dot);
-
-      cell.addEventListener('click', () => _toggleGenBus(gen, genIdx, busIdx, bus.id, cell));
       row.appendChild(cell);
     });
   }
@@ -1369,19 +1369,18 @@ function _buildGenRow(gen, genIdx, outputs, buses) {
   return row;
 }
 
-// ── Generator→Bus crosspoint toggle ───────────────────────────────────────
-async function _toggleGenBus(gen, genIdx, busIdx, busId, cell) {
+// ── Generator→Output crosspoint toggle ────────────────────────────────────
+async function _toggleGenOutput(gen, genIdx, txIdx, txId, cell, outputs) {
   if (_locked) return;
-  const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[busIdx];
+  const currentGain = st.state.generatorBusMatrix?.[genIdx]?.[txIdx];
   const isActive = currentGain !== undefined && currentGain !== null && currentGain > -90;
   const newGain = isActive ? -96.0 : 0.0;
   cell.classList.toggle('gen-bus-active', !isActive);
   cell.classList.add('pending');
   try {
-    const busList = st.busList();
-    const gains = busList.map((_, bi) => {
-      if (bi === busIdx) return newGain;
-      return st.state.generatorBusMatrix?.[genIdx]?.[bi] ?? -96.0;
+    const gains = outputs.map((_, oi) => {
+      if (oi === txIdx) return newGain;
+      return st.state.generatorBusMatrix?.[genIdx]?.[oi] ?? -96.0;
     });
     await api.putGeneratorRouting(gen.id, gains);
     const mat = [...(st.state.generatorBusMatrix ?? [])];

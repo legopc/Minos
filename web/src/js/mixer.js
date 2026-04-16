@@ -141,16 +141,10 @@ function _renderStrips(strips, masters) {
   const channels = st.channelList();
   const outputs  = st.outputList();
 
-  // Input strips with stereo link buttons between pairs
+  // Input strips — stereo link indicator lives inside even-indexed strips
   channels.forEach((ch, idx) => {
-    const s = _buildInputStrip(ch);
+    const s = _buildInputStrip(ch, idx < channels.length - 1 ? channels[idx + 1] : null);
     strips.appendChild(s);
-
-    // Stereo link connector between this strip and the next (even-indexed channels form left of pair)
-    const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
-    if (idx < channels.length - 1 && chIdx % 2 === 0) {
-      strips.appendChild(_buildStereoLinkBtn(ch, channels[idx + 1]));
-    }
   });
 
   // Bus strips (in masters, before output strips — buses are outputs not inputs)
@@ -593,24 +587,61 @@ function _showGenRoutingPopover(gen, genIdx, anchor, evt) {
   setTimeout(() => document.addEventListener('click', close), 0);
 }
 
-function _buildInputStrip(ch) {
+function _buildInputStrip(ch, nextCh) {
   const strip = document.createElement('div');
   strip.className = 'mixer-strip';
   strip.id = `strip-${ch.id}`;
 
-  // Name
+  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+
+  // Name row — may include stereo link badge for even-indexed channels
+  const nameRow = document.createElement('div');
+  nameRow.className = 'strip-name-row';
+
   const nm = document.createElement('div');
   nm.className = 'strip-name';
   nm.textContent = ch.name ?? ch.id;
   nm.title = ch.id;
-  strip.appendChild(nm);
+  nameRow.appendChild(nm);
+
+  // Inline stereo link button for even-indexed channels (0, 2, 4…)
+  if (nextCh && chIdx % 2 === 0) {
+    const nextIdx = parseInt(nextCh.id.replace('rx_', ''), 10);
+    const link    = st.getStereoLink(chIdx);
+    const linked  = !!(link?.linked);
+
+    const btn = document.createElement('button');
+    btn.className = 'strip-stereo-btn' + (linked ? ' linked' : '');
+    btn.title = linked ? `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}` : `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
+    btn.textContent = '⛓';
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        if (linked) {
+          await api.deleteStereoLink(chIdx);
+          st.setStereoLinks(st.state.stereoLinks.filter(sl => sl.left_channel !== chIdx));
+          btn.classList.remove('linked');
+          btn.title = `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
+        } else {
+          await api.postStereoLink(chIdx, nextIdx);
+          const sl = { left_channel: chIdx, right_channel: nextIdx, linked: true, pan: 0.0 };
+          const existing = st.state.stereoLinks.filter(s => s.left_channel !== chIdx);
+          st.setStereoLinks([...existing, sl]);
+          btn.classList.add('linked');
+          btn.title = `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`;
+        }
+      } catch(e) { toast(e.message, true); }
+    };
+    nameRow.appendChild(btn);
+  }
+
+  strip.appendChild(nameRow);
 
   // Mute button
   const muteBtn = document.createElement('button');
   muteBtn.className = 'strip-mute-btn' + (ch.enabled === false ? ' active' : '');
   muteBtn.textContent = 'MUTE';
   muteBtn.title = ch.enabled === false ? 'Unmute channel' : 'Mute channel';
-  const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
   muteBtn.onclick = async () => {
     const nowMuted = muteBtn.classList.contains('active');
     try {
