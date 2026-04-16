@@ -259,6 +259,9 @@ function _onParamChange(channelId, block, newParams) {
         gte: 'gate',
         lim: 'limiter',
         dly: 'delay',
+        aec: 'aec',
+        axm: 'automixer',
+        afs: 'feedback',
       };
       const mappedBlock = blockMap[block] || block;
       const endpoint = `${base}/${mappedBlock}`;

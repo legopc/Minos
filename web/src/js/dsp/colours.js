@@ -14,4 +14,5 @@ export const DSP_COLOURS = {
   peq: { bg: '#2a1a4a', fg: '#d2a8ff', label: 'PEQ' },
   gte: { bg: '#3a2d10', fg: '#e3b341', label: 'GTE' },
   axm: { bg: '#1a3a2a', fg: '#3fb950', label: 'AXM' },
+  afs: { bg: '#3a1a2a', fg: '#f0883e', label: 'AFS' },
 };

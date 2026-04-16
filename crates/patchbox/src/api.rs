@@ -526,7 +526,7 @@ use patchbox_core::config::{
     ZoneConfig,
     InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
-    SignalGeneratorConfig, SignalGenType, AecConfig, AutomixerGroupConfig,
+    SignalGeneratorConfig, SignalGenType, AecConfig, AutomixerGroupConfig, FeedbackSuppressorConfig,
 };
 
 use std::collections::HashMap;
@@ -859,6 +859,9 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
         "aec": {"enabled": dsp.aec.enabled, "reference_tx_idx": dsp.aec.reference_tx_idx},
         "axm": {"group_id": dsp.automixer.group_id, "weight": dsp.automixer.weight},
+        "afs": {"enabled": dsp.feedback.enabled, "threshold_db": dsp.feedback.threshold_db,
+                "hysteresis_db": dsp.feedback.hysteresis_db, "bandwidth_hz": dsp.feedback.bandwidth_hz,
+                "max_notches": dsp.feedback.max_notches, "auto_reset": dsp.feedback.auto_reset},
     })
 }
 
@@ -1057,6 +1060,20 @@ struct UpdateAutomixerGroupRequest {
 struct UpdateAutomixerChannelRequest {
     pub group_id: Option<String>,  // None = remove from group
     pub weight: Option<f32>,
+}
+
+#[derive(Deserialize)]
+struct UpdateFeedbackSuppressorRequest {
+    pub enabled: Option<bool>,
+    pub threshold_db: Option<f32>,
+    pub hysteresis_db: Option<f32>,
+    pub bandwidth_hz: Option<f32>,
+    pub max_notches: Option<usize>,
+    pub auto_reset: Option<bool>,
+    pub quiet_hold_ms: Option<f32>,
+    pub quiet_threshold_db: Option<f32>,
+    /// If true, clears all active notch filters without changing other settings.
+    pub reset_notches: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1986,6 +2003,41 @@ async fn put_input_automixer(State(s): State<AppState>, Path(ch): Path<usize>, J
     StatusCode::NO_CONTENT.into_response()
 }
 
+// GET /api/v1/inputs/:ch/feedback
+async fn get_input_feedback(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(dsp) = cfg.input_dsp.get(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    Json(serde_json::json!(&dsp.feedback)).into_response()
+}
+
+// PUT /api/v1/inputs/:ch/feedback
+async fn put_input_feedback(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<UpdateFeedbackSuppressorRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    if let Some(v) = body.enabled            { dsp.feedback.enabled = v; }
+    if let Some(v) = body.threshold_db       { dsp.feedback.threshold_db = v.clamp(-60.0, 0.0); }
+    if let Some(v) = body.hysteresis_db      { dsp.feedback.hysteresis_db = v.clamp(0.0, 30.0); }
+    if let Some(v) = body.bandwidth_hz       { dsp.feedback.bandwidth_hz = v.clamp(1.0, 100.0); }
+    if let Some(v) = body.max_notches        { dsp.feedback.max_notches = v.clamp(1, 8); }
+    if let Some(v) = body.auto_reset         { dsp.feedback.auto_reset = v; }
+    if let Some(v) = body.quiet_hold_ms      { dsp.feedback.quiet_hold_ms = v.clamp(100.0, 30_000.0); }
+    if let Some(v) = body.quiet_threshold_db { dsp.feedback.quiet_threshold_db = v.clamp(-80.0, -20.0); }
+    // reset_notches: toggle enabled off/on — RT sync() will deactivate all notches
+    if body.reset_notches == Some(true) {
+        let was = dsp.feedback.enabled;
+        dsp.feedback.enabled = false;
+        drop(cfg);
+        let mut cfg2 = s.config.write().await;
+        if let Some(d) = cfg2.input_dsp.get_mut(ch) { d.feedback.enabled = was; }
+        drop(cfg2);
+        persist_or_500!(s);
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // GET /api/v1/signal-generators
 async fn get_signal_generators(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
@@ -2893,6 +2945,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
         .route("/api/v1/inputs/:ch/aec", get(get_input_aec).put(put_input_aec))
         .route("/api/v1/inputs/:ch/automixer", put(put_input_automixer))
+        .route("/api/v1/inputs/:ch/feedback", get(get_input_feedback).put(put_input_feedback))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))

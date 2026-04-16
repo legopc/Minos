@@ -123,6 +123,21 @@
   border-color: var(--text-accent);
 }
 
+.dsp-action-btn {
+  padding: 4px 10px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  cursor: pointer;
+  width: 100%;
+}
+.dsp-action-btn:hover {
+  background: var(--bg-hover);
+}
+
 .dsp-band-header {
   font-size: 10px;
   color: var(--text-dim);

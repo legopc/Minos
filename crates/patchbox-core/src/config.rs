@@ -226,6 +226,57 @@ pub struct AutomixerChannelConfig {
 
 fn default_am_weight() -> f32 { 1.0 }
 
+/// Automatic Feedback Suppressor (AFS) config per input channel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackSuppressorConfig {
+    /// Enable the feedback suppressor on this channel.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Level at which a bin is considered a feedback candidate (dBFS, negative).
+    #[serde(default = "default_afs_threshold")]
+    pub threshold_db: f32,
+    /// How much the peak must exceed its neighbours to be considered feedback (dB).
+    #[serde(default = "default_afs_hysteresis")]
+    pub hysteresis_db: f32,
+    /// Notch filter -3 dB bandwidth in Hz.
+    #[serde(default = "default_afs_bw")]
+    pub bandwidth_hz: f32,
+    /// Maximum number of simultaneous notch filters (1–8).
+    #[serde(default = "default_afs_max_notches")]
+    pub max_notches: usize,
+    /// Automatically remove all notches after `quiet_hold_ms` of silence.
+    #[serde(default)]
+    pub auto_reset: bool,
+    /// Hold time before auto-reset triggers (ms).
+    #[serde(default = "default_afs_quiet_hold")]
+    pub quiet_hold_ms: f32,
+    /// Level below which the channel is considered "quiet" for auto-reset (dBFS).
+    #[serde(default = "default_afs_quiet_threshold")]
+    pub quiet_threshold_db: f32,
+}
+
+fn default_afs_threshold()      -> f32   { -20.0 }
+fn default_afs_hysteresis()     -> f32   { 6.0   }
+fn default_afs_bw()             -> f32   { 10.0  }
+fn default_afs_max_notches()    -> usize { 6     }
+fn default_afs_quiet_hold()     -> f32   { 5000.0 }
+fn default_afs_quiet_threshold() -> f32  { -60.0 }
+
+impl Default for FeedbackSuppressorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: default_afs_threshold(),
+            hysteresis_db: default_afs_hysteresis(),
+            bandwidth_hz: default_afs_bw(),
+            max_notches: default_afs_max_notches(),
+            auto_reset: false,
+            quiet_hold_ms: default_afs_quiet_hold(),
+            quiet_threshold_db: default_afs_quiet_threshold(),
+        }
+    }
+}
+
 /// One automixer group (Dugan gain-sharing + optional NOM gating).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomixerGroupConfig {
@@ -295,6 +346,9 @@ pub struct InputChannelDsp {
     /// Automixer configuration (Dugan gain-sharing). None = not in any group.
     #[serde(default)]
     pub automixer: AutomixerChannelConfig,
+    /// Automatic Feedback Suppressor.
+    #[serde(default)]
+    pub feedback: FeedbackSuppressorConfig,
 }
 
 impl Default for InputChannelDsp {
@@ -310,6 +364,7 @@ impl Default for InputChannelDsp {
             compressor: CompressorConfig::default(),
             aec: AecConfig::default(),
             automixer: AutomixerChannelConfig::default(),
+            feedback: FeedbackSuppressorConfig::default(),
         }
     }
 }

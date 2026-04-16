@@ -6,6 +6,7 @@ use crate::dsp::automixer::AutomixerProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::eq::ParametricEq;
+use crate::dsp::feedback::FeedbackSuppressor;
 use crate::dsp::filters::{ButterworthFilter, FilterMode};
 use crate::dsp::gate::GateExpander;
 use crate::dsp::limiter::BrickWallLimiter;
@@ -166,7 +167,7 @@ impl Default for PerOutputDsp {
     fn default() -> Self { Self::new() }
 }
 
-/// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor → AEC.
+/// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor → AEC → AFS.
 pub struct PerInputDsp {
     pub gain_linear: f32,
     pub gain_ramp: RampState,
@@ -179,6 +180,8 @@ pub struct PerInputDsp {
     pub enabled: bool,
     /// AEC processor. `None` when AEC is disabled for this channel.
     pub aec: Option<AecProcessor>,
+    /// Automatic Feedback Suppressor.
+    pub feedback: FeedbackSuppressor,
     // DC blocker state: 1st-order HPF at ~2 Hz, always on
     dc_x1: f32,
     dc_y1: f32,
@@ -197,6 +200,7 @@ impl PerInputDsp {
             compressor: Compressor::new(),
             enabled: true,
             aec: None,
+            feedback: FeedbackSuppressor::new(),
             dc_x1: 0.0,
             dc_y1: 0.0,
         }
@@ -213,6 +217,7 @@ impl PerInputDsp {
         self.eq.sync(&cfg.eq);
         self.gate.sync(&cfg.gate, sample_rate);
         self.compressor.sync(&cfg.compressor, sample_rate);
+        self.feedback.sync(&cfg.feedback, sample_rate);
 
         // AEC: create/destroy processor based on config. Allocates on change only.
         if cfg.aec.enabled {
@@ -264,6 +269,7 @@ impl PerInputDsp {
         if let Some(aec) = &mut self.aec {
             aec.process(buf);
         }
+        self.feedback.process_block(buf);
     }
 }
 
