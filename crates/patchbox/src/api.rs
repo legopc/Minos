@@ -823,6 +823,8 @@ fn bus_to_response(idx: usize, bus: &InternalBusConfig) -> BusResponse {
         id: bus.id.clone(),
         name: bus.name.clone(),
         muted: bus.muted,
+        routing: bus.routing.clone(),
+        routing_gain: bus.routing_gain.clone(),
         dsp: input_dsp_to_value(&bus.dsp),
     }
 }
@@ -889,6 +891,8 @@ struct BusResponse {
     id: String,
     name: String,
     muted: bool,
+    routing: Vec<bool>,
+    routing_gain: Vec<f32>,
     dsp: serde_json::Value,
 }
 
