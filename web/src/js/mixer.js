@@ -440,7 +440,10 @@ function _buildGenStrip(gen) {
 
   const typeBadge = document.createElement('span');
   typeBadge.className = `gen-badge gen-type-${gen.gen_type}`;
-  typeBadge.textContent = gen.gen_type === 'sine' ? 'SINE' : gen.gen_type === 'white_noise' ? 'WHT' : 'PNK';
+  typeBadge.textContent = gen.gen_type === 'sine' ? 'SINE'
+    : gen.gen_type === 'white_noise' ? 'WHT'
+    : gen.gen_type === 'pink_noise' ? 'PNK'
+    : 'SWP';
 
   header.appendChild(nameEl);
   header.appendChild(typeBadge);
@@ -468,6 +471,56 @@ function _buildGenStrip(gen) {
     freqWrap.appendChild(freqInput);
     freqWrap.appendChild(freqLabel);
     strip.appendChild(freqWrap);
+  }
+
+  if (gen.gen_type === 'freq_sweep') {
+    const _makeFreqRow = (labelText, field, defaultVal) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'gen-freq-wrap';
+      const lbl = document.createElement('span');
+      lbl.className = 'gen-freq-label';
+      lbl.textContent = labelText;
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'gen-freq-input';
+      inp.min = 20; inp.max = 20000; inp.step = 1;
+      inp.value = gen[field] ?? defaultVal;
+      inp.title = labelText;
+      inp.onchange = async () => {
+        const f = parseFloat(inp.value);
+        if (!isNaN(f)) {
+          await api.putGenerator(gen.id, { [field]: f });
+          gen[field] = f;
+        }
+      };
+      wrap.appendChild(lbl);
+      wrap.appendChild(inp);
+      return wrap;
+    };
+    strip.appendChild(_makeFreqRow('Start Hz', 'sweep_start_hz', 20));
+    strip.appendChild(_makeFreqRow('End Hz', 'sweep_end_hz', 20000));
+
+    const durWrap = document.createElement('div');
+    durWrap.className = 'gen-freq-wrap';
+    const durLbl = document.createElement('span');
+    durLbl.className = 'gen-freq-label';
+    durLbl.textContent = 'Dur s';
+    const durInp = document.createElement('input');
+    durInp.type = 'number';
+    durInp.className = 'gen-freq-input';
+    durInp.min = 0.1; durInp.max = 300; durInp.step = 0.1;
+    durInp.value = gen.sweep_duration_s ?? 10;
+    durInp.title = 'Sweep duration (seconds)';
+    durInp.onchange = async () => {
+      const d = parseFloat(durInp.value);
+      if (!isNaN(d)) {
+        await api.putGenerator(gen.id, { sweep_duration_s: d });
+        gen.sweep_duration_s = d;
+      }
+    };
+    durWrap.appendChild(durLbl);
+    durWrap.appendChild(durInp);
+    strip.appendChild(durWrap);
   }
 
   const levelWrap = document.createElement('div');
@@ -525,8 +578,14 @@ function _buildGenStrip(gen) {
 function _showAddGenDialog() {
   const name = prompt('Generator name:');
   if (!name) return;
-  const typeStr = prompt('Type (sine / white_noise / pink_noise):', 'sine') ?? 'sine';
-  api.postGenerator({ name, gen_type: typeStr, freq_hz: 1000, level_db: -20, enabled: false })
+  const typeStr = prompt('Type (sine / white_noise / pink_noise / freq_sweep):', 'sine') ?? 'sine';
+  const body = { name, gen_type: typeStr, freq_hz: 1000, level_db: -20, enabled: false };
+  if (typeStr === 'freq_sweep') {
+    body.sweep_start_hz = 20;
+    body.sweep_end_hz = 20000;
+    body.sweep_duration_s = 10;
+  }
+  api.postGenerator(body)
     .then(gen => {
       st.setGenerator(gen);
       const masters = document.getElementById('mixer-masters');

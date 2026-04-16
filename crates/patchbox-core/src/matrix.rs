@@ -321,6 +321,7 @@ pub struct GeneratorState {
     pub gen_type: crate::config::SignalGenType,
     pub freq_hz: f32,
     pub enabled: bool,
+    pub sweep_pos: f32, // normalized position 0.0..1.0 through the sweep duration
 }
 
 impl GeneratorState {
@@ -332,6 +333,7 @@ impl GeneratorState {
             gen_type: crate::config::SignalGenType::Sine,
             freq_hz: 1000.0,
             enabled: false,
+            sweep_pos: 0.0,
         }
     }
 }
@@ -621,6 +623,28 @@ impl MatrixProcessor {
                         let pink = b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+white*0.5362;
                         b[6] = white * 0.115926;
                         *s = pink * 0.11 * level;
+                    }
+                }
+                crate::config::SignalGenType::FreqSweep => {
+                    let gcfg = &config.signal_generators[gen_idx];
+                    let f0 = gcfg.sweep_start_hz.max(20.0);
+                    let f1 = gcfg.sweep_end_hz.max(20.0);
+                    let dur = gcfg.sweep_duration_s.max(0.01);
+                    let pos_inc = 1.0 / (dur * sample_rate);
+                    // Logarithmic sweep: freq = f0 * (f1/f0)^sweep_pos
+                    let log_ratio = (f1 / f0).ln();
+                    for s in buf[..nf].iter_mut() {
+                        let freq = f0 * (log_ratio * gstate.sweep_pos).exp();
+                        let phase_inc = 2.0 * std::f32::consts::PI * freq / sample_rate;
+                        *s = gstate.phase.sin() * level;
+                        gstate.phase += phase_inc;
+                        if gstate.phase > std::f32::consts::TAU {
+                            gstate.phase -= std::f32::consts::TAU;
+                        }
+                        gstate.sweep_pos += pos_inc;
+                        if gstate.sweep_pos >= 1.0 {
+                            gstate.sweep_pos = 0.0;
+                        }
                     }
                 }
             }

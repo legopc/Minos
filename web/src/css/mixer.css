@@ -1164,6 +1164,7 @@
 .gen-type-white_noise { color: #94a3b8; border-color: #94a3b8; background: rgba(148,163,184,0.12); }
 .gen-type-pink_noise  { color: #f472b6; border-color: #f472b6; background: rgba(244,114,182,0.12); }
 .gen-type-sine        { color: #0891b2; border-color: #0891b2; background: rgba(8,145,178,0.12); }
+.gen-type-freq_sweep  { color: #f59e0b; border-color: #f59e0b; background: rgba(245,158,11,0.12); }
 
 .gen-freq-wrap {
   display: flex;

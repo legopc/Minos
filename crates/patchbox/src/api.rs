@@ -1022,10 +1022,19 @@ struct CreateGeneratorRequest {
     level_db: f32,
     #[serde(default)]
     enabled: bool,
+    #[serde(default = "default_sweep_start_api")]
+    sweep_start_hz: f32,
+    #[serde(default = "default_sweep_end_api")]
+    sweep_end_hz: f32,
+    #[serde(default = "default_sweep_duration_api")]
+    sweep_duration_s: f32,
 }
 
 fn default_gen_freq_api() -> f32 { 1000.0 }
 fn default_gen_level_api() -> f32 { -20.0 }
+fn default_sweep_start_api() -> f32 { 20.0 }
+fn default_sweep_end_api() -> f32 { 20000.0 }
+fn default_sweep_duration_api() -> f32 { 10.0 }
 
 #[derive(serde::Deserialize)]
 struct UpdateGeneratorRequest {
@@ -1034,6 +1043,9 @@ struct UpdateGeneratorRequest {
     freq_hz: Option<f32>,
     level_db: Option<f32>,
     enabled: Option<bool>,
+    sweep_start_hz: Option<f32>,
+    sweep_end_hz: Option<f32>,
+    sweep_duration_s: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1866,6 +1878,9 @@ async fn post_signal_generator(State(s): State<AppState>, Json(body): Json<Creat
         freq_hz: body.freq_hz,
         level_db: body.level_db,
         enabled: body.enabled,
+        sweep_start_hz: body.sweep_start_hz,
+        sweep_end_hz: body.sweep_end_hz,
+        sweep_duration_s: body.sweep_duration_s,
     };
     cfg.signal_generators.push(new_gen.clone());
     cfg.normalize();
@@ -1887,6 +1902,9 @@ async fn put_signal_generator(State(s): State<AppState>, Path(id): Path<String>,
     if let Some(f) = body.freq_hz { gen.freq_hz = f.clamp(20.0, 20000.0); }
     if let Some(l) = body.level_db { gen.level_db = l.clamp(-96.0, 0.0); }
     if let Some(e) = body.enabled { gen.enabled = e; }
+    if let Some(s) = body.sweep_start_hz { gen.sweep_start_hz = s.clamp(20.0, 20000.0); }
+    if let Some(s) = body.sweep_end_hz { gen.sweep_end_hz = s.clamp(20.0, 20000.0); }
+    if let Some(d) = body.sweep_duration_s { gen.sweep_duration_s = d.clamp(0.1, 300.0); }
     drop(cfg);
     let generators = s.config.read().await.signal_generators.clone();
     persist_or_500!(s);

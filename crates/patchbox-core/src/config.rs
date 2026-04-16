@@ -390,6 +390,9 @@ pub struct StereoLinkConfig {
 
 fn default_gen_freq() -> f32 { 1000.0 }
 fn default_gen_level() -> f32 { -20.0 }
+fn default_sweep_start() -> f32 { 20.0 }
+fn default_sweep_end() -> f32 { 20000.0 }
+fn default_sweep_duration() -> f32 { 10.0 }
 
 /// Type of built-in signal generator
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -399,6 +402,7 @@ pub enum SignalGenType {
     Sine,
     WhiteNoise,
     PinkNoise,
+    FreqSweep,
 }
 
 /// Built-in test-signal generator
@@ -415,6 +419,15 @@ pub struct SignalGeneratorConfig {
     pub level_db: f32,
     #[serde(default)]
     pub enabled: bool,
+    /// Frequency sweep start (Hz) — used when gen_type == FreqSweep
+    #[serde(default = "default_sweep_start")]
+    pub sweep_start_hz: f32,
+    /// Frequency sweep end (Hz) — used when gen_type == FreqSweep
+    #[serde(default = "default_sweep_end")]
+    pub sweep_end_hz: f32,
+    /// Sweep duration in seconds before looping
+    #[serde(default = "default_sweep_duration")]
+    pub sweep_duration_s: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
