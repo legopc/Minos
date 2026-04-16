@@ -6,6 +6,7 @@ use crate::dsp::automixer::AutomixerProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::eq::ParametricEq;
+use crate::dsp::deq::DynamicEq;
 use crate::dsp::feedback::FeedbackSuppressor;
 use crate::dsp::filters::{ButterworthFilter, FilterMode};
 use crate::dsp::gate::GateExpander;
@@ -75,6 +76,7 @@ pub struct PerOutputDsp {
     pub dither_amp: f32,
     /// Xorshift32 RNG state for TPDF dither. Never zero.
     dither_rng: u32,
+    pub deq: DynamicEq,
 }
 
 impl PerOutputDsp {
@@ -91,6 +93,7 @@ impl PerOutputDsp {
             last_gr_db: 0.0,
             dither_amp: 0.0,
             dither_rng: 0xDEAD_BEEF,
+            deq: DynamicEq::new(),
         }
     }
 
@@ -110,6 +113,7 @@ impl PerOutputDsp {
         } else {
             0.0
         };
+        self.deq.sync(&cfg.deq, sample_rate);
     }
 
     /// Legacy sync from separate EQ/limiter configs. Kept for backward compat.
@@ -139,6 +143,7 @@ impl PerOutputDsp {
         self.hpf.process_block(buf);
         self.lpf.process_block(buf);
         self.eq.process_block(buf);
+        self.deq.process_block(buf);
         self.compressor.process_block(buf);
         let min_gr = self.limiter.process_block(buf);
         self.last_gr_db = if min_gr <= 0.0 { -120.0 } else { 20.0 * min_gr.log10() };
@@ -182,6 +187,8 @@ pub struct PerInputDsp {
     pub aec: Option<AecProcessor>,
     /// Automatic Feedback Suppressor.
     pub feedback: FeedbackSuppressor,
+    /// Dynamic EQ.
+    pub deq: DynamicEq,
     // DC blocker state: 1st-order HPF at ~2 Hz, always on
     dc_x1: f32,
     dc_y1: f32,
@@ -201,6 +208,7 @@ impl PerInputDsp {
             enabled: true,
             aec: None,
             feedback: FeedbackSuppressor::new(),
+            deq: DynamicEq::new(),
             dc_x1: 0.0,
             dc_y1: 0.0,
         }
@@ -218,6 +226,7 @@ impl PerInputDsp {
         self.gate.sync(&cfg.gate, sample_rate);
         self.compressor.sync(&cfg.compressor, sample_rate);
         self.feedback.sync(&cfg.feedback, sample_rate);
+        self.deq.sync(&cfg.deq, sample_rate);
 
         // AEC: create/destroy processor based on config. Allocates on change only.
         if cfg.aec.enabled {
@@ -270,6 +279,7 @@ impl PerInputDsp {
             aec.process(buf);
         }
         self.feedback.process_block(buf);
+        self.deq.process_block(buf);
     }
 }
 

@@ -277,6 +277,94 @@ impl Default for FeedbackSuppressorConfig {
     }
 }
 
+/// Dynamic EQ band type.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DynamicEqBandType {
+    #[serde(rename = "peaking")]
+    Peaking,
+    #[serde(rename = "low_shelf")]
+    LowShelf,
+    #[serde(rename = "high_shelf")]
+    HighShelf,
+}
+impl Default for DynamicEqBandType { fn default() -> Self { Self::Peaking } }
+
+/// One band of the Dynamic EQ.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicEqBandConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_deq_freq")]
+    pub freq_hz: f32,
+    #[serde(default = "default_deq_q")]
+    pub q: f32,
+    #[serde(default)]
+    pub band_type: DynamicEqBandType,
+    /// Level at which processing kicks in (dBFS, typically negative).
+    #[serde(default = "default_deq_threshold")]
+    pub threshold_db: f32,
+    /// Compression ratio (1 = no effect, 4 = 4:1).
+    #[serde(default = "default_deq_ratio")]
+    pub ratio: f32,
+    #[serde(default = "default_deq_attack")]
+    pub attack_ms: f32,
+    #[serde(default = "default_deq_release")]
+    pub release_ms: f32,
+    /// Maximum gain change in dB. Negative = cut when loud; positive = boost when loud.
+    #[serde(default = "default_deq_range")]
+    pub range_db: f32,
+}
+
+fn default_deq_freq()      -> f32 { 5000.0 }
+fn default_deq_q()         -> f32 { 1.4 }
+fn default_deq_threshold() -> f32 { -18.0 }
+fn default_deq_ratio()     -> f32 { 4.0 }
+fn default_deq_attack()    -> f32 { 5.0 }
+fn default_deq_release()   -> f32 { 80.0 }
+fn default_deq_range()     -> f32 { -9.0 }
+
+impl Default for DynamicEqBandConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            freq_hz: default_deq_freq(),
+            q: default_deq_q(),
+            band_type: DynamicEqBandType::default(),
+            threshold_db: default_deq_threshold(),
+            ratio: default_deq_ratio(),
+            attack_ms: default_deq_attack(),
+            release_ms: default_deq_release(),
+            range_db: default_deq_range(),
+        }
+    }
+}
+
+/// Dynamic EQ — up to 4 bands.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicEqConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub bypassed: bool,
+    #[serde(default = "default_deq_bands")]
+    pub bands: Vec<DynamicEqBandConfig>,
+}
+
+fn default_deq_bands() -> Vec<DynamicEqBandConfig> {
+    vec![
+        DynamicEqBandConfig { freq_hz: 5000.0, range_db: -9.0, ..Default::default() },
+        DynamicEqBandConfig { freq_hz: 200.0,  range_db: -6.0, ..Default::default() },
+        DynamicEqBandConfig { freq_hz: 1000.0, range_db: -9.0, ..Default::default() },
+        DynamicEqBandConfig { freq_hz: 10000.0, range_db: -9.0, ..Default::default() },
+    ]
+}
+
+impl Default for DynamicEqConfig {
+    fn default() -> Self {
+        Self { enabled: false, bypassed: false, bands: default_deq_bands() }
+    }
+}
+
 /// One automixer group (Dugan gain-sharing + optional NOM gating).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutomixerGroupConfig {
@@ -349,6 +437,9 @@ pub struct InputChannelDsp {
     /// Automatic Feedback Suppressor.
     #[serde(default)]
     pub feedback: FeedbackSuppressorConfig,
+    /// Dynamic EQ — up to 4 bands.
+    #[serde(default)]
+    pub deq: DynamicEqConfig,
 }
 
 impl Default for InputChannelDsp {
@@ -365,6 +456,7 @@ impl Default for InputChannelDsp {
             aec: AecConfig::default(),
             automixer: AutomixerChannelConfig::default(),
             feedback: FeedbackSuppressorConfig::default(),
+            deq: DynamicEqConfig::default(),
         }
     }
 }
@@ -396,6 +488,9 @@ pub struct OutputChannelDsp {
     /// TPDF dither bit depth. 0 = disabled; 16 or 24 typical.
     #[serde(default)]
     pub dither_bits: u8,
+    /// Dynamic EQ — up to 4 bands.
+    #[serde(default)]
+    pub deq: DynamicEqConfig,
 }
 
 impl Default for OutputChannelDsp {
@@ -412,6 +507,7 @@ impl Default for OutputChannelDsp {
             limiter: LimiterConfig::default(),
             delay: DelayConfig::default(),
             dither_bits: 0,
+            deq: DynamicEqConfig::default(),
         }
     }
 }

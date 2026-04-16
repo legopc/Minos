@@ -527,6 +527,7 @@ use patchbox_core::config::{
     InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
     SignalGeneratorConfig, SignalGenType, AecConfig, AutomixerGroupConfig, FeedbackSuppressorConfig,
+    DynamicEqConfig,
 };
 
 use std::collections::HashMap;
@@ -862,6 +863,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
         "afs": {"enabled": dsp.feedback.enabled, "threshold_db": dsp.feedback.threshold_db,
                 "hysteresis_db": dsp.feedback.hysteresis_db, "bandwidth_hz": dsp.feedback.bandwidth_hz,
                 "max_notches": dsp.feedback.max_notches, "auto_reset": dsp.feedback.auto_reset},
+        "deq": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "params": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "bands": &dsp.deq.bands}},
     })
 }
 
@@ -880,6 +882,7 @@ fn output_dsp_to_value(dsp: &OutputChannelDsp) -> serde_json::Value {
             "bypassed": !dsp.delay.enabled,
             "dither_bits": dsp.dither_bits,
         })},
+        "deq": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "params": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "bands": &dsp.deq.bands}},
     })
 }
 
@@ -2065,6 +2068,40 @@ async fn put_input_feedback(State(s): State<AppState>, Path(ch): Path<usize>, Js
     StatusCode::NO_CONTENT.into_response()
 }
 
+// GET /api/v1/inputs/:ch/deq
+async fn get_input_deq(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(dsp) = cfg.input_dsp.get(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    Json(serde_json::json!(&dsp.deq)).into_response()
+}
+
+// PUT /api/v1/inputs/:ch/deq
+async fn put_input_deq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<DynamicEqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.deq = body;
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/outputs/:ch/deq
+async fn get_output_deq(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(dsp) = cfg.output_dsp.get(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    Json(serde_json::json!(&dsp.deq)).into_response()
+}
+
+// PUT /api/v1/outputs/:ch/deq
+async fn put_output_deq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<DynamicEqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.deq = body;
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // GET /api/v1/signal-generators
 async fn get_signal_generators(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
@@ -2975,6 +3012,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/inputs/:ch/aec", get(get_input_aec).put(put_input_aec))
         .route("/api/v1/inputs/:ch/automixer", put(put_input_automixer))
         .route("/api/v1/inputs/:ch/feedback", get(get_input_feedback).put(put_input_feedback))
+        .route("/api/v1/inputs/:ch/deq", get(get_input_deq).put(put_input_deq))
+        .route("/api/v1/outputs/:ch/deq", get(get_output_deq).put(put_output_deq))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))

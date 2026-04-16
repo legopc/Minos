@@ -262,6 +262,7 @@ function _onParamChange(channelId, block, newParams) {
         aec: 'aec',
         axm: 'automixer',
         afs: 'feedback',
+        deq: 'deq',
       };
       const mappedBlock = blockMap[block] || block;
       const endpoint = `${base}/${mappedBlock}`;

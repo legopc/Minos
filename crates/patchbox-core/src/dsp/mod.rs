@@ -2,6 +2,7 @@ pub mod aec;
 pub mod automixer;
 pub mod compressor;
 pub mod delay;
+pub mod deq;
 pub mod eq;
 pub mod feedback;
 pub mod filters;
