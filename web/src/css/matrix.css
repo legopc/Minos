@@ -12,7 +12,7 @@
 
 /* ── Custom Properties (on viewport so they're scoped to the matrix) ─────── */
 .matrix-viewport {
-  --label-w: 700px;
+  --label-w: 560px;
   --col-w:   68px;
   --row-h:   50px;
   flex: 1;
@@ -320,18 +320,29 @@
 
 /* ── Label column resize handle ─────────────────────────────────────────── */
 .ch-label-resize {
-  width: 6px;
+  width: 12px;
   align-self: stretch;
   cursor: col-resize;
   flex-shrink: 0;
   margin-left: auto;
-  border-left: 1px solid var(--border-primary);
-  transition: background 0.1s;
+  border-left: 2px solid var(--border-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, border-color 0.1s;
+}
+.ch-label-resize::after {
+  content: '⋮';
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1;
+  pointer-events: none;
 }
 .ch-label-resize:hover,
 .ch-label-resize.dragging {
   background: var(--color-accent);
-  opacity: 0.6;
+  border-color: var(--color-accent);
+  opacity: 0.8;
 }
 
 /* ── Channel Rows ───────────────────────────────────────────────────────── */
