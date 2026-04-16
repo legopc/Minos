@@ -526,7 +526,7 @@ use patchbox_core::config::{
     ZoneConfig,
     InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
-    SignalGeneratorConfig, SignalGenType,
+    SignalGeneratorConfig, SignalGenType, AecConfig,
 };
 
 use std::collections::HashMap;
@@ -644,6 +644,25 @@ async fn put_input_compressor(State(s): State<AppState>, Path(ch): Path<usize>, 
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
     dsp.compressor = body;
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/inputs/:ch/aec
+async fn get_input_aec(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match cfg.input_dsp.get(ch) {
+        Some(dsp) => Json(dsp.aec.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/inputs/:ch/aec
+async fn put_input_aec(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<AecConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.aec = body;
     drop(cfg);
     persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -838,6 +857,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
         "peq": {"enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
         "gte": {"enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
+        "aec": {"enabled": dsp.aec.enabled, "reference_tx_idx": dsp.aec.reference_tx_idx},
     })
 }
 
@@ -2760,6 +2780,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/signal-generators/:id/routing", get(get_generator_routing).put(put_generator_routing))
         .route("/api/v1/stereo-links", get(get_stereo_links).post(post_stereo_link))
         .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
+        .route("/api/v1/inputs/:ch/aec", get(get_input_aec).put(put_input_aec))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))

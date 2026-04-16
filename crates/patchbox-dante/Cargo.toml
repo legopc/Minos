@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 inferno = ["dep:inferno_aoip", "dep:libc", "dep:alsa"]
+aec = ["patchbox-core/aec"]
 
 [dependencies]
 patchbox-core = { path = "../patchbox-core" }

@@ -1,6 +1,7 @@
 //! Routing matrix — routes N inputs to M outputs with gain staging
 
 use crate::config::{EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig, VcaGroupType};
+use crate::dsp::aec::AecProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::eq::ParametricEq;
@@ -164,7 +165,7 @@ impl Default for PerOutputDsp {
     fn default() -> Self { Self::new() }
 }
 
-/// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor.
+/// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor → AEC.
 pub struct PerInputDsp {
     pub gain_linear: f32,
     pub gain_ramp: RampState,
@@ -175,6 +176,8 @@ pub struct PerInputDsp {
     pub gate: GateExpander,
     pub compressor: Compressor,
     pub enabled: bool,
+    /// AEC processor. `None` when AEC is disabled for this channel.
+    pub aec: Option<AecProcessor>,
     // DC blocker state: 1st-order HPF at ~2 Hz, always on
     dc_x1: f32,
     dc_y1: f32,
@@ -192,6 +195,7 @@ impl PerInputDsp {
             gate: GateExpander::new(),
             compressor: Compressor::new(),
             enabled: true,
+            aec: None,
             dc_x1: 0.0,
             dc_y1: 0.0,
         }
@@ -199,7 +203,7 @@ impl PerInputDsp {
 
     /// Sync coefficients from config. RT-safe: pure arithmetic, no allocation.
     pub fn sync(&mut self, cfg: &InputChannelDsp, sample_rate: f32) {
-        self.enabled = cfg.enabled; // sync enabled from config
+        self.enabled = cfg.enabled;
         self.gain_linear = 10f32.powf(cfg.gain_db / 20.0);
         self.gain_ramp.set_target(self.gain_linear);
         self.invert_polarity = cfg.polarity;
@@ -208,10 +212,25 @@ impl PerInputDsp {
         self.eq.sync(&cfg.eq);
         self.gate.sync(&cfg.gate, sample_rate);
         self.compressor.sync(&cfg.compressor, sample_rate);
+
+        // AEC: create/destroy processor based on config. Allocates on change only.
+        if cfg.aec.enabled {
+            if self.aec.is_none() {
+                let mut aec = AecProcessor::new(sample_rate as usize);
+                aec.reference_tx_idx = cfg.aec.reference_tx_idx;
+                self.aec = Some(aec);
+            } else if let Some(aec) = &mut self.aec {
+                aec.reference_tx_idx = cfg.aec.reference_tx_idx;
+            }
+        } else {
+            self.aec = None;
+        }
     }
 
     /// Process one block in-place through the full input DSP chain.
     /// RT-safe: no allocations, no locks.
+    ///
+    /// `reference`: optional reference (loudspeaker) signal for AEC, same length as `buf`.
     #[inline]
     pub fn process_block(&mut self, buf: &mut [f32]) {
         if !self.enabled {
@@ -230,12 +249,10 @@ impl PerInputDsp {
             for s in buf.iter_mut() { *s = -*s; }
         }
         if self.gain_ramp.is_settled() {
-            // Fast path: constant gain, no per-sample ramp overhead
             if (self.gain_ramp.current_linear - 1.0).abs() > 1e-6 {
                 for s in buf.iter_mut() { *s *= self.gain_ramp.current_linear; }
             }
         } else {
-            // Ramp path: smoothly interpolate gain per-sample to eliminate zipper noise
             for s in buf.iter_mut() { *s *= self.gain_ramp.tick(); }
         }
         self.hpf.process_block(buf);
@@ -243,6 +260,9 @@ impl PerInputDsp {
         self.eq.process_block(buf);
         self.gate.process_block(buf);
         self.compressor.process_block(buf);
+        if let Some(aec) = &mut self.aec {
+            aec.process(buf);
+        }
     }
 }
 
@@ -365,6 +385,9 @@ pub struct MatrixProcessor {
     pub gen_scratch: Box<[[f32; MAX_FRAMES]; MAX_GENERATORS]>,
     /// gen_gains_linear[gen_idx][tx_idx] — converted from generator_bus_matrix dB in sync()
     pub gen_gains_linear: Vec<Vec<f32>>,
+    /// AEC reference buffers: one per TX output, updated after each output stage.
+    /// Used as the render reference for AEC processors on the next block.
+    aec_ref_bufs: Box<[[f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]>,
 }
 
 impl MatrixProcessor {
@@ -385,6 +408,7 @@ impl MatrixProcessor {
             gen_states: Vec::new(),
             gen_scratch: Box::new([[0f32; MAX_FRAMES]; MAX_GENERATORS]),
             gen_gains_linear: Vec::new(),
+            aec_ref_bufs: Box::new([[0f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]),
         }
     }
 
@@ -544,6 +568,14 @@ impl MatrixProcessor {
         for (i, inp) in inputs.iter().enumerate().take(max_inputs) {
             self.scratch[i][..nf].copy_from_slice(&inp[..nf]);
             if let Some(dsp) = self.input_dsp.get_mut(i) {
+                // Feed previous-block TX output as AEC render reference
+                if let Some(ref mut aec) = dsp.aec {
+                    if let Some(ref_tx) = aec.reference_tx_idx {
+                        if ref_tx < MAX_INPUT_CHANNELS {
+                            aec.push_render(&self.aec_ref_bufs[ref_tx][..nf]);
+                        }
+                    }
+                }
                 dsp.process_block(&mut self.scratch[i][..nf]);
             }
             // Apply input VCA multiplier after input DSP
@@ -731,6 +763,11 @@ impl MatrixProcessor {
             if let Some(d) = self.output_dsp.get_mut(tx_idx) {
                 // sync_output_dsp called from MatrixProcessor::sync(); just process
                 d.process_block(&mut output[..nf], false);
+            }
+
+            // Snapshot TX output for AEC reference on the next block
+            if tx_idx < MAX_INPUT_CHANNELS {
+                self.aec_ref_bufs[tx_idx][..nf].copy_from_slice(&output[..nf]);
             }
         }
     }

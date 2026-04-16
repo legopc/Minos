@@ -199,6 +199,19 @@ impl Default for DelayConfig {
     }
 }
 
+/// AEC (Acoustic Echo Cancellation) config per input channel.
+/// Only active when the binary is compiled with `--features aec`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AecConfig {
+    /// Enable echo cancellation on this input
+    #[serde(default)]
+    pub enabled: bool,
+    /// TX output index to use as the reference (loudspeaker) signal.
+    /// None = AEC processes without a reference (still runs NS/HPF).
+    #[serde(default)]
+    pub reference_tx_idx: Option<usize>,
+}
+
 /// Full DSP chain for one input channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputChannelDsp {
@@ -219,6 +232,9 @@ pub struct InputChannelDsp {
     pub gate: GateConfig,
     #[serde(default)]
     pub compressor: CompressorConfig,
+    /// AEC configuration. Only functional with `--features aec`.
+    #[serde(default)]
+    pub aec: AecConfig,
 }
 
 impl Default for InputChannelDsp {
@@ -232,6 +248,7 @@ impl Default for InputChannelDsp {
             eq: EqConfig::default(),
             gate: GateConfig::default(),
             compressor: CompressorConfig::default(),
+            aec: AecConfig::default(),
         }
     }
 }

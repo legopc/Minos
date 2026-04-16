@@ -32,3 +32,4 @@ path = "src/lib.rs"
 [features]
 default = []
 inferno = ['patchbox-dante/inferno']
+aec = ['patchbox-core/aec']

@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aec3 = { version = "0.1.7", optional = true }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[features]
+default = []
+aec = ["dep:aec3"]
