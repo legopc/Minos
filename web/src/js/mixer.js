@@ -180,6 +180,20 @@ function _renderStrips(strips, masters) {
     masters.appendChild(addBtn);
   }
 
+  // Signal Generators section
+  const gens = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
+  const genSep = document.createElement('div');
+  genSep.className = 'mixer-gen-separator';
+  genSep.textContent = 'GEN';
+  masters.appendChild(genSep);
+  gens.forEach(gen => masters.appendChild(_buildGenStrip(gen)));
+  const addGenBtn = document.createElement('button');
+  addGenBtn.className = 'mixer-add-gen-btn';
+  addGenBtn.textContent = '+';
+  addGenBtn.title = 'Add signal generator';
+  addGenBtn.onclick = () => _showAddGenDialog();
+  masters.appendChild(addGenBtn);
+
   // Output master strips (one per output, replaces zone-based iteration)
   const outSep = document.createElement('div');
   outSep.className = 'mixer-output-separator';
@@ -212,7 +226,8 @@ function _buildStereoLinkBtn(leftCh, rightCh) {
         btn.textContent = '—';
         btn.title = `Link stereo pair ${leftIdx}/${rightIdx}`;
       } else {
-        const sl = await api.postStereoLink(leftIdx, rightIdx);
+        await api.postStereoLink(leftIdx, rightIdx);
+        const sl = { left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 };
         const existing = st.state.stereoLinks.filter(s => s.left_channel !== leftIdx);
         st.setStereoLinks([...existing, sl]);
         btn.classList.add('linked');
@@ -396,12 +411,183 @@ async function _showAddVcaDialog() {
   const type = prompt('Type (input or output):', 'input');
   if (type !== 'input' && type !== 'output') { toast('Type must be "input" or "output"', true); return; }
   try {
-    const vca = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
+    const result = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
+    const vca = { id: result?.id ?? `vca_?`, name, group_type: type, members: [], gain_db: 0, muted: false };
     st.setVcaGroup(vca);
     const masters = document.getElementById('mixer-masters');
     const strips  = document.querySelector('.mixer-strips');
     if (strips && masters) _renderStrips(strips, masters);
   } catch(e) { toast(e.message, true); }
+}
+
+function _buildGenStrip(gen) {
+  const strip = document.createElement('div');
+  strip.className = 'mixer-strip gen-strip';
+  strip.id = `gen-strip-${gen.id}`;
+
+  const header = document.createElement('div');
+  header.className = 'vca-strip-header';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'strip-name gen-strip-name';
+  nameEl.textContent = gen.name;
+
+  const typeBadge = document.createElement('span');
+  typeBadge.className = `gen-badge gen-type-${gen.gen_type}`;
+  typeBadge.textContent = gen.gen_type === 'sine' ? 'SINE' : gen.gen_type === 'white_noise' ? 'WHT' : 'PNK';
+
+  header.appendChild(nameEl);
+  header.appendChild(typeBadge);
+  strip.appendChild(header);
+
+  if (gen.gen_type === 'sine') {
+    const freqWrap = document.createElement('div');
+    freqWrap.className = 'gen-freq-wrap';
+    const freqInput = document.createElement('input');
+    freqInput.type = 'number';
+    freqInput.className = 'gen-freq-input';
+    freqInput.min = 20; freqInput.max = 20000; freqInput.step = 1;
+    freqInput.value = gen.freq_hz ?? 1000;
+    freqInput.title = 'Frequency (Hz)';
+    freqInput.onchange = async () => {
+      const f = parseFloat(freqInput.value);
+      if (!isNaN(f)) {
+        await api.putGenerator(gen.id, { freq_hz: f });
+        gen.freq_hz = f;
+      }
+    };
+    const freqLabel = document.createElement('span');
+    freqLabel.className = 'gen-freq-label';
+    freqLabel.textContent = 'Hz';
+    freqWrap.appendChild(freqInput);
+    freqWrap.appendChild(freqLabel);
+    strip.appendChild(freqWrap);
+  }
+
+  const levelWrap = document.createElement('div');
+  levelWrap.className = 'gen-level-wrap';
+  const levelLabel = document.createElement('span');
+  levelLabel.className = 'gen-level-label';
+  levelLabel.textContent = isFinite(gen.level_db) ? gen.level_db.toFixed(1) + ' dB' : '−∞';
+  const levelSlider = document.createElement('input');
+  levelSlider.type = 'range';
+  levelSlider.className = 'gen-level-slider';
+  levelSlider.min = -96; levelSlider.max = 0; levelSlider.step = 0.5;
+  levelSlider.value = isFinite(gen.level_db) ? gen.level_db : -96;
+  levelSlider.oninput = () => {
+    const db = parseFloat(levelSlider.value);
+    levelLabel.textContent = db <= -96 ? '−∞' : db.toFixed(1) + ' dB';
+  };
+  levelSlider.onchange = async () => {
+    const db = parseFloat(levelSlider.value);
+    await api.putGenerator(gen.id, { level_db: db <= -96 ? -Infinity : db });
+    gen.level_db = db;
+  };
+  levelWrap.appendChild(levelLabel);
+  levelWrap.appendChild(levelSlider);
+  strip.appendChild(levelWrap);
+
+  const enableBtn = document.createElement('button');
+  enableBtn.className = 'gen-enable-btn strip-mute-btn' + (gen.enabled ? ' active' : '');
+  enableBtn.textContent = gen.enabled ? 'ON' : 'OFF';
+  enableBtn.onclick = async () => {
+    const newEnabled = !gen.enabled;
+    await api.putGenerator(gen.id, { enabled: newEnabled });
+    gen.enabled = newEnabled;
+    enableBtn.classList.toggle('active', newEnabled);
+    enableBtn.textContent = newEnabled ? 'ON' : 'OFF';
+  };
+  strip.appendChild(enableBtn);
+
+  const outputs = st.outputList();
+  const matrix = st.getGeneratorMatrix ? st.getGeneratorMatrix() : [];
+  const genIdx = (st.generatorList ? st.generatorList() : []).indexOf(gen);
+  const routeBtn = document.createElement('button');
+  routeBtn.className = 'bus-sources-badge gen-route-btn';
+  const routedCount = (matrix[genIdx] ?? []).filter(g => isFinite(g) && g > -96).length;
+  routeBtn.textContent = `→ ${routedCount}`;
+  routeBtn.title = 'Route to outputs';
+  routeBtn.onclick = (e) => _showGenRoutingPopover(gen, genIdx, routeBtn, e);
+  strip.appendChild(routeBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'vca-delete-btn gen-delete-btn';
+  delBtn.textContent = '×';
+  delBtn.title = 'Delete generator';
+  delBtn.onclick = async () => {
+    if (!confirm(`Delete generator "${gen.name}"?`)) return;
+    await api.deleteGenerator(gen.id);
+    st.removeGenerator(gen.id);
+    strip.remove();
+  };
+  strip.appendChild(delBtn);
+
+  return strip;
+}
+
+function _showAddGenDialog() {
+  const name = prompt('Generator name:');
+  if (!name) return;
+  const typeStr = prompt('Type (sine / white_noise / pink_noise):', 'sine') ?? 'sine';
+  api.postGenerator({ name, gen_type: typeStr, freq_hz: 1000, level_db: -20, enabled: false })
+    .then(gen => {
+      st.setGenerator(gen);
+      const masters = document.getElementById('mixer-masters');
+      const strips  = document.querySelector('.mixer-strips');
+      if (strips && masters) _renderStrips(strips, masters);
+    })
+    .catch(e => alert('Failed: ' + e));
+}
+
+function _showGenRoutingPopover(gen, genIdx, anchor, evt) {
+  document.querySelectorAll('.gen-routing-popover').forEach(p => p.remove());
+  const outputs = st.outputList();
+  const matrix = st.getGeneratorMatrix ? st.getGeneratorMatrix() : [];
+  const gains = matrix[genIdx] ?? [];
+
+  const pop = document.createElement('div');
+  pop.className = 'bus-routing-panel gen-routing-popover';
+  pop.style.cssText = 'position:fixed;z-index:999;background:var(--bg-panel);border:1px solid var(--border);border-radius:4px;padding:12px;min-width:200px;';
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.left = rect.left + 'px';
+
+  const title = document.createElement('div');
+  title.className = 'bus-routing-title';
+  title.textContent = `Route "${gen.name}" to outputs`;
+  pop.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'bus-routing-list';
+
+  outputs.forEach((out, txIdx) => {
+    const row = document.createElement('label');
+    row.className = 'bus-route-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    const gain = gains[txIdx] ?? -Infinity;
+    cb.checked = isFinite(gain) && gain > -96;
+    cb.onchange = async () => {
+      const newGains = [...(matrix[genIdx] ?? Array(outputs.length).fill(-Infinity))];
+      newGains[txIdx] = cb.checked ? 0.0 : -Infinity;
+      await api.putGeneratorRouting(gen.id, newGains);
+      const mat = st.getGeneratorMatrix ? st.getGeneratorMatrix() : [];
+      if (mat[genIdx]) mat[genIdx] = newGains;
+      st.setGeneratorMatrix([...mat]);
+    };
+    const lbl = document.createElement('span');
+    lbl.className = 'bus-route-label';
+    lbl.textContent = out.name ?? out.id;
+    row.appendChild(cb);
+    row.appendChild(lbl);
+    list.appendChild(row);
+  });
+  pop.appendChild(list);
+
+  document.body.appendChild(pop);
+  evt.stopPropagation();
+  const close = (e) => { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', close); } };
+  setTimeout(() => document.addEventListener('click', close), 0);
 }
 
 function _buildInputStrip(ch) {
