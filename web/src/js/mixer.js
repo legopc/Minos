@@ -243,12 +243,14 @@ function _buildVcaStrip(vca) {
   header.appendChild(badge);
   strip.appendChild(header);
 
-  // Members count
+  // Members (clickable → edit popover)
   const members = document.createElement('div');
   members.className = 'vca-members';
   const memberIds = vca.members ?? vca.channel_ids ?? [];
-  members.textContent = memberIds.length ? memberIds.join(', ') : 'no members';
-  members.title = 'VCA members';
+  members.textContent = memberIds.length ? `${memberIds.length} member${memberIds.length !== 1 ? 's' : ''}` : 'no members';
+  members.title = 'Click to edit members';
+  members.style.cursor = 'pointer';
+  members.onclick = (e) => { e.stopPropagation(); _openVcaMemberEditor(vca, members); };
   strip.appendChild(members);
 
   // Gain fader
@@ -303,6 +305,89 @@ function _buildVcaStrip(vca) {
   strip.appendChild(delBtn);
 
   return strip;
+}
+
+function _openVcaMemberEditor(vca, membersEl) {
+  // Remove any existing popover
+  document.querySelectorAll('.vca-member-popover').forEach(p => p.remove());
+
+  const isInput = (vca.group_type ?? 'input') !== 'output';
+  const candidates = isInput
+    ? st.channelList().map(ch => ({ id: ch.id, label: ch.name || ch.id }))
+    : st.outputList().map(out => ({ id: out.id, label: out.name || out.id }));
+
+  const currentMembers = new Set(vca.members ?? vca.channel_ids ?? []);
+
+  const pop = document.createElement('div');
+  pop.className = 'vca-member-popover';
+
+  const title = document.createElement('div');
+  title.className = 'vca-member-popover-title';
+  title.textContent = `Members — ${vca.name}`;
+  pop.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'vca-member-list';
+
+  if (candidates.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'vca-member-empty';
+    empty.textContent = isInput ? 'No input channels available' : 'No output channels available';
+    list.appendChild(empty);
+  } else {
+    candidates.forEach(({ id, label }) => {
+      const row = document.createElement('label');
+      row.className = 'vca-member-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = currentMembers.has(id);
+      cb.dataset.id = id;
+      const span = document.createElement('span');
+      span.textContent = label;
+      row.appendChild(cb);
+      row.appendChild(span);
+      list.appendChild(row);
+    });
+  }
+  pop.appendChild(list);
+
+  const footer = document.createElement('div');
+  footer.className = 'vca-member-popover-footer';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.className = 'vca-member-save-btn';
+  saveBtn.onclick = async () => {
+    const selected = [...list.querySelectorAll('input[type=checkbox]:checked')].map(c => c.dataset.id);
+    try {
+      await api.putVcaGroup(vca.id, { members: selected });
+      vca.members = selected;
+      membersEl.textContent = selected.length ? `${selected.length} member${selected.length !== 1 ? 's' : ''}` : 'no members';
+      pop.remove();
+    } catch(e) { toast(e.message, true); }
+  };
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className = 'vca-member-cancel-btn';
+  cancelBtn.onclick = () => pop.remove();
+
+  footer.appendChild(saveBtn);
+  footer.appendChild(cancelBtn);
+  pop.appendChild(footer);
+
+  // Position below the members label
+  membersEl.parentElement.style.position = 'relative';
+  membersEl.parentElement.appendChild(pop);
+
+  // Close on outside click
+  const closeHandler = (e) => {
+    if (!pop.contains(e.target) && e.target !== membersEl) {
+      pop.remove();
+      document.removeEventListener('click', closeHandler, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
 }
 
 async function _showAddVcaDialog() {
