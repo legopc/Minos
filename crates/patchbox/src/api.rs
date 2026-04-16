@@ -526,6 +526,7 @@ use patchbox_core::config::{
     ZoneConfig,
     InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
+    SignalGeneratorConfig, SignalGenType,
 };
 
 use std::collections::HashMap;
@@ -1008,6 +1009,37 @@ struct UpdateVcaRequest {
     pub gain_db: Option<f32>,
     pub muted: Option<bool>,
     pub members: Option<Vec<String>>,
+}
+
+#[derive(serde::Deserialize)]
+struct CreateGeneratorRequest {
+    name: String,
+    #[serde(default)]
+    gen_type: SignalGenType,
+    #[serde(default = "default_gen_freq_api")]
+    freq_hz: f32,
+    #[serde(default = "default_gen_level_api")]
+    level_db: f32,
+    #[serde(default)]
+    enabled: bool,
+}
+
+fn default_gen_freq_api() -> f32 { 1000.0 }
+fn default_gen_level_api() -> f32 { -20.0 }
+
+#[derive(serde::Deserialize)]
+struct UpdateGeneratorRequest {
+    name: Option<String>,
+    gen_type: Option<SignalGenType>,
+    freq_hz: Option<f32>,
+    level_db: Option<f32>,
+    enabled: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+struct UpdateGeneratorMatrixRequest {
+    /// gains[tx_idx] = gain_db (f32::NEG_INFINITY or absent = not routed)
+    gains: Vec<f32>,
 }
 
 #[derive(Deserialize)]
@@ -1813,6 +1845,100 @@ async fn delete_vca_group(State(s): State<AppState>, Path(id): Path<String>) -> 
     StatusCode::NO_CONTENT.into_response()
 }
 
+// GET /api/v1/signal-generators
+async fn get_signal_generators(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(serde_json::json!({
+        "signal_generators": cfg.signal_generators,
+        "generator_bus_matrix": cfg.generator_bus_matrix,
+    })).into_response()
+}
+
+// POST /api/v1/signal-generators
+async fn post_signal_generator(State(s): State<AppState>, Json(body): Json<CreateGeneratorRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let idx = cfg.signal_generators.len();
+    let id = format!("gen_{}", idx);
+    let new_gen = SignalGeneratorConfig {
+        id: id.clone(),
+        name: body.name,
+        gen_type: body.gen_type,
+        freq_hz: body.freq_hz,
+        level_db: body.level_db,
+        enabled: body.enabled,
+    };
+    cfg.signal_generators.push(new_gen.clone());
+    cfg.normalize();
+    drop(cfg);
+    let generators = s.config.read().await.signal_generators.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    (StatusCode::CREATED, Json(new_gen)).into_response()
+}
+
+// PUT /api/v1/signal-generators/:id
+async fn put_signal_generator(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateGeneratorRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(gen) = cfg.signal_generators.iter_mut().find(|g| g.id == id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Some(n) = body.name { gen.name = n; }
+    if let Some(t) = body.gen_type { gen.gen_type = t; }
+    if let Some(f) = body.freq_hz { gen.freq_hz = f.clamp(20.0, 20000.0); }
+    if let Some(l) = body.level_db { gen.level_db = l.clamp(-96.0, 0.0); }
+    if let Some(e) = body.enabled { gen.enabled = e; }
+    drop(cfg);
+    let generators = s.config.read().await.signal_generators.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/signal-generators/:id
+async fn delete_signal_generator(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let before = cfg.signal_generators.len();
+    cfg.signal_generators.retain(|g| g.id != id);
+    if cfg.signal_generators.len() == before {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    cfg.normalize();
+    drop(cfg);
+    let generators = s.config.read().await.signal_generators.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/signal-generators/:id/routing
+async fn get_generator_routing(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(idx) = cfg.signal_generators.iter().position(|g| g.id == id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let gains = cfg.generator_bus_matrix.get(idx).cloned().unwrap_or_default();
+    Json(serde_json::json!({"id": id, "gains": gains})).into_response()
+}
+
+// PUT /api/v1/signal-generators/:id/routing
+async fn put_generator_routing(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateGeneratorMatrixRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(idx) = cfg.signal_generators.iter().position(|g| g.id == id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    cfg.normalize();
+    if let Some(row) = cfg.generator_bus_matrix.get_mut(idx) {
+        for (tx_idx, &gain) in body.gains.iter().enumerate() {
+            if let Some(cell) = row.get_mut(tx_idx) {
+                *cell = gain;
+            }
+        }
+    }
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // GET /api/v1/stereo-links
 async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
@@ -2611,6 +2737,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
         .route("/api/v1/vca-groups", get(get_vca_groups).post(post_vca_group))
         .route("/api/v1/vca-groups/:id", put(put_vca_group).delete(delete_vca_group))
+        .route("/api/v1/signal-generators", get(get_signal_generators).post(post_signal_generator))
+        .route("/api/v1/signal-generators/:id", put(put_signal_generator).delete(delete_signal_generator))
+        .route("/api/v1/signal-generators/:id/routing", get(get_generator_routing).put(put_generator_routing))
         .route("/api/v1/stereo-links", get(get_stereo_links).post(post_stereo_link))
         .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))

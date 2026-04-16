@@ -26,6 +26,8 @@ const _state = {
   },
   vcaGroups:     [],    // VcaGroupConfig[]
   stereoLinks:   [],    // StereoLinkConfig[]
+  generators:    [],    // SignalGeneratorConfig[]
+  generatorBusMatrix: [], // generator_bus_matrix[gen_idx][tx_idx]
 };
 
 export const state = _state;
@@ -82,6 +84,17 @@ export function getStereoLink(rxIdx)       {
   return _state.stereoLinks.find(sl => sl.left_channel === rxIdx || sl.right_channel === rxIdx) ?? null;
 }
 export function isStereoLinked(rxIdx)      { return !!getStereoLink(rxIdx)?.linked; }
+
+export function setGenerators(list)        { _state.generators = list ?? []; }
+export function setGenerator(gen)          {
+  const idx = _state.generators.findIndex(g => g.id === gen.id);
+  if (idx >= 0) _state.generators[idx] = gen;
+  else _state.generators.push(gen);
+}
+export function removeGenerator(id)        { _state.generators = _state.generators.filter(g => g.id !== id); }
+export function generatorList()            { return _state.generators; }
+export function getGeneratorMatrix()       { return _state.generatorBusMatrix ?? []; }
+export function setGeneratorMatrix(m)      { _state.generatorBusMatrix = m; }
 
 export function getZoneColour(colourIndex) {
   return `var(--zone-color-${(colourIndex ?? 0) % 10})`;

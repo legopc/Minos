@@ -388,6 +388,35 @@ pub struct StereoLinkConfig {
     pub pan: f32,
 }
 
+fn default_gen_freq() -> f32 { 1000.0 }
+fn default_gen_level() -> f32 { -20.0 }
+
+/// Type of built-in signal generator
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalGenType {
+    #[default]
+    Sine,
+    WhiteNoise,
+    PinkNoise,
+}
+
+/// Built-in test-signal generator
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignalGeneratorConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub gen_type: SignalGenType,
+    #[serde(default = "default_gen_freq")]
+    pub freq_hz: f32,
+    /// Output level in dB. f32::NEG_INFINITY = silent.
+    #[serde(default = "default_gen_level")]
+    pub level_db: f32,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchboxConfig {
     /// Number of Dante RX channels (sources in)
@@ -482,6 +511,12 @@ pub struct PatchboxConfig {
     /// Stereo linked input pairs
     #[serde(default)]
     pub stereo_links: Vec<StereoLinkConfig>,
+    /// Built-in signal generators
+    #[serde(default)]
+    pub signal_generators: Vec<SignalGeneratorConfig>,
+    /// generator_bus_matrix[gen_idx][tx_idx] = gain_db (f32::NEG_INFINITY = not routed)
+    #[serde(default)]
+    pub generator_bus_matrix: Vec<Vec<f32>>,
 }
 
 impl Default for PatchboxConfig {
@@ -521,6 +556,8 @@ impl Default for PatchboxConfig {
             xp_ramp_ms: 0.0,
             vca_groups: vec![],
             stereo_links: vec![],
+            signal_generators: vec![],
+            generator_bus_matrix: vec![],
         }
     }
 }
@@ -606,6 +643,13 @@ impl PatchboxConfig {
         }
 
         self.monitor_volume_db = self.monitor_volume_db.clamp(-60.0, 12.0);
+
+        // Normalize generator_bus_matrix: [n_gens][tx_channels]
+        let n_gens = self.signal_generators.len();
+        self.generator_bus_matrix.resize(n_gens, vec![f32::NEG_INFINITY; self.tx_channels]);
+        for row in &mut self.generator_bus_matrix {
+            row.resize(self.tx_channels, f32::NEG_INFINITY);
+        }
     }
 
     /// Semantic validation after normalize(). Returns first error found.

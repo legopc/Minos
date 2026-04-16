@@ -254,6 +254,7 @@ pub const MAX_FRAMES: usize = 1024;
 pub const MAX_INPUT_CHANNELS: usize = 64;
 pub const MAX_BUSES: usize = 8;
 pub const MAX_VCA_GROUPS: usize = 16;
+pub const MAX_GENERATORS: usize = 8;
 
 
 /// Per-bus DSP and summation buffer. Stack-allocated, zero heap use in RT path.
@@ -312,6 +313,29 @@ impl Default for BusProcessor {
     fn default() -> Self { Self::new() }
 }
 
+/// Per-generator oscillator/noise state (stack-allocated)
+pub struct GeneratorState {
+    pub phase: f32,     // sine oscillator phase
+    pub rng: u64,       // xorshift64 state for white/pink noise
+    pub b: [f32; 7],    // pink noise IIR state (Paul Kellet filter)
+    pub gen_type: crate::config::SignalGenType,
+    pub freq_hz: f32,
+    pub enabled: bool,
+}
+
+impl GeneratorState {
+    fn new() -> Self {
+        Self {
+            phase: 0.0,
+            rng: 0x123456789ABCDEF1u64,
+            b: [0.0f32; 7],
+            gen_type: crate::config::SignalGenType::Sine,
+            freq_hz: 1000.0,
+            enabled: false,
+        }
+    }
+}
+
 /// Stateful routing matrix processor owning both input and output DSP chains.
 ///
 /// Create once, call `sync()` when config changes, call `process()` per audio block.
@@ -333,6 +357,12 @@ pub struct MatrixProcessor {
     pub vca_input_map: [Option<usize>; MAX_INPUT_CHANNELS],
     /// vca_output_map[tx_idx] = Some(vca_group_idx) if that output is in a VCA output group.
     pub vca_output_map: [Option<usize>; MAX_INPUT_CHANNELS],
+    /// Per-generator oscillator state
+    pub gen_states: Vec<GeneratorState>,
+    /// Pre-allocated scratch buffers for generator audio [gen_idx][sample]
+    pub gen_scratch: Box<[[f32; MAX_FRAMES]; MAX_GENERATORS]>,
+    /// gen_gains_linear[gen_idx][tx_idx] — converted from generator_bus_matrix dB in sync()
+    pub gen_gains_linear: Vec<Vec<f32>>,
 }
 
 impl MatrixProcessor {
@@ -350,6 +380,9 @@ impl MatrixProcessor {
             vca_ramps: std::array::from_fn(|_| RampState::new(1.0)),
             vca_input_map: [None; MAX_INPUT_CHANNELS],
             vca_output_map: [None; MAX_INPUT_CHANNELS],
+            gen_states: Vec::new(),
+            gen_scratch: Box::new([[0f32; MAX_FRAMES]; MAX_GENERATORS]),
+            gen_gains_linear: Vec::new(),
         }
     }
 
@@ -430,6 +463,34 @@ impl MatrixProcessor {
                 }
             }
         }
+
+        // Sync generator states
+        let n_gens = cfg.signal_generators.len().min(MAX_GENERATORS);
+        while self.gen_states.len() < n_gens {
+            self.gen_states.push(GeneratorState::new());
+        }
+        for (i, gstate) in self.gen_states.iter_mut().enumerate().take(n_gens) {
+            if let Some(gcfg) = cfg.signal_generators.get(i) {
+                gstate.gen_type = gcfg.gen_type;
+                gstate.freq_hz = gcfg.freq_hz;
+                gstate.enabled = gcfg.enabled;
+            }
+        }
+        // Sync generator→TX linear gains
+        while self.gen_gains_linear.len() < n_gens {
+            self.gen_gains_linear.push(vec![0.0f32; cfg.tx_channels]);
+        }
+        for (i, gains) in self.gen_gains_linear.iter_mut().enumerate().take(n_gens) {
+            let n_tx = cfg.tx_channels;
+            gains.resize(n_tx.max(gains.len()), 0.0);
+            for tx_idx in 0..n_tx {
+                let db = cfg.generator_bus_matrix.get(i)
+                    .and_then(|row| row.get(tx_idx))
+                    .copied()
+                    .unwrap_or(f32::NEG_INFINITY);
+                gains[tx_idx] = if db.is_finite() { db_to_linear(db) } else { 0.0 };
+            }
+        }
     }
 
     /// Process one audio block: input DSP → matrix routing → output DSP.
@@ -506,6 +567,65 @@ impl MatrixProcessor {
             bp.process(nf, muted);
         }
 
+        // --- Generate signal generator buffers (once, before output mix loop) ---
+        let n_gens = config.signal_generators.len().min(self.gen_states.len()).min(MAX_GENERATORS);
+        for gen_idx in 0..n_gens {
+            let gstate = &mut self.gen_states[gen_idx];
+            let buf = &mut self.gen_scratch[gen_idx];
+            if !gstate.enabled {
+                for s in buf[..nf].iter_mut() { *s = 0.0; }
+                continue;
+            }
+            let level_db = config.signal_generators[gen_idx].level_db;
+            if !level_db.is_finite() {
+                for s in buf[..nf].iter_mut() { *s = 0.0; }
+                continue;
+            }
+            let level = db_to_linear(level_db);
+            match gstate.gen_type {
+                crate::config::SignalGenType::Sine => {
+                    let phase_inc = 2.0 * std::f32::consts::PI * gstate.freq_hz / sample_rate;
+                    for s in buf[..nf].iter_mut() {
+                        *s = gstate.phase.sin() * level;
+                        gstate.phase += phase_inc;
+                        if gstate.phase > std::f32::consts::TAU {
+                            gstate.phase -= std::f32::consts::TAU;
+                        }
+                    }
+                }
+                crate::config::SignalGenType::WhiteNoise => {
+                    for s in buf[..nf].iter_mut() {
+                        let mut x = gstate.rng;
+                        x ^= x << 13;
+                        x ^= x >> 7;
+                        x ^= x << 17;
+                        gstate.rng = x;
+                        *s = (x as i64 as f32) / (i64::MAX as f32) * level;
+                    }
+                }
+                crate::config::SignalGenType::PinkNoise => {
+                    let b = &mut gstate.b;
+                    for s in buf[..nf].iter_mut() {
+                        let mut x = gstate.rng;
+                        x ^= x << 13;
+                        x ^= x >> 7;
+                        x ^= x << 17;
+                        gstate.rng = x;
+                        let white = (x as i64 as f32) / (i64::MAX as f32);
+                        b[0] = 0.99886 * b[0] + white * 0.0555179;
+                        b[1] = 0.99332 * b[1] + white * 0.0750759;
+                        b[2] = 0.96900 * b[2] + white * 0.1538520;
+                        b[3] = 0.86650 * b[3] + white * 0.3104856;
+                        b[4] = 0.55000 * b[4] + white * 0.5329522;
+                        b[5] = -0.7616  * b[5] - white * 0.0168980;
+                        let pink = b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+white*0.5362;
+                        b[6] = white * 0.115926;
+                        *s = pink * 0.11 * level;
+                    }
+                }
+            }
+        }
+
         for (tx_idx, output) in outputs.iter_mut().enumerate() {
             let out_gain = db_to_linear(
                 config.output_gain_db.get(tx_idx).copied().unwrap_or(0.0)
@@ -558,6 +678,19 @@ impl MatrixProcessor {
                             *s_out += s_bus;
                         }
                     }
+                }
+            }
+
+            // Mix generator signals into this TX output
+            for gen_idx in 0..n_gens {
+                let g = self.gen_gains_linear.get(gen_idx)
+                    .and_then(|row| row.get(tx_idx))
+                    .copied()
+                    .unwrap_or(0.0);
+                if g < 1e-6 { continue; }
+                let gen_buf = &self.gen_scratch[gen_idx];
+                for (s_out, &s_gen) in output[..nf].iter_mut().zip(gen_buf[..nf].iter()) {
+                    *s_out += s_gen * g;
                 }
             }
 
