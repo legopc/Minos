@@ -943,14 +943,35 @@
 }
 
 .vca-members {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.vca-members-count {
   font-size: 9px;
   color: var(--text-muted, #888);
-  padding: 2px 4px;
-  text-overflow: ellipsis;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
+  flex: 1;
 }
+
+.vca-edit-members-btn {
+  font-size: 11px;
+  background: rgba(163,113,247,0.15);
+  border: 1px solid rgba(163,113,247,0.5);
+  border-radius: 3px;
+  color: #a855f7;
+  cursor: pointer;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.vca-edit-members-btn:hover { background: rgba(163,113,247,0.3); }
 
 .vca-delete-btn {
   position: absolute;
@@ -1035,7 +1056,7 @@
 /* VCA member editor popover */
 .vca-member-popover {
   position: fixed;
-  z-index: 200;
+  z-index: 9000;
   background: #1a1f2e;
   border: 1px solid #a855f7;
   border-radius: 6px;

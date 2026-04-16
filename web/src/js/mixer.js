@@ -261,14 +261,23 @@ function _buildVcaStrip(vca) {
   header.appendChild(badge);
   strip.appendChild(header);
 
-  // Members (clickable → edit popover)
+  // Members — dedicated edit button
+  const memberIds = vca.members ?? vca.channel_ids ?? [];
   const members = document.createElement('div');
   members.className = 'vca-members';
-  const memberIds = vca.members ?? vca.channel_ids ?? [];
-  members.textContent = memberIds.length ? `${memberIds.length} member${memberIds.length !== 1 ? 's' : ''}` : 'no members';
-  members.title = 'Click to edit members';
-  members.style.cursor = 'pointer';
-  members.onclick = (e) => { e.stopPropagation(); _openVcaMemberEditor(vca, members); };
+
+  const membersLabel = document.createElement('span');
+  membersLabel.className = 'vca-members-count';
+  membersLabel.textContent = memberIds.length ? `${memberIds.length} member${memberIds.length !== 1 ? 's' : ''}` : 'no members';
+
+  const editMembersBtn = document.createElement('button');
+  editMembersBtn.className = 'vca-edit-members-btn';
+  editMembersBtn.textContent = '✎';
+  editMembersBtn.title = 'Edit members';
+  editMembersBtn.onclick = (e) => { e.stopPropagation(); _openVcaMemberEditor(vca, membersLabel); };
+
+  members.appendChild(membersLabel);
+  members.appendChild(editMembersBtn);
   strip.appendChild(members);
 
   // Gain fader
