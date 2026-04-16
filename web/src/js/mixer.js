@@ -174,6 +174,20 @@ function _renderStrips(strips, masters) {
     masters.appendChild(addBtn);
   }
 
+  // Automixer Groups section
+  const amGroups = st.state.automixerGroups ?? [];
+  const amSep = document.createElement('div');
+  amSep.className = 'mixer-vca-separator';
+  amSep.textContent = 'AXM';
+  masters.appendChild(amSep);
+  amGroups.forEach(g => masters.appendChild(_buildAmGroupStrip(g)));
+  const addAmBtn = document.createElement('button');
+  addAmBtn.className = 'mixer-add-vca-btn';
+  addAmBtn.textContent = '+';
+  addAmBtn.title = 'Add automixer group';
+  addAmBtn.onclick = () => _showAddAmGroupDialog();
+  masters.appendChild(addAmBtn);
+
   // Signal Generators section
   const gens = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
   const genSep = document.createElement('div');
@@ -429,6 +443,169 @@ async function _showAddVcaDialog() {
     const result = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
     const vca = { id: result?.id ?? `vca_?`, name, group_type: type, members: [], gain_db: 0, muted: false };
     st.setVcaGroup(vca);
+    const masters = document.getElementById('mixer-masters');
+    const strips  = document.querySelector('.mixer-strips');
+    if (strips && masters) _renderStrips(strips, masters);
+  } catch(e) { toast(e.message, true); }
+}
+
+function _buildAmGroupStrip(g) {
+  const strip = document.createElement('div');
+  strip.className = 'mixer-strip vca-strip';
+  strip.id = `am-strip-${g.id}`;
+
+  const header = document.createElement('div');
+  header.className = 'vca-strip-header';
+  const nm = document.createElement('span');
+  nm.textContent = g.name ?? g.id;
+  const badge = document.createElement('span');
+  badge.className = 'vca-badge';
+  badge.textContent = 'AXM';
+  badge.style.background = '#1a3a2a';
+  badge.style.color = '#3fb950';
+  header.appendChild(nm);
+  header.appendChild(badge);
+  strip.appendChild(header);
+
+  // Enabled toggle
+  const enBtn = document.createElement('button');
+  enBtn.className = 'dsp-toggle-btn' + (g.enabled ? ' active' : '');
+  enBtn.textContent = g.enabled ? 'ON' : 'OFF';
+  enBtn.style.margin = '4px 8px';
+  enBtn.onclick = async () => {
+    const next = !g.enabled;
+    try {
+      await api.putAutomixerGroup(g.id, { enabled: next });
+      g.enabled = next;
+      enBtn.classList.toggle('active', next);
+      enBtn.textContent = next ? 'ON' : 'OFF';
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(enBtn);
+
+  // Configure button
+  const cfgBtn = document.createElement('button');
+  cfgBtn.className = 'vca-edit-members-btn';
+  cfgBtn.textContent = '⚙';
+  cfgBtn.title = 'Configure gating';
+  cfgBtn.onclick = (e) => { e.stopPropagation(); _openAmGroupEditor(g, strip); };
+  strip.appendChild(cfgBtn);
+
+  // Delete
+  const delBtn = document.createElement('button');
+  delBtn.className = 'vca-delete-btn';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete automixer group';
+  delBtn.onclick = async () => {
+    if (!confirm(`Delete automixer group "${g.name}"?`)) return;
+    try {
+      await api.deleteAutomixerGroup(g.id);
+      st.setAutomixerGroups(st.state.automixerGroups.filter(x => x.id !== g.id));
+      const masters = document.getElementById('mixer-masters');
+      const strips  = document.querySelector('.mixer-strips');
+      if (strips && masters) _renderStrips(strips, masters);
+    } catch(e) { toast(e.message, true); }
+  };
+  strip.appendChild(delBtn);
+
+  return strip;
+}
+
+function _openAmGroupEditor(g, anchor) {
+  // Remove any existing popover
+  document.querySelectorAll('.am-group-popover').forEach(p => p.remove());
+
+  const pop = document.createElement('div');
+  pop.className = 'vca-member-editor am-group-popover';
+
+  const title = document.createElement('div');
+  title.className = 'vca-editor-title';
+  title.textContent = `Configure: ${g.name}`;
+  pop.appendChild(title);
+
+  function _row(label, ctrl) {
+    const d = document.createElement('div');
+    d.className = 'dsp-row';
+    d.style.padding = '4px 0';
+    const l = document.createElement('span');
+    l.className = 'dsp-label';
+    l.textContent = label;
+    d.appendChild(l);
+    d.appendChild(ctrl);
+    return d;
+  }
+
+  // Gating enabled toggle
+  const gateBtn = document.createElement('button');
+  gateBtn.className = 'dsp-toggle-btn' + (g.gating_enabled ? ' active' : '');
+  gateBtn.textContent = g.gating_enabled ? 'ON' : 'OFF';
+  gateBtn.onclick = async () => {
+    const next = !g.gating_enabled;
+    try { await api.putAutomixerGroup(g.id, { gating_enabled: next }); g.gating_enabled = next; gateBtn.classList.toggle('active', next); gateBtn.textContent = next ? 'ON' : 'OFF'; }
+    catch(e) { toast(e.message, true); }
+  };
+  pop.appendChild(_row('Gating', gateBtn));
+
+  // Gate threshold
+  const thrVal = document.createElement('span'); thrVal.className = 'dsp-value'; thrVal.textContent = `${(g.gate_threshold_db ?? -40).toFixed(1)} dB`;
+  const thr = document.createElement('input'); thr.type = 'range'; thr.className = 'dsp-slider'; thr.min = '-80'; thr.max = '0'; thr.step = '1'; thr.value = String(g.gate_threshold_db ?? -40);
+  thr.oninput = async () => {
+    const v = parseFloat(thr.value); thrVal.textContent = `${v.toFixed(1)} dB`;
+    try { await api.putAutomixerGroup(g.id, { gate_threshold_db: v }); g.gate_threshold_db = v; }
+    catch(e) { toast(e.message, true); }
+  };
+  pop.appendChild(_row('Gate Thr', thr)); pop.appendChild(thrVal);
+
+  // Off attenuation
+  const attVal = document.createElement('span'); attVal.className = 'dsp-value'; attVal.textContent = `${(g.off_attenuation_db ?? -60).toFixed(1)} dB`;
+  const att = document.createElement('input'); att.type = 'range'; att.className = 'dsp-slider'; att.min = '-120'; att.max = '-1'; att.step = '1'; att.value = String(g.off_attenuation_db ?? -60);
+  att.oninput = async () => {
+    const v = parseFloat(att.value); attVal.textContent = `${v.toFixed(1)} dB`;
+    try { await api.putAutomixerGroup(g.id, { off_attenuation_db: v }); g.off_attenuation_db = v; }
+    catch(e) { toast(e.message, true); }
+  };
+  pop.appendChild(_row('Off Att', att)); pop.appendChild(attVal);
+
+  // Hold ms
+  const holdVal = document.createElement('span'); holdVal.className = 'dsp-value'; holdVal.textContent = `${(g.hold_ms ?? 300).toFixed(0)} ms`;
+  const hold = document.createElement('input'); hold.type = 'range'; hold.className = 'dsp-slider'; hold.min = '0'; hold.max = '2000'; hold.step = '10'; hold.value = String(g.hold_ms ?? 300);
+  hold.oninput = async () => {
+    const v = parseFloat(hold.value); holdVal.textContent = `${v.toFixed(0)} ms`;
+    try { await api.putAutomixerGroup(g.id, { hold_ms: v }); g.hold_ms = v; }
+    catch(e) { toast(e.message, true); }
+  };
+  pop.appendChild(_row('Hold', hold)); pop.appendChild(holdVal);
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'vca-editor-close';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => pop.remove();
+  pop.appendChild(closeBtn);
+
+  document.body.appendChild(pop);
+
+  // Position
+  const rect = anchor.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.zIndex   = '9000';
+  pop.style.top      = `${rect.bottom + 4}px`;
+  pop.style.left     = `${rect.left}px`;
+
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', handler, true); }
+    }, { capture: true });
+  }, 0);
+}
+
+async function _showAddAmGroupDialog() {
+  const name = prompt('Automixer group name:');
+  if (!name) return;
+  try {
+    const result = await api.postAutomixerGroup({ name, enabled: true, gating_enabled: false });
+    const g = { id: result?.id ?? 'amg_?', name, enabled: true, gating_enabled: false, gate_threshold_db: -40, off_attenuation_db: -60, hold_ms: 300, last_mic_hold: true };
+    st.setAutomixerGroups([...st.state.automixerGroups, g]);
     const masters = document.getElementById('mixer-masters');
     const strips  = document.querySelector('.mixer-strips');
     if (strips && masters) _renderStrips(strips, masters);

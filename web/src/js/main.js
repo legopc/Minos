@@ -160,7 +160,7 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, gens] = await Promise.all([
+    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, gens, amGroups] = await Promise.all([
       api.getChannels(),
       api.getOutputs(),
       api.getZones(),
@@ -172,6 +172,7 @@ async function loadAll() {
       api.getVcaGroups().catch(() => []),
       api.getStereoLinks().catch(() => []),
       api.getGenerators().catch(() => ({ signal_generators: [], generator_bus_matrix: [] })),
+      api.getAutomixerGroups().catch(() => []),
     ]);
 
     channels.forEach(c => st.setChannel(c));
@@ -189,6 +190,7 @@ async function loadAll() {
     st.setStereoLinks(Array.isArray(stereoLinks) ? stereoLinks : (stereoLinks?.stereo_links ?? []));
     st.setGenerators(gens.signal_generators ?? []);
     st.setGeneratorMatrix(gens.generator_bus_matrix ?? []);
+    st.setAutomixerGroups(Array.isArray(amGroups) ? amGroups : (amGroups?.automixer_groups ?? []));
 
     // Build busMatrix from routes with route_type === 'bus'
     const busMatrix = {};

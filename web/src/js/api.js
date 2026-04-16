@@ -220,6 +220,13 @@ export const postVcaGroup   = (body)       => post('/vca-groups', body);
 export const putVcaGroup    = (id, body)   => put(`/vca-groups/${id}`, body);
 export const deleteVcaGroup = (id)         => del(`/vca-groups/${id}`);
 
+// ── Automixer Groups ─────────────────────────────────────────────────────────
+export const getAutomixerGroups   = ()           => get('/automixer-groups');
+export const postAutomixerGroup   = (body)       => post('/automixer-groups', body);
+export const putAutomixerGroup    = (id, body)   => put(`/automixer-groups/${id}`, body);
+export const deleteAutomixerGroup = (id)         => del(`/automixer-groups/${id}`);
+export const putInputAutomixer    = (ch, body)   => put(`/inputs/${ch}/automixer`, body);
+
 // ── Stereo Links ─────────────────────────────────────────────────────────────
 export const getStereoLinks   = ()              => get('/stereo-links');
 export const postStereoLink   = (left, right)   => post('/stereo-links', { left_channel: left, right_channel: right });

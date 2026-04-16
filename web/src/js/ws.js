@@ -179,6 +179,11 @@ function _dispatch(msg) {
       window.dispatchEvent(new CustomEvent('pb:solo-update'));
       break;
 
+    case 'automixer_updated':
+      st.setAutomixerGroups(msg.automixer_groups ?? []);
+      window.dispatchEvent(new CustomEvent('pb:automixer-changed'));
+      break;
+
     case 'monitor_config_update':
       st.state.system.monitor_device = msg.device ?? null;
       st.state.system.monitor_volume_db = msg.volume_db ?? 0;

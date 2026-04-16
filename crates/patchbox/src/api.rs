@@ -526,7 +526,7 @@ use patchbox_core::config::{
     ZoneConfig,
     InputChannelDsp, InternalBusConfig, OutputChannelDsp,
     FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
-    SignalGeneratorConfig, SignalGenType, AecConfig,
+    SignalGeneratorConfig, SignalGenType, AecConfig, AutomixerGroupConfig,
 };
 
 use std::collections::HashMap;
@@ -858,6 +858,7 @@ fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
         "gte": {"enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
         "aec": {"enabled": dsp.aec.enabled, "reference_tx_idx": dsp.aec.reference_tx_idx},
+        "axm": {"group_id": dsp.automixer.group_id, "weight": dsp.automixer.weight},
     })
 }
 
@@ -1029,6 +1030,33 @@ struct UpdateVcaRequest {
     pub gain_db: Option<f32>,
     pub muted: Option<bool>,
     pub members: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct CreateAutomixerGroupRequest {
+    pub name: String,
+    #[serde(default = "default_true_req")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub gating_enabled: bool,
+}
+fn default_true_req() -> bool { true }
+
+#[derive(Deserialize)]
+struct UpdateAutomixerGroupRequest {
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub gate_threshold_db: Option<f32>,
+    pub off_attenuation_db: Option<f32>,
+    pub hold_ms: Option<f32>,
+    pub last_mic_hold: Option<bool>,
+    pub gating_enabled: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct UpdateAutomixerChannelRequest {
+    pub group_id: Option<String>,  // None = remove from group
+    pub weight: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -1874,6 +1902,87 @@ async fn delete_vca_group(State(s): State<AppState>, Path(id): Path<String>) -> 
     let vca_groups = s.config.read().await.vca_groups.clone();
     persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Automixer group endpoints
+// ---------------------------------------------------------------------------
+
+// GET /api/v1/automixer-groups
+async fn get_automixer_groups(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(serde_json::json!({"automixer_groups": cfg.automixer_groups})).into_response()
+}
+
+// POST /api/v1/automixer-groups
+async fn post_automixer_group(State(s): State<AppState>, Json(body): Json<CreateAutomixerGroupRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let id = format!("amg_{}", cfg.automixer_groups.len());
+    let group = patchbox_core::config::AutomixerGroupConfig {
+        id: id.clone(),
+        name: body.name,
+        enabled: body.enabled,
+        gating_enabled: body.gating_enabled,
+        ..Default::default()
+    };
+    cfg.automixer_groups.push(group);
+    drop(cfg);
+    let groups = s.config.read().await.automixer_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
+}
+
+// PUT /api/v1/automixer-groups/:id
+async fn put_automixer_group(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateAutomixerGroupRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(g) = cfg.automixer_groups.iter_mut().find(|g| g.id == id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Some(n) = body.name           { g.name = n; }
+    if let Some(v) = body.enabled        { g.enabled = v; }
+    if let Some(v) = body.gate_threshold_db { g.gate_threshold_db = v.clamp(-80.0, 0.0); }
+    if let Some(v) = body.off_attenuation_db { g.off_attenuation_db = v.clamp(-120.0, -1.0); }
+    if let Some(v) = body.hold_ms        { g.hold_ms = v.clamp(0.0, 5000.0); }
+    if let Some(v) = body.last_mic_hold  { g.last_mic_hold = v; }
+    if let Some(v) = body.gating_enabled { g.gating_enabled = v; }
+    drop(cfg);
+    let groups = s.config.read().await.automixer_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/automixer-groups/:id
+async fn delete_automixer_group(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let before = cfg.automixer_groups.len();
+    cfg.automixer_groups.retain(|g| g.id != id);
+    if cfg.automixer_groups.len() == before {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    // Remove channel memberships pointing to this group
+    for dsp in cfg.input_dsp.iter_mut() {
+        if dsp.automixer.group_id.as_deref() == Some(id.as_str()) {
+            dsp.automixer.group_id = None;
+        }
+    }
+    drop(cfg);
+    let groups = s.config.read().await.automixer_groups.clone();
+    persist_or_500!(s);
+    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/automixer
+async fn put_input_automixer(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<UpdateAutomixerChannelRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    if let Some(gid) = body.group_id    { dsp.automixer.group_id = if gid.is_empty() { None } else { Some(gid) }; }
+    if let Some(w) = body.weight         { dsp.automixer.weight = w.clamp(0.01, 10.0); }
+    drop(cfg);
+    persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -2775,12 +2884,15 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
         .route("/api/v1/vca-groups", get(get_vca_groups).post(post_vca_group))
         .route("/api/v1/vca-groups/:id", put(put_vca_group).delete(delete_vca_group))
+        .route("/api/v1/automixer-groups", get(get_automixer_groups).post(post_automixer_group))
+        .route("/api/v1/automixer-groups/:id", put(put_automixer_group).delete(delete_automixer_group))
         .route("/api/v1/signal-generators", get(get_signal_generators).post(post_signal_generator))
         .route("/api/v1/signal-generators/:id", put(put_signal_generator).delete(delete_signal_generator))
         .route("/api/v1/signal-generators/:id/routing", get(get_generator_routing).put(put_generator_routing))
         .route("/api/v1/stereo-links", get(get_stereo_links).post(post_stereo_link))
         .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
         .route("/api/v1/inputs/:ch/aec", get(get_input_aec).put(put_input_aec))
+        .route("/api/v1/inputs/:ch/automixer", put(put_input_automixer))
         .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))

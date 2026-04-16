@@ -2,6 +2,7 @@
 
 use crate::config::{EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig, VcaGroupType};
 use crate::dsp::aec::AecProcessor;
+use crate::dsp::automixer::AutomixerProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::eq::ParametricEq;
@@ -388,6 +389,8 @@ pub struct MatrixProcessor {
     /// AEC reference buffers: one per TX output, updated after each output stage.
     /// Used as the render reference for AEC processors on the next block.
     aec_ref_bufs: Box<[[f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]>,
+    /// Dugan automixer processor.
+    pub automixer: AutomixerProcessor,
 }
 
 impl MatrixProcessor {
@@ -409,6 +412,7 @@ impl MatrixProcessor {
             gen_scratch: Box::new([[0f32; MAX_FRAMES]; MAX_GENERATORS]),
             gen_gains_linear: Vec::new(),
             aec_ref_bufs: Box::new([[0f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]),
+            automixer: AutomixerProcessor::new(),
         }
     }
 
@@ -517,6 +521,9 @@ impl MatrixProcessor {
                 gains[tx_idx] = if db.is_finite() { db_to_linear(db) } else { 0.0 };
             }
         }
+
+        // Sync automixer groups
+        self.automixer.sync(cfg);
     }
 
     /// Process one audio block: input DSP → matrix routing → output DSP.
@@ -586,6 +593,9 @@ impl MatrixProcessor {
                 }
             }
         }
+
+        // --- Automixer: apply Dugan gain-sharing (and optional NOM gating) ---
+        self.automixer.process_block(&mut self.scratch[..max_inputs.max(1)], nf);
 
         // --- Bus stage: sum inputs into each bus, then apply bus DSP ---
         let n_buses = config.internal_buses.len().min(MAX_BUSES);

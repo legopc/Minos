@@ -13,4 +13,5 @@ export const DSP_COLOURS = {
   lim: { bg: '#3a1010', fg: '#ff7b72', label: 'LIM' },
   peq: { bg: '#2a1a4a', fg: '#d2a8ff', label: 'PEQ' },
   gte: { bg: '#3a2d10', fg: '#e3b341', label: 'GTE' },
+  axm: { bg: '#1a3a2a', fg: '#3fb950', label: 'AXM' },
 };

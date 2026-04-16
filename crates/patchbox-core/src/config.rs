@@ -212,6 +212,63 @@ pub struct AecConfig {
     pub reference_tx_idx: Option<usize>,
 }
 
+/// Per-channel automixer settings.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AutomixerChannelConfig {
+    /// Which automixer group this channel belongs to (matches `AutomixerGroupConfig::id`).
+    /// None = not participating in any automixer group.
+    #[serde(default)]
+    pub group_id: Option<String>,
+    /// Relative weight vs other channels in the same group. 1.0 = normal. Higher = preferred.
+    #[serde(default = "default_am_weight")]
+    pub weight: f32,
+}
+
+fn default_am_weight() -> f32 { 1.0 }
+
+/// One automixer group (Dugan gain-sharing + optional NOM gating).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomixerGroupConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// When gating is enabled, channels below this level (dBFS) are gated.
+    #[serde(default = "default_am_gate_threshold")]
+    pub gate_threshold_db: f32,
+    /// Gain applied to gated-out channels (dB, typically -80 to -40).
+    #[serde(default = "default_am_off_att")]
+    pub off_attenuation_db: f32,
+    /// Hold time in ms before a channel gates out after dropping below threshold.
+    #[serde(default = "default_am_hold_ms")]
+    pub hold_ms: f32,
+    /// When true, always keep the last open mic on (prevents all-gated silence).
+    #[serde(default = "default_true")]
+    pub last_mic_hold: bool,
+    /// Enable NOM-style gating. When false, only Dugan gain-sharing is applied (no gating).
+    #[serde(default)]
+    pub gating_enabled: bool,
+}
+
+fn default_am_gate_threshold() -> f32 { -50.0 }
+fn default_am_off_att() -> f32 { -80.0 }
+fn default_am_hold_ms() -> f32 { 200.0 }
+
+impl Default for AutomixerGroupConfig {
+    fn default() -> Self {
+        Self {
+            id: "amg_0".to_string(),
+            name: "Group 1".to_string(),
+            enabled: true,
+            gate_threshold_db: default_am_gate_threshold(),
+            off_attenuation_db: default_am_off_att(),
+            hold_ms: default_am_hold_ms(),
+            last_mic_hold: true,
+            gating_enabled: false,
+        }
+    }
+}
+
 /// Full DSP chain for one input channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputChannelDsp {
@@ -235,6 +292,9 @@ pub struct InputChannelDsp {
     /// AEC configuration. Only functional with `--features aec`.
     #[serde(default)]
     pub aec: AecConfig,
+    /// Automixer configuration (Dugan gain-sharing). None = not in any group.
+    #[serde(default)]
+    pub automixer: AutomixerChannelConfig,
 }
 
 impl Default for InputChannelDsp {
@@ -249,6 +309,7 @@ impl Default for InputChannelDsp {
             gate: GateConfig::default(),
             compressor: CompressorConfig::default(),
             aec: AecConfig::default(),
+            automixer: AutomixerChannelConfig::default(),
         }
     }
 }
@@ -547,6 +608,9 @@ pub struct PatchboxConfig {
     /// generator_bus_matrix[gen_idx][tx_idx] = gain_db (f32::NEG_INFINITY = not routed)
     #[serde(default)]
     pub generator_bus_matrix: Vec<Vec<f32>>,
+    /// Automixer groups (Dugan gain-sharing). Channels opt in via input_dsp[i].automixer.group_id.
+    #[serde(default)]
+    pub automixer_groups: Vec<AutomixerGroupConfig>,
 }
 
 impl Default for PatchboxConfig {
@@ -588,6 +652,7 @@ impl Default for PatchboxConfig {
             stereo_links: vec![],
             signal_generators: vec![],
             generator_bus_matrix: vec![],
+            automixer_groups: vec![],
         }
     }
 }

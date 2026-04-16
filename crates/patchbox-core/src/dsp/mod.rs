@@ -1,4 +1,5 @@
 pub mod aec;
+pub mod automixer;
 pub mod compressor;
 pub mod delay;
 pub mod eq;

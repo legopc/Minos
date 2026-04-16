@@ -25,6 +25,7 @@ const _state = {
     monitor_volume_db: 0,
   },
   vcaGroups:     [],    // VcaGroupConfig[]
+  automixerGroups: [],  // AutomixerGroupConfig[]
   stereoLinks:   [],    // StereoLinkConfig[]
   generators:    [],    // SignalGeneratorConfig[]
   generatorBusMatrix: [], // generator_bus_matrix[gen_idx][tx_idx]
@@ -79,6 +80,7 @@ export function setVcaGroup(vca)           {
   if (i >= 0) _state.vcaGroups[i] = vca; else _state.vcaGroups.push(vca);
 }
 export function removeVcaGroup(id)         { _state.vcaGroups = _state.vcaGroups.filter(v => v.id !== id); }
+export function setAutomixerGroups(arr)    { _state.automixerGroups = arr ?? []; }
 export function setStereoLinks(arr)        { _state.stereoLinks = arr ?? []; }
 export function getStereoLink(rxIdx)       {
   return _state.stereoLinks.find(sl => sl.left_channel === rxIdx || sl.right_channel === rxIdx) ?? null;
