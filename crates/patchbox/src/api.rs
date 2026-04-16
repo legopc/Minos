@@ -1201,6 +1201,7 @@ async fn post_bus(State(s): State<AppState>, Json(body): Json<CreateBusRequest>)
         id: id.clone(),
         name: name.clone(),
         routing: vec![false; cfg.rx_channels],
+        routing_gain: vec![0.0; cfg.rx_channels],
         dsp: patchbox_core::config::InputChannelDsp::default(),
         muted: false,
     };
@@ -2269,6 +2270,7 @@ async fn post_admin_channels(
                     id: format!("bus_{}", idx),
                     name: format!("Bus {}", idx + 1),
                     routing: vec![false; rx],
+                    routing_gain: vec![0.0; rx],
                     dsp: patchbox_core::config::InputChannelDsp::default(),
                     muted: false,
                 });
