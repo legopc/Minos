@@ -131,6 +131,7 @@ export const putOutputEqEnabled  = (ch, enabled) => reqWithRetry('PUT', `/output
 export const putOutputCompressor = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/compressor`, body);
 export const putOutputLimiter    = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/limiter`, body);
 export const putOutputDelay      = (ch, body)    => reqWithRetry('PUT', `/outputs/${ch}/delay`, body);
+export const putOutputDither     = (ch, bits)    => reqWithRetry('PUT', `/outputs/${ch}/dither`, { bits });
 export const putOutputEnabled    = (ch, enabled) => reqWithRetry('PUT', `/outputs/${ch}/enabled`, { enabled });
 export const putOutputMute       = (ch, muted)   => reqWithRetry('PUT', `/outputs/${ch}/mute`, { muted });
 
@@ -182,6 +183,18 @@ export const putSystemConfig    = (body) => put('/system/config', body);
 export const getConfigExport    = ()     => fetch(BASE + '/system/config/export', {
   headers: _token ? { 'Authorization': `Bearer ${_token}` } : {},
 });
+export const postConfigImport   = (tomlStr) => {
+  return fetch(BASE + '/system/config/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/toml', ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}) },
+    body: tomlStr,
+  });
+};
+export const getConfigBackups   = ()     => get('/system/config/backups');
+export const getConfigBackup    = (name) => fetch(BASE + `/system/config/backups/${encodeURIComponent(name)}`, {
+  headers: _token ? { 'Authorization': `Bearer ${_token}` } : {},
+});
+export const restoreConfigBackup = (name) => post(`/system/config/backups/${encodeURIComponent(name)}/restore`, {});
 export const postAdminChannels  = (rx, tx, bus_count) => {
   const body = { rx, tx };
   if (bus_count !== undefined) body.bus_count = bus_count;

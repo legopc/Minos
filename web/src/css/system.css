@@ -73,6 +73,24 @@
   min-height: 36px;
 }
 .sys-btn:hover { background: var(--bg-row-hover); }
+.sys-btn-sm { padding: 4px 10px; min-height: 28px; font-size: 10px; }
+.sys-btn-warn { color: var(--color-warn, #e6a817); border-color: var(--color-warn, #e6a817); }
+.sys-btn-warn:hover { background: rgba(230,168,23,.12); }
+
+/* ── Backups ─────────────────────────────────────────────────────────── */
+.sys-backups-list { display: flex; flex-direction: column; gap: 4px; }
+.sys-backups-empty { color: var(--text-muted); font-size: 11px; padding: 4px 0; }
+.sys-backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-primary);
+}
+.sys-backup-row:last-child { border-bottom: none; }
+.sys-backup-name { font-size: 11px; color: var(--text-secondary); }
+.sys-backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ── Restart overlay ─────────────────────────────────────────────────── */
 .restart-overlay {

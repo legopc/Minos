@@ -260,6 +260,9 @@ pub struct OutputChannelDsp {
     pub limiter: LimiterConfig,
     #[serde(default)]
     pub delay: DelayConfig,
+    /// TPDF dither bit depth. 0 = disabled; 16 or 24 typical.
+    #[serde(default)]
+    pub dither_bits: u8,
 }
 
 impl Default for OutputChannelDsp {
@@ -275,6 +278,7 @@ impl Default for OutputChannelDsp {
             compressor: CompressorConfig::default(),
             limiter: LimiterConfig::default(),
             delay: DelayConfig::default(),
+            dither_bits: 0,
         }
     }
 }

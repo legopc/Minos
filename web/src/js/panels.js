@@ -136,7 +136,7 @@ export function openPanel(blockKey, channelId, triggerEl) {
   el.style.cssText = `position:absolute;left:${x}px;top:${y}px;z-index:${++zTop}`;
   app.appendChild(el);
   makeDraggable(el, app);
-  el.addEventListener('mousedown', () => {
+  el.addEventListener('pointerdown', () => {
     el.style.zIndex = ++zTop;
   });
 
@@ -342,49 +342,39 @@ async function _onBypass(channelId, block, bypassed) {
 function makeDraggable(el, container) {
   const header = el.querySelector('.dsp-panel-header');
   let isDragging = false;
-  let startX = 0,
-    startY = 0;
-  let startLeft = 0,
-    startTop = 0;
+  let startX = 0, startY = 0;
+  let startLeft = 0, startTop = 0;
 
   function handleStart(e) {
     isDragging = true;
     startLeft = el.offsetLeft;
     startTop = el.offsetTop;
-    startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    startX = e.clientX;
+    startY = e.clientY;
     el.style.userSelect = 'none';
+    header.setPointerCapture(e.pointerId);
   }
 
   function handleMove(e) {
     if (!isDragging) return;
     e.preventDefault?.();
-    const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-    const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-
-    let x = startLeft + (clientX - startX);
-    let y = startTop + (clientY - startY);
-
+    let x = startLeft + (e.clientX - startX);
+    let y = startTop + (e.clientY - startY);
     const containerRect = container.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
-
     x = Math.max(0, Math.min(x, containerRect.width - elRect.width));
     y = Math.max(0, Math.min(y, containerRect.height - elRect.height));
-
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }
 
   function handleEnd() {
     isDragging = false;
-    el.style.userSelect = 'none';
+    el.style.userSelect = '';
   }
 
-  header.addEventListener('mousedown', handleStart);
-  document.addEventListener('mousemove', handleMove);
-  document.addEventListener('mouseup', handleEnd);
-
-  header.addEventListener('touchstart', handleStart);
-  document.addEventListener('touchmove', handleMove, { passive: false });
-  document.addEventListener('touchend', handleEnd);
+  header.addEventListener('pointerdown', handleStart);
+  header.addEventListener('pointermove', handleMove);
+  header.addEventListener('pointerup', handleEnd);
+  header.addEventListener('pointercancel', handleEnd);
 }

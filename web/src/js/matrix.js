@@ -477,7 +477,7 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
   });
 
   // Right-edge resize affordance on every label cell
-  label.addEventListener('mousedown', e => {
+  label.addEventListener('pointerdown', e => {
     const r = label.getBoundingClientRect();
     if (e.clientX >= r.right - 8) {
       e.preventDefault();
@@ -485,6 +485,7 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       if (!viewport) return;
       const startX = e.clientX;
       const startW = parseInt(getComputedStyle(viewport).getPropertyValue('--label-w').trim(), 10) || 380;
+      label.setPointerCapture(e.pointerId);
       label.classList.add('resizing');
       const onMove = mv => {
         const newW = Math.max(120, startW + (mv.clientX - startX));
@@ -492,18 +493,18 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       };
       const onUp = () => {
         label.classList.remove('resizing');
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        label.removeEventListener('pointermove', onMove);
+        label.removeEventListener('pointerup', onUp);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      label.addEventListener('pointermove', onMove);
+      label.addEventListener('pointerup', onUp);
     }
   });
-  label.addEventListener('mousemove', e => {
+  label.addEventListener('pointermove', e => {
     const r = label.getBoundingClientRect();
     label.style.cursor = e.clientX >= r.right - 8 ? 'col-resize' : '';
   });
-  label.addEventListener('mouseleave', () => { label.style.cursor = ''; });
+  label.addEventListener('pointerleave', () => { label.style.cursor = ''; });
 
   // Solo / copy pick handler
   label.addEventListener('click', e => {
@@ -908,12 +909,13 @@ let _lastBtn = null;
 
 // ── Label column drag-resize ────────────────────────────────────────────────
 function _initLabelResize(handle) {
-  handle.addEventListener('mousedown', e => {
+  handle.addEventListener('pointerdown', e => {
     e.preventDefault();
     const viewport = handle.closest('.matrix-viewport');
     if (!viewport) return;
     const startX = e.clientX;
     const startW = parseInt(getComputedStyle(viewport).getPropertyValue('--label-w').trim(), 10) || 380;
+    handle.setPointerCapture(e.pointerId);
     handle.classList.add('dragging');
 
     const onMove = mv => {
@@ -922,11 +924,11 @@ function _initLabelResize(handle) {
     };
     const onUp = () => {
       handle.classList.remove('dragging');
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
   });
 }
 

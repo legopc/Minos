@@ -68,6 +68,10 @@ pub struct PerOutputDsp {
     /// Gain reduction from last block in dB (0 = no reduction, negative = limiting active).
     /// Written by `process_block()`, read by metering.
     pub last_gr_db: f32,
+    /// TPDF dither: 0 = disabled, else amplitude = 0.5 LSB at given bit depth.
+    pub dither_amp: f32,
+    /// Xorshift32 RNG state for TPDF dither. Never zero.
+    dither_rng: u32,
 }
 
 impl PerOutputDsp {
@@ -82,6 +86,8 @@ impl PerOutputDsp {
             gain_linear: 1.0,
             gain_ramp: RampState::new(1.0),
             last_gr_db: 0.0,
+            dither_amp: 0.0,
+            dither_rng: 0xDEAD_BEEF,
         }
     }
 
@@ -95,7 +101,12 @@ impl PerOutputDsp {
         self.compressor.sync(&cfg.compressor, sample_rate);
         self.limiter.sync(&cfg.limiter, sample_rate);
         self.delay.sync(&cfg.delay, sample_rate);
-        // muted is handled by process_block / caller
+        // TPDF dither amplitude: 0.5 LSB at cfg.dither_bits depth (normalised -1..1)
+        self.dither_amp = if cfg.dither_bits > 0 {
+            0.5 / (1u32 << (cfg.dither_bits.min(31) - 1)) as f32
+        } else {
+            0.0
+        };
     }
 
     /// Legacy sync from separate EQ/limiter configs. Kept for backward compat.
@@ -129,6 +140,23 @@ impl PerOutputDsp {
         let min_gr = self.limiter.process_block(buf);
         self.last_gr_db = if min_gr <= 0.0 { -120.0 } else { 20.0 * min_gr.log10() };
         self.delay.process_block(buf);
+
+        // TPDF dither: two independent white noise sources minus each other = triangular PDF
+        if self.dither_amp > 0.0 {
+            let amp = self.dither_amp;
+            for s in buf.iter_mut() {
+                // Xorshift32 — allocation-free, RT-safe
+                self.dither_rng ^= self.dither_rng << 13;
+                self.dither_rng ^= self.dither_rng >> 17;
+                self.dither_rng ^= self.dither_rng << 5;
+                let r1 = (self.dither_rng as f32) / (u32::MAX as f32) * 2.0 - 1.0;
+                self.dither_rng ^= self.dither_rng << 13;
+                self.dither_rng ^= self.dither_rng >> 17;
+                self.dither_rng ^= self.dither_rng << 5;
+                let r2 = (self.dither_rng as f32) / (u32::MAX as f32) * 2.0 - 1.0;
+                *s += (r1 - r2) * amp;
+            }
+        }
     }
 }
 

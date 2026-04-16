@@ -307,6 +307,20 @@ body.offline .xp-cell {
   border-color: #c0392b;
   color: #fff;
 }
+.modal-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 16px 0;
+  padding: 8px 10px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-primary);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.modal-input:focus { outline: none; border-color: var(--color-accent, #1a73e8); }
 
 /* ── Keyboard shortcuts overlay ─────────────────── */
 .shortcuts-overlay {

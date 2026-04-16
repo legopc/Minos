@@ -1,5 +1,6 @@
-// dsp/dly.js — Delay panel
+// dsp/dly.js — Delay panel (+ TPDF dither for output channels)
 import { DSP_COLOURS } from './colours.js';
+import * as api from '../api.js';
 const BK = 'dly';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
@@ -13,6 +14,25 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
 
   const bypBtn = _bypBtn(p.bypassed, v => { p.bypassed = v; onBypass(BK, v); bypBtn.classList.toggle('active', v); el.style.opacity = v ? '0.22' : '1'; });
   el.appendChild(_row('', bypBtn));
+
+  // TPDF dither — output channels only
+  if (channelId.startsWith('tx_')) {
+    const idx = parseInt(channelId.split('_')[1], 10);
+    const ditherSel = document.createElement('select');
+    ditherSel.className = 'dsp-select';
+    [['Off', 0], ['16-bit', 16], ['24-bit', 24]].forEach(([label, bits]) => {
+      const opt = document.createElement('option');
+      opt.value = bits;
+      opt.textContent = label;
+      if ((p.dither_bits ?? 0) === bits) opt.selected = true;
+      ditherSel.appendChild(opt);
+    });
+    ditherSel.onchange = () => {
+      api.putOutputDither(idx, parseInt(ditherSel.value, 10))
+        .catch(e => console.error('Dither error:', e));
+    };
+    el.appendChild(_row('Dither', ditherSel));
+  }
 
   return el;
 }

@@ -2,6 +2,7 @@
 import * as st  from './state.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
+import { confirmModal, inputModal } from './modal.js';
 
 export async function render(container) {
   container.innerHTML = '';
@@ -31,15 +32,20 @@ export async function render(container) {
   const saveBtn = document.createElement('button');
   saveBtn.className = 'btn-accent';
   saveBtn.textContent = 'Save Current State';
-  saveBtn.onclick = async () => {
-    const name = prompt('Scene name:');
-    if (!name) return;
-    try {
-      const scene = await api.postScene(name);
-      st.setScene(scene);
-      _renderList(listPanel, diffPanel);
-      toast('Scene saved');
-    } catch(e) { toast('Save failed: ' + e.message, true); }
+  saveBtn.onclick = () => {
+    inputModal({
+      title: 'Save Scene',
+      placeholder: 'Scene name',
+      confirmLabel: 'Save',
+      onConfirm: async (name) => {
+        try {
+          const scene = await api.postScene(name);
+          st.setScene(scene);
+          _renderList(listPanel, diffPanel);
+          toast('Scene saved');
+        } catch(e) { toast('Save failed: ' + e.message, true); }
+      },
+    });
   };
   toolbar.appendChild(saveBtn);
   container.insertBefore(toolbar, layout);
@@ -62,6 +68,23 @@ function _renderList(listPanel, diffPanel) {
     const nameEl = document.createElement('span');
     nameEl.className = 'scene-name';
     nameEl.textContent = scene.name ?? scene.id;
+    nameEl.title = 'Double-click to rename';
+    nameEl.addEventListener('dblclick', () => {
+      inputModal({
+        title: 'Rename Scene',
+        defaultValue: scene.name ?? '',
+        placeholder: 'New name',
+        confirmLabel: 'Rename',
+        onConfirm: async (newName) => {
+          try {
+            await api.putScene(scene.id, { name: newName });
+            scene.name = newName;
+            nameEl.textContent = newName;
+            toast('Renamed');
+          } catch(e) { toast('Rename failed: ' + e.message, true); }
+        },
+      });
+    });
     const favBtn = document.createElement('button');
     favBtn.className = 'scene-fav-btn' + (scene.is_favourite ? ' fav-on' : '');
     favBtn.title = scene.is_favourite ? 'Unfavourite' : 'Favourite';
@@ -96,10 +119,34 @@ function _renderList(listPanel, diffPanel) {
     loadBtn.onclick = async e => {
       e.stopPropagation();
       try {
-        await api.loadScene(scene.id);
-        st.setActiveScene(scene.id);
-        _renderList(listPanel, diffPanel);
-        toast(`Scene "${scene.name}" loaded`);
+        const diff = await api.getSceneDiff(scene.id);
+        const hasDiff = diff && (diff.routes?.length || diff.outputs?.length);
+        if (hasDiff) {
+          _renderDiff(diffPanel, scene, diff);
+          const lines = [
+            ...(diff.routes ?? []).map(r => `${_dir(r.action)} ${r.rx_id} → ${r.tx_id}`),
+            ...(diff.outputs ?? []).map(o => `${o.id}: ${JSON.stringify(o.changes)}`),
+          ];
+          const bodyHtml = `<ul style="margin:0;padding-left:16px;font-size:11px;color:var(--text-secondary);">${lines.map(l => `<li>${_esc(l)}</li>`).join('')}</ul>`;
+          confirmModal({
+            title: `Load "${scene.name}"?`,
+            body: `This will overwrite current state:<br><br>${bodyHtml}`,
+            confirmLabel: 'Load Scene',
+            onConfirm: async () => {
+              try {
+                await api.loadScene(scene.id);
+                st.setActiveScene(scene.id);
+                _renderList(listPanel, diffPanel);
+                toast(`Scene "${scene.name}" loaded`);
+              } catch(e) { toast('Load failed: ' + e.message, true); }
+            },
+          });
+        } else {
+          await api.loadScene(scene.id);
+          st.setActiveScene(scene.id);
+          _renderList(listPanel, diffPanel);
+          toast(`Scene "${scene.name}" loaded`);
+        }
       } catch(e) { toast('Load failed: ' + e.message, true); }
     };
 
@@ -116,7 +163,6 @@ function _renderList(listPanel, diffPanel) {
     delBtn.textContent = 'Del';
     delBtn.onclick = async e => {
       e.stopPropagation();
-      const { confirmModal } = await import('./modal.js');
       confirmModal({
         title: `Delete "${scene.name}"?`,
         body: `This scene will be permanently deleted. Cannot be undone.`,
@@ -142,10 +188,10 @@ function _renderList(listPanel, diffPanel) {
   });
 }
 
-async function _renderDiff(diffPanel, scene) {
+async function _renderDiff(diffPanel, scene, prefetchedDiff) {
   diffPanel.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:10px;">Loading diff…</div>';
   try {
-    const diff = await api.getSceneDiff(scene.id);
+    const diff = prefetchedDiff ?? await api.getSceneDiff(scene.id);
     diffPanel.innerHTML = '';
     const hdr = document.createElement('div');
     hdr.className = 'scenes-diff-hdr';
@@ -189,3 +235,4 @@ function _diffSection(title, lines) {
 }
 
 function _dir(a) { return a === 'add' ? '+' : a === 'remove' ? '−' : '~'; }
+function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

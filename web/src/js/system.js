@@ -89,6 +89,16 @@ export async function render(container) {
         <div class="sys-card-title">Actions</div>
         <div class="sys-actions">
           <button class="sys-btn" id="sys-export-btn">Export Config</button>
+          <button class="sys-btn" id="sys-import-btn">Import Config</button>
+          <input type="file" id="sys-import-file" accept=".toml" style="display:none">
+        </div>
+      </div>
+
+      <!-- Backups card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Config Backups</div>
+        <div id="sys-backups-list" class="sys-backups-list">
+          <div class="sys-backups-empty">Loading…</div>
         </div>
       </div>
     </div>`;
@@ -167,6 +177,29 @@ export async function render(container) {
     }
   });
 
+  // Wire import config button
+  document.getElementById('sys-import-btn')?.addEventListener('click', () => {
+    document.getElementById('sys-import-file')?.click();
+  });
+  document.getElementById('sys-import-file')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const r = await api.postConfigImport(text);
+      if (!r.ok) throw new Error(await r.text());
+      toast('Config imported — restarting…');
+      _showRestartOverlay();
+    } catch(err) {
+      toast('Import failed: ' + err.message, true);
+    } finally {
+      e.target.value = '';
+    }
+  });
+
+  // Load and render backups
+  _loadBackups();
+
   // Populate monitor device selector
   const monitorSelect = document.getElementById('monitor-device-select');
   if (monitorSelect) {
@@ -237,6 +270,63 @@ async function _saveMonitorConfig(devSelect, volSlider) {
     console.error('Monitor config error:', e);
     toast('Failed to save monitor config: ' + e.message, true);
   }
+}
+
+async function _loadBackups() {
+  const listEl = document.getElementById('sys-backups-list');
+  if (!listEl) return;
+  try {
+    const backups = await api.getConfigBackups();
+    if (!backups || backups.length === 0) {
+      listEl.innerHTML = '<div class="sys-backups-empty">No backups yet</div>';
+      return;
+    }
+    listEl.innerHTML = backups.map(b => {
+      const name = b.name ?? b;
+      const ts = b.timestamp;
+      const label = ts ? new Date(ts * 1000).toLocaleString() : name;
+      return `<div class="sys-backup-row" data-name="${_esc(name)}">
+        <span class="sys-backup-name">${_esc(label)}</span>
+        <div class="sys-backup-actions">
+          <button class="sys-btn sys-btn-sm" data-backup-dl="${_esc(name)}">Download</button>
+          <button class="sys-btn sys-btn-sm sys-btn-warn" data-backup-restore="${_esc(name)}">Restore</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('[data-backup-dl]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const n = btn.dataset.backupDl;
+        try {
+          const r = await api.getConfigBackup(n);
+          const blob = await r.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = n;
+          a.click();
+        } catch(e) { toast('Download failed: ' + e.message, true); }
+      });
+    });
+
+    listEl.querySelectorAll('[data-backup-restore]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const n = btn.dataset.backupRestore;
+        if (!confirm(`Restore backup "${n}"? Current config will be replaced.`)) return;
+        try {
+          await api.restoreConfigBackup(n);
+          toast('Restored — restarting…');
+          _showRestartOverlay();
+        } catch(e) { toast('Restore failed: ' + e.message, true); }
+      });
+    });
+  } catch(e) {
+    listEl.innerHTML = '<div class="sys-backups-empty">Failed to load backups</div>';
+    console.error('Failed to load backups', e);
+  }
+}
+
+function _esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function _e(s) {

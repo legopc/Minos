@@ -716,6 +716,22 @@ async fn put_output_delay(State(s): State<AppState>, Path(ch): Path<usize>, Json
     StatusCode::NO_CONTENT.into_response()
 }
 
+// PUT /api/v1/outputs/:ch/dither
+#[derive(Deserialize)]
+struct DitherBody { bits: u8 }
+
+async fn put_output_dither(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<DitherBody>) -> impl IntoResponse {
+    if body.bits != 0 && body.bits != 16 && body.bits != 24 {
+        return (StatusCode::BAD_REQUEST, "bits must be 0, 16, or 24").into_response();
+    }
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.output_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.dither_bits = body.bits;
+    drop(cfg);
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // PUT /api/v1/outputs/:ch/enabled
 async fn put_output_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
@@ -789,7 +805,11 @@ fn output_dsp_to_value(dsp: &OutputChannelDsp) -> serde_json::Value {
         "peq": {"enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
         "cmp": {"enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
         "lim": {"enabled": dsp.limiter.enabled, "bypassed": false, "params": &dsp.limiter},
-        "dly": {"enabled": dsp.delay.enabled, "bypassed": false, "params": &dsp.delay},
+        "dly": {"enabled": dsp.delay.enabled, "bypassed": !dsp.delay.enabled, "params": serde_json::json!({
+            "delay_ms": dsp.delay.delay_ms,
+            "bypassed": !dsp.delay.enabled,
+            "dither_bits": dsp.dither_bits,
+        })},
     })
 }
 
@@ -1639,6 +1659,120 @@ async fn post_system_config_import(State(s): State<AppState>, body: axum::body::
         Ok(c) => c,
         Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
+    // Snapshot current config before replacing
+    let _ = _create_backup(&s).await;
+    new_cfg.normalize();
+    *s.config.write().await = new_cfg;
+    persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// Helper: write a timestamped backup, keeping only last 10.
+async fn _create_backup(s: &AppState) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let cfg = s.config.read().await;
+    let toml_str = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
+    drop(cfg);
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let bak_path = s.config_path.with_file_name(format!(
+        "{}-bak-{}.toml",
+        s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox"),
+        ts
+    ));
+    std::fs::write(&bak_path, &toml_str).map_err(|e| e.to_string())?;
+
+    // Prune: keep only last 10 backups
+    if let Some(dir) = s.config_path.parent() {
+        let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+        let mut baks: Vec<_> = std::fs::read_dir(dir)
+            .ok().into_iter().flatten()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name();
+                let n = n.to_string_lossy();
+                n.starts_with(&format!("{}-bak-", stem)) && n.ends_with(".toml")
+            })
+            .collect();
+        baks.sort_by_key(|e| e.file_name());
+        if baks.len() > 10 {
+            for old in &baks[..baks.len() - 10] {
+                let _ = std::fs::remove_file(old.path());
+            }
+        }
+    }
+    Ok(bak_path.to_string_lossy().into_owned())
+}
+
+// GET /api/v1/system/config/backups — list available backups
+async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse {
+    let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return Json(serde_json::json!([])).into_response(),
+    };
+    let mut baks: Vec<serde_json::Value> = std::fs::read_dir(dir)
+        .ok().into_iter().flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let n = e.file_name();
+            let n = n.to_string_lossy();
+            n.starts_with(&format!("{}-bak-", stem)) && n.ends_with(".toml")
+        })
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            // Extract timestamp from filename: "patchbox-bak-1234567890.toml"
+            let ts: u64 = name
+                .strip_prefix(&format!("{}-bak-", stem))
+                .and_then(|s| s.strip_suffix(".toml"))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            Some(serde_json::json!({ "name": name, "timestamp": ts }))
+        })
+        .collect();
+    baks.sort_by(|a, b| b["timestamp"].as_u64().cmp(&a["timestamp"].as_u64()));
+    Json(baks).into_response()
+}
+
+// GET /api/v1/system/config/backups/:name — download a backup
+async fn get_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+    if name.contains('/') || name.contains("..") {
+        return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
+    }
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = dir.join(&name);
+    match std::fs::read_to_string(&path) {
+        Ok(content) => (
+            [(header::CONTENT_TYPE, "application/toml"),
+             (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{name}\"") as &str)],
+            content,
+        ).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// POST /api/v1/system/config/backups/:name/restore — restore a backup
+async fn restore_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+    if name.contains('/') || name.contains("..") {
+        return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
+    }
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = dir.join(&name);
+    let toml_str = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let mut new_cfg: PatchboxConfig = match toml::from_str(&toml_str) {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    // Backup current before restore
+    let _ = _create_backup(&s).await;
     new_cfg.normalize();
     *s.config.write().await = new_cfg;
     persist_or_500!(s);
@@ -2211,6 +2345,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/outputs/:ch/compressor", put(put_output_compressor))
         .route("/api/v1/outputs/:ch/limiter", put(put_output_limiter))
         .route("/api/v1/outputs/:ch/delay", put(put_output_delay))
+        .route("/api/v1/outputs/:ch/dither", put(put_output_dither))
         .route("/api/v1/outputs/:ch/enabled", put(put_output_enabled))
         .route("/api/v1/outputs/:ch/mute", put(put_output_mute))
         // Sprint 1 — Resource endpoints
@@ -2226,6 +2361,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/system", get(get_system))
         .route("/api/v1/system/config/export", get(get_system_config_export))
         .route("/api/v1/system/config/import", post(post_system_config_import))
+        .route("/api/v1/system/config/backups", get(get_config_backups))
+        .route("/api/v1/system/config/backups/:name", get(get_config_backup))
+        .route("/api/v1/system/config/backups/:name/restore", post(restore_config_backup))
         .route("/api/v1/admin/channels", post(post_admin_channels))
         .route("/api/v1/admin/restart", post(post_admin_restart))
         // Sprint E — Internal buses
