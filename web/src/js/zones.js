@@ -2,22 +2,90 @@
 import * as st  from './state.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
+import { buildOutputMaster } from './mixer.js';
+
+let _container = null;
 
 export function render(container) {
-  container.innerHTML = '';
-  container.id = 'tab-zones';
+  _container = container;
+  _showGrid();
+}
+
+function _showGrid() {
+  _container.innerHTML = '';
+  _container.id = 'tab-zones';
 
   const toolbar = document.createElement('div');
   toolbar.className = 'zones-toolbar';
   toolbar.innerHTML = `<span style="flex:1;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">Zones</span>`;
-  container.appendChild(toolbar);
+  _container.appendChild(toolbar);
 
   const grid = document.createElement('div');
   grid.className = 'zones-grid';
   grid.id = 'zones-grid';
-  container.appendChild(grid);
+  _container.appendChild(grid);
 
   _renderCards(grid);
+}
+
+function _showZonePanel(zone) {
+  _container.innerHTML = '';
+  _container.id = 'tab-zones';
+
+  const colour = st.getZoneColour(zone.colour_index ?? 0);
+
+  // Header bar
+  const header = document.createElement('div');
+  header.className = 'zones-toolbar zone-panel-header';
+  header.style.setProperty('--zone-card-color', colour);
+
+  const backBtn = document.createElement('button');
+  backBtn.className = 'zone-panel-back-btn';
+  backBtn.textContent = '← Zones';
+  backBtn.onclick = () => _showGrid();
+  header.appendChild(backBtn);
+
+  const title = document.createElement('span');
+  title.className = 'zone-panel-title';
+  title.textContent = zone.name ?? zone.id;
+  header.appendChild(title);
+
+  // Zone-level mute
+  const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
+  const allMuted = txOutputs.length > 0 && txOutputs.every(o => o.muted === true);
+  const muteAll = document.createElement('button');
+  muteAll.className = 'zone-mute-btn' + (allMuted ? ' active' : '');
+  muteAll.textContent = allMuted ? 'UNMUTE ALL' : 'MUTE ALL';
+  muteAll.onclick = async () => {
+    const nowMuted = muteAll.classList.contains('active');
+    const txIndices = (zone.tx_ids ?? []).map(id => parseInt(id.replace('tx_', ''), 10));
+    try {
+      for (const idx of txIndices) {
+        nowMuted ? await api.unmuteZone(idx) : await api.muteZone(idx);
+      }
+      muteAll.classList.toggle('active', !nowMuted);
+      muteAll.textContent = !nowMuted ? 'UNMUTE ALL' : 'MUTE ALL';
+    } catch(e) { toast('Mute error: ' + e.message, true); }
+  };
+  header.appendChild(muteAll);
+
+  _container.appendChild(header);
+
+  // Strips area — output mixer strips for each tx in this zone
+  const stripsWrap = document.createElement('div');
+  stripsWrap.className = 'zone-panel-strips';
+  _container.appendChild(stripsWrap);
+
+  const txIds = zone.tx_ids ?? [];
+  if (!txIds.length) {
+    stripsWrap.innerHTML = '<div style="padding:24px;color:var(--text-muted);font-size:10px;">No outputs in this zone.</div>';
+  } else {
+    txIds.forEach(txId => {
+      const out = st.state.outputs.get(txId);
+      if (!out) return;
+      stripsWrap.appendChild(buildOutputMaster(out));
+    });
+  }
 }
 
 function _renderCards(grid) {
@@ -38,7 +106,14 @@ function _buildCard(zone) {
 
   const hdr = document.createElement('div');
   hdr.className = 'zone-card-header';
-  hdr.innerHTML = `<span class="zone-card-name">${_e(zone.name ?? zone.id)}</span>`;
+
+  const nameBtn = document.createElement('button');
+  nameBtn.className = 'zone-card-name zone-card-name-btn';
+  nameBtn.textContent = zone.name ?? zone.id;
+  nameBtn.title = 'Open zone panel';
+  nameBtn.onclick = () => _showZonePanel(zone);
+  hdr.appendChild(nameBtn);
+
   card.appendChild(hdr);
 
   // Determine initial mute state: muted if ALL tx outputs are muted
@@ -50,16 +125,13 @@ function _buildCard(zone) {
   muteBtn.textContent = isMuted ? 'UNMUTE' : 'MUTE';
   hdr.appendChild(muteBtn);
 
-  muteBtn.onclick = async () => {
+  muteBtn.onclick = async (e) => {
+    e.stopPropagation();
     const nowMuted = muteBtn.classList.contains('active');
     const txIndices = (zone.tx_ids ?? []).map(id => parseInt(id.replace('tx_', ''), 10));
     try {
       for (const idx of txIndices) {
-        if (nowMuted) {
-          await api.unmuteZone(idx);
-        } else {
-          await api.muteZone(idx);
-        }
+        nowMuted ? await api.unmuteZone(idx) : await api.muteZone(idx);
       }
       muteBtn.classList.toggle('active', !nowMuted);
       muteBtn.textContent = !nowMuted ? 'UNMUTE' : 'MUTE';
@@ -83,13 +155,11 @@ function _buildCard(zone) {
     o.textContent = ch.name ?? ch.id;
     srcSel.appendChild(o);
   });
-  // Determine current source by checking routes
   const zoneRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id));
   if (zoneRoutes.length) srcSel.value = zoneRoutes[0].rx_id;
   srcSel.onchange = async () => {
     const rxId = srcSel.value;
     try {
-      // Clear existing zone routes then add new
       await api.deleteRoutesByZone(zone.id);
       st.routeList().filter(r => (zone.tx_ids??[]).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
       if (rxId) {
@@ -108,7 +178,6 @@ function _buildCard(zone) {
   volLabel.textContent = 'Volume';
   card.appendChild(volLabel);
 
-  // Get average volume from zone tx outputs
   const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
   const avgVol = txOutputs.length ? txOutputs.reduce((a,o) => a + (o.volume_db ?? 0), 0) / txOutputs.length : 0;
   const volDbEl = document.createElement('span');
@@ -136,7 +205,7 @@ function _buildCard(zone) {
   volRow.appendChild(volDbEl);
   card.appendChild(volRow);
 
-  // TX chips
+  // TX output chips
   if (zone.tx_ids?.length) {
     const chips = document.createElement('div');
     chips.className = 'zone-tx-list';

@@ -1290,7 +1290,6 @@ function _openBusRoutingPanel(bus) {
 }
 
 function _buildOutputMaster(out) {
-  const txIdx = parseInt(out.id.replace('tx_', ''), 10);
   const color = st.getZoneColour(out.zone_colour_index ?? 0);
 
   const strip = document.createElement('div');
@@ -1448,6 +1447,9 @@ function _buildOutputMaster(out) {
 
   return strip;
 }
+
+export function buildOutputMaster(out) { return _buildOutputMaster(out); }
+export function fmtDb(v) { return _db(v); }
 
 export function updateMetering(rx, tx, bus) {
   if (!rx && !tx && !bus) return;

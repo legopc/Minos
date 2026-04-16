@@ -146,3 +146,62 @@
   border-radius: 2px;
   padding: 1px 5px;
 }
+
+/* ── Zone detail panel ── */
+
+.zone-panel-header {
+  border-bottom: 3px solid var(--zone-card-color, #444);
+  gap: 10px;
+}
+
+.zone-panel-back-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 2px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.zone-panel-back-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
+
+.zone-panel-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.zone-panel-strips {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--bg-dark);
+  padding: 8px;
+}
+
+/* Make output strips inside zone panel match mixer appearance */
+.zone-panel-strips .mixer-output-strip {
+  flex-shrink: 0;
+}
+
+/* Zone name as clickable button */
+.zone-card-name-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 500;
+  padding: 0;
+  flex: 1;
+  text-decoration: underline dotted;
+}
+.zone-card-name-btn:hover { color: var(--accent-primary); }
