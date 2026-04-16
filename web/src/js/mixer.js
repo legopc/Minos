@@ -745,6 +745,8 @@ function _buildInputStrip(ch, nextCh) {
   fader.oninput = () => {
     const db = st.sliderToDb(+fader.value);
     dbLabel.textContent = _db(db);
+    const chanState = st.state.channels.get(ch.id);
+    if (chanState) chanState.input_gain_db = db;
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
       api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
@@ -926,6 +928,8 @@ function _buildBusStrip(bus) {
   fader.oninput = () => {
     const db = st.sliderToDb(+fader.value);
     dbLabel.textContent = _db(db);
+    const busState = st.state.buses.get(bus.id);
+    if (busState?.dsp?.am?.params) busState.dsp.am.params.gain_db = db;
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
       api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
