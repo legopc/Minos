@@ -343,6 +343,7 @@ impl Default for InternalBusConfig {
             id: "bus_0".to_string(),
             name: "Bus 1".to_string(),
             routing: vec![],
+            routing_gain: vec![],
             dsp: InputChannelDsp::default(),
             muted: false,
         }
