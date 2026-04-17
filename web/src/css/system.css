@@ -290,3 +290,31 @@
     flex: 0 1 calc(33.33% - 12px);
   }
 }
+
+/* DSP CPU usage bar */
+.dsp-cpu-bar-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 160px;
+  height: 14px;
+  background: var(--bg-raised, #2a2a2a);
+  border-radius: 3px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dsp-cpu-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+
+.dsp-cpu-label {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  padding-left: 5px;
+  color: var(--text-primary, #eee);
+  line-height: 14px;
+}

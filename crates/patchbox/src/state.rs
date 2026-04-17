@@ -2,6 +2,7 @@ use crate::jwt;
 use crate::scenes::SceneStore;
 use patchbox_core::config::PatchboxConfig;
 pub use patchbox_core::meters::MeterState;
+pub use patchbox_core::metrics::DspMetrics;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
@@ -26,6 +27,8 @@ pub struct AppState {
     pub resyncs: Arc<AtomicU64>,
     /// Broadcast channel — WS handler subscribes; API mutation handlers send events
     pub ws_tx: Arc<broadcast::Sender<String>>,
+    /// DSP engine CPU metrics — shared with health endpoint
+    pub dsp_metrics: Arc<DspMetrics>,
     /// Shutdown signal for the ALSA monitor writer thread.
     /// (Reserved for future monitor thread restart API; not currently read from AppState)
     #[allow(dead_code)]
@@ -55,6 +58,7 @@ impl AppState {
             audio_callbacks: Arc::new(AtomicU64::new(0)),
             resyncs: Arc::new(AtomicU64::new(0)),
             ws_tx: Arc::new(ws_tx),
+            dsp_metrics: Arc::new(DspMetrics::new()),
             monitor_shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             monitor_thread: Arc::new(std::sync::Mutex::new(None)),
         }

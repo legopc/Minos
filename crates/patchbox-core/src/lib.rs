@@ -8,3 +8,4 @@ pub mod dsp;
 pub mod gain;
 pub mod matrix;
 pub mod meters;
+pub mod metrics;

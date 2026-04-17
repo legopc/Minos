@@ -60,8 +60,11 @@ pub struct HealthConfig {
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct HealthDsp {
-    pub cpu_load_percent: Option<f32>,
-    pub processing: bool,
+    #[schema(value_type = String)]
+    pub status: &'static str,
+    pub cpu_percent: f32,
+    pub cpu_percent_avg: f32,
+    pub xruns: u64,
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
@@ -316,9 +319,14 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             (0, 0)
         };
 
-    // DSP stub (cpu_load and processing not available from AppState)
-    let dsp_cpu_load_percent = None;
-    let dsp_processing = cfg.rx_channels > 0 && cfg.tx_channels > 0;
+    // DSP metrics from shared atomic state
+    let dsp_cpu_avg = s.dsp_metrics.cpu_percent_avg();
+    let dsp = HealthDsp {
+        status: s.dsp_metrics.status().as_str(),
+        cpu_percent: s.dsp_metrics.cpu_percent_instant(),
+        cpu_percent_avg: dsp_cpu_avg,
+        xruns: s.dsp_metrics.xruns(),
+    };
 
     // WS clients count - count active broadcast subscribers
     let clients_connected = s.ws_tx.receiver_count();
@@ -378,7 +386,7 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     // Determine health status
     let is_ptp_locked =
         ptp_state.as_deref() == Some("SLAVE") || ptp_state.as_deref() == Some("MASTER");
-    let cpu_load_ok = dsp_cpu_load_percent.is_none_or(|cpu| cpu <= 80.0);
+    let cpu_load_ok = dsp_cpu_avg < 90.0;
     let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024; // 50 MiB
 
     let status = if !dante_connected || !config_loaded || !storage_free_ok {
@@ -421,10 +429,7 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             path: config_path_str,
             last_modified: config_last_modified,
         },
-        dsp: HealthDsp {
-            cpu_load_percent: dsp_cpu_load_percent,
-            processing: dsp_processing,
-        },
+        dsp,
         storage: HealthStorage {
             free_bytes: storage_free_bytes,
             total_bytes: storage_total_bytes,

@@ -8,6 +8,19 @@ export async function render(container) {
   // Refresh from API on tab open
   try { sys = await api.getSystem(); st.setSystem(sys); } catch (_) {}
 
+  let health = null;
+  try { health = await api.getHealth(); } catch (_) {}
+
+  const _renderDspCpuBar = (dsp) => {
+    if (!dsp) return '<span style="color:var(--text-muted)">—</span>';
+    const pct = Math.min(100, Math.max(0, dsp.cpu_percent_avg ?? 0));
+    const color = pct >= 90 ? 'var(--color-danger)' : pct >= 70 ? 'var(--color-warn)' : 'var(--color-ok)';
+    return `<div class="dsp-cpu-bar-wrap" title="avg ${pct.toFixed(1)}% · inst ${(dsp.cpu_percent ?? 0).toFixed(1)}% · xruns ${dsp.xruns ?? 0}">
+      <div class="dsp-cpu-bar" style="width:${pct}%;background:${color}"></div>
+      <span class="dsp-cpu-label">${pct.toFixed(1)}%</span>
+    </div>`;
+  };
+
   const _renderDanteStatus = (status) => {
     if (status === 'connected') {
       return `<span style="color:var(--color-ok)">connected</span>`;
@@ -57,6 +70,7 @@ export async function render(container) {
         <div class="sys-card-title">Audio</div>
         <div class="sys-row"><span class="sys-lbl">Drops</span><span class="sys-val" style="${dropsClass}">${drops}</span></div>
         ${drops > 0 ? '<div class="sys-row"><button class="sys-btn" id="sys-reset-drops">Reset Counter</button></div>' : ''}
+        <div class="sys-row"><span class="sys-lbl">DSP CPU</span><span class="sys-val sys-dsp-cpu">${_renderDspCpuBar(health?.dsp)}</span></div>
       </div>
 
       <!-- Channel Configuration card -->
@@ -267,6 +281,18 @@ export async function render(container) {
     }
   });
   if (monitorSelect) _cleanup.observe(document.body, { childList: true, subtree: true });
+
+  // Poll health every 2s to keep DSP CPU bar live while System tab is open
+  const dspBar = container.querySelector('.sys-dsp-cpu');
+  if (dspBar) {
+    const _dspPoll = setInterval(async () => {
+      if (!document.contains(dspBar)) { clearInterval(_dspPoll); return; }
+      try {
+        const h = await api.getHealth();
+        dspBar.innerHTML = _renderDspCpuBar(h?.dsp);
+      } catch (_) {}
+    }, 2000);
+  }
 }
 
 /**
