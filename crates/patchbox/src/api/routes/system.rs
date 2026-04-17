@@ -1,3 +1,578 @@
-// S7 s7-arch-api-split — system routes.
-// TODO: move /system, /health, /info handlers from api.rs here.
-// Also home for s7-ops-health deep checks (Dante status, xruns, DSP CPU).
+use axum::{
+    extract::{Path, State},
+    http::{StatusCode, header},
+    response::IntoResponse,
+    Json,
+};
+use std::collections::HashMap;
+use std::sync::atomic::Ordering as AOrdering;
+use std::os::unix::fs::FileTypeExt;
+use tokio::time::Duration;
+use crate::state::AppState;
+use crate::api::{linear_to_dbfs, ws_broadcast};
+use patchbox_core::config::{PatchboxConfig, InternalBusConfig, InputChannelDsp};
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthDante { pub name: String, pub nic: String, pub connected: bool }
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthPtp {
+    pub synced: bool,
+    pub socket_path: String,
+    pub offset_ns: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthAudio {
+    pub rx_channels: usize,
+    pub tx_channels: usize,
+    pub active_routes: usize,
+    pub callbacks_total: u64,
+    pub resyncs: u64,
+    pub rx_levels_rms_db: Vec<f32>,
+    pub tx_levels_rms_db: Vec<f32>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthZone {
+    pub name: String,
+    pub index: usize,
+    pub muted: bool,
+    pub gain_db: f32,
+    pub eq_enabled: bool,
+    pub limiter_enabled: bool,
+    pub active_sources: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthResponse {
+    pub status: &'static str,
+    pub version: &'static str,
+    pub uptime_secs: u64,
+    pub dante: HealthDante,
+    pub ptp: HealthPtp,
+    pub audio: HealthAudio,
+    pub zones: Vec<HealthZone>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct MeteringResponse {
+    rx: HashMap<String, f32>,
+    tx: HashMap<String, f32>,
+    gr: HashMap<String, f32>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct SystemResponse {
+    version: &'static str,
+    hostname: String,
+    uptime_s: u64,
+    sample_rate: u32,
+    rx_count: usize,
+    tx_count: usize,
+    zone_count: usize,
+    dante_status: String,
+    ptp_locked: bool,
+    audio_drops: u64,
+    bus_count: usize,
+    show_buses_in_mixer: bool,
+    monitor_device: Option<String>,
+    monitor_volume_db: f32,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct UpdateSystemConfig {
+    scene_crossfade_ms: Option<f32>,
+    gain_ramp_ms: Option<f32>,
+    show_buses_in_mixer: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct AdminChannelsReq {
+    rx: usize,
+    tx: usize,
+    bus_count: Option<usize>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct SoloRequest { channels: Vec<usize> }
+
+#[derive(serde::Serialize)]
+pub(crate) struct SoloResponse {
+    channels: Vec<usize>,
+    monitor_device: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct MonitorRequest {
+    device: Option<String>,
+    #[serde(default)]
+    volume_db: f32,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct MonitorResponse {
+    device: Option<String>,
+    volume_db: f32,
+}
+
+fn linear_to_db(v: f32) -> f32 {
+    if v <= 0.0 { return -60.0; }
+    (20.0 * v.log10()).max(-60.0)
+}
+
+async fn query_ptp_offset(socket_path: &str) -> Option<i64> {
+    use tokio::io::AsyncReadExt;
+    let connect = tokio::net::UnixStream::connect(socket_path);
+    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect).await.ok()?.ok()?;
+    let mut buf = String::new();
+    let read = tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
+    if read.is_err() { return None; }
+    for line in buf.lines() {
+        if line.starts_with("statime_offset_from_master") && !line.starts_with('#') {
+            if let Some(val_str) = line.split_whitespace().last() {
+                if let Ok(secs) = val_str.parse::<f64>() {
+                    return Some((secs * 1_000_000_000.0) as i64);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn get_hostname() -> String {
+    std::fs::read_to_string("/etc/hostname")
+        .unwrap_or_else(|_| "unknown".to_string())
+        .trim()
+        .to_string()
+}
+
+async fn _create_backup(s: &AppState) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let cfg = s.config.read().await;
+    let toml_str = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
+    drop(cfg);
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let bak_path = s.config_path.with_file_name(format!(
+        "{}-bak-{}.toml",
+        s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox"),
+        ts
+    ));
+    std::fs::write(&bak_path, &toml_str).map_err(|e| e.to_string())?;
+    if let Some(dir) = s.config_path.parent() {
+        let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+        let mut baks: Vec<_> = std::fs::read_dir(dir)
+            .ok().into_iter().flatten()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name();
+                let n = n.to_string_lossy();
+                n.starts_with(&format!("{}-bak-", stem)) && n.ends_with(".toml")
+            })
+            .collect();
+        baks.sort_by_key(|e| e.file_name());
+        if baks.len() > 10 {
+            for old in &baks[..baks.len() - 10] {
+                let _ = std::fs::remove_file(old.path());
+            }
+        }
+    }
+    Ok(bak_path.to_string_lossy().into_owned())
+}
+
+// GET /api/v1/health
+pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let meters = s.meters.read().await;
+    let ptp_socket_path = cfg.dante_clock_path.clone();
+    let ptp_synced = std::fs::metadata(&ptp_socket_path)
+        .map(|m| m.file_type().is_socket())
+        .unwrap_or(false);
+    let ptp_offset_ns = if let Some(obs_path) = &cfg.statime_observation_path {
+        query_ptp_offset(obs_path).await
+    } else {
+        None
+    };
+    let active_routes = cfg.matrix.iter().flatten().filter(|&&v| v).count();
+    let rx_levels_rms_db = meters.rx_rms.iter().map(|&v| linear_to_db(v)).collect();
+    let tx_levels_rms_db = meters.tx_rms.iter().map(|&v| linear_to_db(v)).collect();
+    let zones = (0..cfg.tx_channels).map(|tx| {
+        let active_sources = (0..cfg.rx_channels)
+            .filter(|&rx| cfg.matrix.get(tx).and_then(|row| row.get(rx)).copied().unwrap_or(false))
+            .map(|rx| cfg.sources.get(rx).cloned().unwrap_or_else(|| format!("Source {rx}")))
+            .collect();
+        HealthZone {
+            name: cfg.zones.get(tx).cloned().unwrap_or_else(|| format!("Zone {tx}")),
+            index: tx,
+            muted: cfg.output_muted.get(tx).copied().unwrap_or(false),
+            gain_db: cfg.output_gain_db.get(tx).copied().unwrap_or(0.0),
+            eq_enabled: cfg.per_output_eq.get(tx).map(|e| e.enabled).unwrap_or(false),
+            limiter_enabled: cfg.per_output_limiter.get(tx).map(|l| l.enabled).unwrap_or(false),
+            active_sources,
+        }
+    }).collect();
+    Json(HealthResponse {
+        status: "ok",
+        version: env!("CARGO_PKG_VERSION"),
+        uptime_secs: s.started_at.elapsed().as_secs(),
+        dante: HealthDante {
+            name: cfg.dante_name.clone(),
+            nic: cfg.dante_nic.clone(),
+            connected: s.dante_connected.load(AOrdering::Relaxed),
+        },
+        ptp: HealthPtp {
+            synced: ptp_synced,
+            socket_path: cfg.dante_clock_path.clone(),
+            offset_ns: ptp_offset_ns,
+        },
+        audio: HealthAudio {
+            rx_channels: cfg.rx_channels,
+            tx_channels: cfg.tx_channels,
+            active_routes,
+            callbacks_total: s.audio_callbacks.load(AOrdering::Relaxed),
+            resyncs: s.resyncs.load(AOrdering::Relaxed),
+            rx_levels_rms_db,
+            tx_levels_rms_db,
+        },
+        zones,
+    })
+}
+
+// GET /api/v1/metering
+pub(crate) async fn get_metering(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let rx_count = cfg.rx_channels;
+    let tx_count = cfg.tx_channels;
+    drop(cfg);
+    let meters = s.meters.read().await;
+    let rx: HashMap<String, f32> = (0..rx_count)
+        .map(|i| (format!("rx_{}", i), meters.rx_rms.get(i).copied().map(linear_to_dbfs).unwrap_or(-60.0)))
+        .collect();
+    let tx: HashMap<String, f32> = (0..tx_count)
+        .map(|i| (format!("tx_{}", i), meters.tx_rms.get(i).copied().map(linear_to_dbfs).unwrap_or(-60.0)))
+        .collect();
+    let gr: HashMap<String, f32> = (0..tx_count)
+        .map(|i| (format!("tx_{}", i), meters.tx_gr_db.get(i).copied().unwrap_or(0.0)))
+        .collect();
+    Json(MeteringResponse { rx, tx, gr })
+}
+
+// GET /api/v1/system
+pub(crate) async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let zone_count = cfg.zone_config.len();
+    let rx_count = cfg.rx_channels;
+    let tx_count = cfg.tx_channels;
+    let bus_count = cfg.internal_buses.len();
+    let show_buses_in_mixer = cfg.show_buses_in_mixer;
+    let monitor_device = cfg.monitor_device.clone();
+    let monitor_volume_db = cfg.monitor_volume_db;
+    drop(cfg);
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+    let ptp_locked = dante_connected;
+    let dante_status = if dante_connected { "connected" } else { "disconnected" }.to_string();
+    Json(SystemResponse {
+        version: env!("CARGO_PKG_VERSION"),
+        hostname: get_hostname(),
+        uptime_s: s.started_at.elapsed().as_secs(),
+        sample_rate: 48000,
+        rx_count,
+        tx_count,
+        zone_count,
+        dante_status,
+        ptp_locked,
+        audio_drops: s.resyncs.load(AOrdering::Relaxed),
+        bus_count,
+        show_buses_in_mixer,
+        monitor_device,
+        monitor_volume_db,
+    })
+}
+
+// PUT /api/v1/system/config
+pub(crate) async fn put_system_config(State(s): State<AppState>, Json(body): Json<UpdateSystemConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if let Some(v) = body.scene_crossfade_ms { cfg.scene_crossfade_ms = v.max(0.0); }
+    if let Some(v) = body.gain_ramp_ms { cfg.gain_ramp_ms = v.clamp(0.0, 5000.0); }
+    if let Some(v) = body.show_buses_in_mixer { cfg.show_buses_in_mixer = v; }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/system/config/export
+pub(crate) async fn get_system_config_export(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match toml::to_string_pretty(&*cfg) {
+        Ok(toml_str) => (
+            [
+                (header::CONTENT_TYPE, "application/toml"),
+                (header::CONTENT_DISPOSITION, "attachment; filename=\"patchbox.toml\""),
+            ],
+            toml_str,
+        ).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+// POST /api/v1/system/config/import
+pub(crate) async fn post_system_config_import(State(s): State<AppState>, body: axum::body::Bytes) -> impl IntoResponse {
+    let toml_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => return (StatusCode::BAD_REQUEST, "body is not valid UTF-8").into_response(),
+    };
+    let mut new_cfg: PatchboxConfig = match toml::from_str(toml_str) {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let _ = _create_backup(&s).await;
+    new_cfg.normalize();
+    *s.config.write().await = new_cfg;
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/system/config/backups
+pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse {
+    let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return Json(serde_json::json!([])).into_response(),
+    };
+    let mut baks: Vec<serde_json::Value> = std::fs::read_dir(dir)
+        .ok().into_iter().flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let n = e.file_name();
+            let n = n.to_string_lossy();
+            n.starts_with(&format!("{}-bak-", stem)) && n.ends_with(".toml")
+        })
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let ts: u64 = name
+                .strip_prefix(&format!("{}-bak-", stem))
+                .and_then(|s| s.strip_suffix(".toml"))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            Some(serde_json::json!({ "name": name, "timestamp": ts }))
+        })
+        .collect();
+    baks.sort_by(|a, b| b["timestamp"].as_u64().cmp(&a["timestamp"].as_u64()));
+    Json(baks).into_response()
+}
+
+// GET /api/v1/system/config/backups/:name
+pub(crate) async fn get_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+    if name.contains('/') || name.contains("..") {
+        return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
+    }
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = dir.join(&name);
+    match std::fs::read_to_string(&path) {
+        Ok(content) => (
+            [(header::CONTENT_TYPE, "application/toml"),
+             (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{name}\"") as &str)],
+            content,
+        ).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// POST /api/v1/system/config/backups/:name/restore
+pub(crate) async fn restore_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+    if name.contains('/') || name.contains("..") {
+        return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
+    }
+    let dir = match s.config_path.parent() {
+        Some(d) => d,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let path = dir.join(&name);
+    let toml_str = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let mut new_cfg: PatchboxConfig = match toml::from_str(&toml_str) {
+        Ok(c) => c,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let _ = _create_backup(&s).await;
+    new_cfg.normalize();
+    *s.config.write().await = new_cfg;
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/solo
+pub(crate) async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    })
+}
+
+// PUT /api/v1/solo
+pub(crate) async fn put_solo(State(s): State<AppState>, Json(body): Json<SoloRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.solo_channels = body.channels.into_iter()
+        .filter(|&rx| rx < cfg.rx_channels)
+        .collect();
+    cfg.solo_channels.sort_unstable();
+    cfg.solo_channels.dedup();
+    let resp = SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    };
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": &resp.channels,
+        "monitor_device": &resp.monitor_device,
+    }).to_string());
+    Json(resp)
+}
+
+// POST /api/v1/solo/:rx/toggle
+pub(crate) async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if rx >= cfg.rx_channels {
+        return (StatusCode::BAD_REQUEST, "Invalid RX index").into_response();
+    }
+    if let Some(pos) = cfg.solo_channels.iter().position(|&c| c == rx) {
+        cfg.solo_channels.remove(pos);
+    } else {
+        cfg.solo_channels.push(rx);
+        cfg.solo_channels.sort_unstable();
+    }
+    let resp = SoloResponse {
+        channels: cfg.solo_channels.clone(),
+        monitor_device: cfg.monitor_device.clone(),
+    };
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": &resp.channels,
+        "monitor_device": &resp.monitor_device,
+    }).to_string());
+    Json(resp).into_response()
+}
+
+// DELETE /api/v1/solo
+pub(crate) async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.solo_channels.clear();
+    ws_broadcast(&s, serde_json::json!({
+        "type": "solo_update",
+        "channels": Vec::<usize>::new(),
+        "monitor_device": &cfg.monitor_device,
+    }).to_string());
+    StatusCode::NO_CONTENT
+}
+
+// GET /api/v1/monitor
+pub(crate) async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(MonitorResponse {
+        device: cfg.monitor_device.clone(),
+        volume_db: cfg.monitor_volume_db,
+    })
+}
+
+// PUT /api/v1/monitor
+pub(crate) async fn put_monitor(State(s): State<AppState>, Json(body): Json<MonitorRequest>) -> impl IntoResponse {
+    if body.volume_db < -60.0 || body.volume_db > 12.0 {
+        return (StatusCode::BAD_REQUEST, "volume_db out of range [-60, 12]").into_response();
+    }
+    {
+        let mut cfg = s.config.write().await;
+        cfg.monitor_device = body.device.clone();
+        cfg.monitor_volume_db = body.volume_db;
+    }
+    if let Err(e) = s.persist().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    ws_broadcast(&s, serde_json::json!({
+        "type": "monitor_config_update",
+        "device": &body.device,
+        "volume_db": body.volume_db,
+    }).to_string());
+    Json(MonitorResponse { device: body.device, volume_db: body.volume_db }).into_response()
+}
+
+// GET /api/v1/audio-devices
+pub(crate) async fn list_audio_devices() -> impl IntoResponse {
+    #[cfg(feature = "inferno")]
+    {
+        let devs = patchbox_dante::monitor::enumerate_devices();
+        let list: Vec<serde_json::Value> = devs.iter().map(|(name, desc)| {
+            serde_json::json!({ "name": name, "description": desc })
+        }).collect();
+        return Json(serde_json::json!({ "devices": list })).into_response();
+    }
+    #[cfg(not(feature = "inferno"))]
+    Json(serde_json::json!({ "devices": [] })).into_response()
+}
+
+// GET /api/v1/whoami
+pub(crate) async fn whoami(
+    State(_s): State<AppState>,
+    req: axum::extract::Request,
+) -> impl IntoResponse {
+    let claims = req.extensions().get::<crate::jwt::Claims>().cloned();
+    match claims {
+        Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone})).into_response(),
+        None => (StatusCode::UNAUTHORIZED, "not authenticated").into_response(),
+    }
+}
+
+// POST /api/v1/admin/channels
+pub(crate) async fn post_admin_channels(
+    State(state): State<AppState>,
+    Json(body): Json<AdminChannelsReq>,
+) -> impl IntoResponse {
+    if body.rx < 1 || body.rx > 32 || body.tx < 1 || body.tx > 32 {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "channel count out of range (1-32)"}))).into_response();
+    }
+    {
+        let mut cfg = state.config.write().await;
+        cfg.rx_channels = body.rx;
+        cfg.tx_channels = body.tx;
+        if let Some(count) = body.bus_count {
+            let count = count.min(8);
+            let rx = cfg.rx_channels;
+            while cfg.internal_buses.len() < count {
+                let idx = cfg.internal_buses.len();
+                cfg.internal_buses.push(InternalBusConfig {
+                    id: format!("bus_{}", idx),
+                    name: format!("Bus {}", idx + 1),
+                    routing: vec![false; rx],
+                    routing_gain: vec![0.0; rx],
+                    dsp: InputChannelDsp::default(),
+                    muted: false,
+                });
+            }
+            cfg.internal_buses.truncate(count);
+        }
+        cfg.normalize();
+    }
+    if let Err(e) = state.persist().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("persist failed: {}", e)}))).into_response();
+    }
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        std::process::exit(0);
+    });
+    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+}
+
+// POST /api/v1/admin/restart
+pub(crate) async fn post_admin_restart(State(state): State<AppState>) -> impl IntoResponse {
+    let _ = state.persist().await;
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        std::process::exit(0);
+    });
+    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+}

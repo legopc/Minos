@@ -1,2 +1,324 @@
-// S7 s7-arch-api-split — inputs routes.
-// TODO: move get_inputs / put_input / input DSP handlers from api.rs here.
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use crate::state::AppState;
+use crate::api::{GainBody, EnabledBody, PolarityBody, parse_rx_id, input_dsp_to_value};
+use patchbox_core::config::{FilterConfig, EqConfig, GateConfig, CompressorConfig, AecConfig, DynamicEqConfig};
+
+#[derive(serde::Serialize)]
+pub(crate) struct ChannelResponse {
+    id: String,
+    name: String,
+    source_type: &'static str,
+    gain_db: f32,
+    enabled: bool,
+    colour_index: Option<u8>,
+    dsp: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct UpdateChannelRequest {
+    name: Option<String>,
+    gain_db: Option<f32>,
+    enabled: Option<bool>,
+    colour_index: Option<Option<u8>>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct UpdateAutomixerChannelRequest {
+    pub group_id: Option<String>,
+    pub weight: Option<f32>,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct UpdateFeedbackSuppressorRequest {
+    pub enabled: Option<bool>,
+    pub threshold_db: Option<f32>,
+    pub hysteresis_db: Option<f32>,
+    pub bandwidth_hz: Option<f32>,
+    pub max_notches: Option<usize>,
+    pub auto_reset: Option<bool>,
+    pub quiet_hold_ms: Option<f32>,
+    pub quiet_threshold_db: Option<f32>,
+    pub reset_notches: Option<bool>,
+}
+
+// GET /api/v1/channels
+pub(crate) async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let channels: Vec<ChannelResponse> = (0..cfg.rx_channels)
+        .map(|i| {
+            let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
+            let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
+            let colour_index = cfg.input_colours.get(i).copied()
+                .and_then(|v| if v < 0 { None } else { Some(v as u8) });
+            ChannelResponse {
+                id: format!("rx_{}", i),
+                name,
+                source_type: "dante",
+                gain_db: dsp.gain_db,
+                enabled: dsp.enabled,
+                colour_index,
+                dsp: input_dsp_to_value(&dsp),
+            }
+        })
+        .collect();
+    Json(channels)
+}
+
+// GET /api/v1/channels/:id
+pub(crate) async fn get_channel(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+    let Some(i) = parse_rx_id(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid channel id").into_response();
+    };
+    let cfg = s.config.read().await;
+    if i >= cfg.rx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
+    let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
+    let colour_index = cfg.input_colours.get(i).copied()
+        .and_then(|v| if v < 0 { None } else { Some(v as u8) });
+    Json(ChannelResponse {
+        id: format!("rx_{}", i),
+        name,
+        source_type: "dante",
+        gain_db: dsp.gain_db,
+        enabled: dsp.enabled,
+        colour_index,
+        dsp: input_dsp_to_value(&dsp),
+    }).into_response()
+}
+
+// PUT /api/v1/channels/:id
+pub(crate) async fn put_channel(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateChannelRequest>) -> impl IntoResponse {
+    let Some(i) = parse_rx_id(&id) else {
+        return (StatusCode::BAD_REQUEST, "invalid channel id").into_response();
+    };
+    let mut cfg = s.config.write().await;
+    if i >= cfg.rx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Some(name) = body.name {
+        if i < cfg.sources.len() { cfg.sources[i] = name; }
+    }
+    if let Some(gain) = body.gain_db {
+        if i < cfg.input_dsp.len() { cfg.input_dsp[i].gain_db = gain.clamp(-60.0, 24.0); }
+    }
+    if let Some(enabled) = body.enabled {
+        if i < cfg.input_dsp.len() { cfg.input_dsp[i].enabled = enabled; }
+    }
+    if let Some(colour_index) = body.colour_index {
+        if i >= cfg.input_colours.len() { cfg.input_colours.resize(i + 1, -1); }
+        cfg.input_colours[i] = colour_index.map(|c| (c % 10) as i8).unwrap_or(-1);
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/inputs/:ch/dsp
+pub(crate) async fn get_input_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match cfg.input_dsp.get(ch) {
+        Some(dsp) => Json(dsp.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/inputs/:ch/gain
+pub(crate) async fn put_input_gain(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GainBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    let clamped = body.gain_db.clamp(-60.0, 24.0);
+    dsp.gain_db = clamped;
+    // Stereo link mirroring
+    let pair_ch = cfg.stereo_links.iter().find_map(|sl| {
+        if sl.linked {
+            if sl.left_channel == ch { Some(sl.right_channel) }
+            else if sl.right_channel == ch { Some(sl.left_channel) }
+            else { None }
+        } else { None }
+    });
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.input_dsp.get_mut(p) { pdsp.gain_db = clamped; }
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/polarity
+pub(crate) async fn put_input_polarity(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<PolarityBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.polarity = body.invert;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/hpf
+pub(crate) async fn put_input_hpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.hpf = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/lpf
+pub(crate) async fn put_input_lpf(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<FilterConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.lpf = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/eq
+pub(crate) async fn put_input_eq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/eq/enabled
+pub(crate) async fn put_input_eq_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.eq.enabled = body.enabled;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/gate
+pub(crate) async fn put_input_gate(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<GateConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.gate = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/compressor
+pub(crate) async fn put_input_compressor(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<CompressorConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.compressor = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/inputs/:ch/aec
+pub(crate) async fn get_input_aec(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    match cfg.input_dsp.get(ch) {
+        Some(dsp) => Json(dsp.aec.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+// PUT /api/v1/inputs/:ch/aec
+pub(crate) async fn put_input_aec(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<AecConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.aec = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/enabled
+pub(crate) async fn put_input_enabled(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<EnabledBody>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.enabled = body.enabled;
+    let pair_ch = cfg.stereo_links.iter().find_map(|sl| {
+        if sl.linked {
+            if sl.left_channel == ch { Some(sl.right_channel) }
+            else if sl.right_channel == ch { Some(sl.left_channel) }
+            else { None }
+        } else { None }
+    });
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.input_dsp.get_mut(p) { pdsp.enabled = body.enabled; }
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// PUT /api/v1/inputs/:ch/automixer
+pub(crate) async fn put_input_automixer(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<UpdateAutomixerChannelRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    if let Some(gid) = body.group_id    { dsp.automixer.group_id = if gid.is_empty() { None } else { Some(gid) }; }
+    if let Some(w) = body.weight         { dsp.automixer.weight = w.clamp(0.01, 10.0); }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/inputs/:ch/feedback
+pub(crate) async fn get_input_feedback(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(dsp) = cfg.input_dsp.get(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    Json(serde_json::json!(&dsp.feedback)).into_response()
+}
+
+// PUT /api/v1/inputs/:ch/feedback
+pub(crate) async fn put_input_feedback(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<UpdateFeedbackSuppressorRequest>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    if let Some(v) = body.enabled            { dsp.feedback.enabled = v; }
+    if let Some(v) = body.threshold_db       { dsp.feedback.threshold_db = v.clamp(-60.0, 0.0); }
+    if let Some(v) = body.hysteresis_db      { dsp.feedback.hysteresis_db = v.clamp(0.0, 30.0); }
+    if let Some(v) = body.bandwidth_hz       { dsp.feedback.bandwidth_hz = v.clamp(1.0, 100.0); }
+    if let Some(v) = body.max_notches        { dsp.feedback.max_notches = v.clamp(1, 8); }
+    if let Some(v) = body.auto_reset         { dsp.feedback.auto_reset = v; }
+    if let Some(v) = body.quiet_hold_ms      { dsp.feedback.quiet_hold_ms = v.clamp(100.0, 30_000.0); }
+    if let Some(v) = body.quiet_threshold_db { dsp.feedback.quiet_threshold_db = v.clamp(-80.0, -20.0); }
+    // reset_notches: toggle enabled off/on — RT sync() will deactivate all notches
+    if body.reset_notches == Some(true) {
+        let was = dsp.feedback.enabled;
+        dsp.feedback.enabled = false;
+        drop(cfg);
+        let mut cfg2 = s.config.write().await;
+        if let Some(d) = cfg2.input_dsp.get_mut(ch) { d.feedback.enabled = was; }
+        drop(cfg2);
+        crate::persist_or_500!(s);
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/inputs/:ch/deq
+pub(crate) async fn get_input_deq(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let Some(dsp) = cfg.input_dsp.get(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    Json(serde_json::json!(&dsp.deq)).into_response()
+}
+
+// PUT /api/v1/inputs/:ch/deq
+pub(crate) async fn put_input_deq(State(s): State<AppState>, Path(ch): Path<usize>, Json(body): Json<DynamicEqConfig>) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(dsp) = cfg.input_dsp.get_mut(ch) else { return StatusCode::NOT_FOUND.into_response(); };
+    dsp.deq = body;
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}

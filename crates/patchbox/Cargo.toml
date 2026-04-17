@@ -33,3 +33,6 @@ path = "src/lib.rs"
 default = []
 inferno = ['patchbox-dante/inferno']
 aec = ['patchbox-core/aec']
+
+[dev-dependencies]
+tempfile = "3"
