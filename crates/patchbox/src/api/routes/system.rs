@@ -681,6 +681,43 @@ pub async fn restore_config_backup(
     StatusCode::NO_CONTENT.into_response()
 }
 
+// GET /api/v1/system/config/backup
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/config/backup",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Current config as TOML file download",
+         content_type = "application/toml"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 500, description = "Serialisation error", body = crate::api::ErrorResponse),
+    )
+)]
+pub async fn get_config_backup_download(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let toml_str = match toml::to_string_pretty(&*cfg) {
+        Ok(s) => s,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+        }
+    };
+    drop(cfg);
+
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let filename = format!("patchbox-config-{date}.toml");
+    let disposition = format!("attachment; filename=\"{filename}\"");
+
+    (
+        [
+            (header::CONTENT_TYPE, "application/toml".to_string()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        toml_str,
+    )
+        .into_response()
+}
+
 // GET /api/v1/solo
 #[utoipa::path(
     get,

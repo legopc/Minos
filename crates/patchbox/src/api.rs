@@ -531,6 +531,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/system/config/import",
             post(post_system_config_import),
         )
+        .route(
+            "/api/v1/system/config/backup",
+            get(get_config_backup_download),
+        )
         .route("/api/v1/system/config/backups", get(get_config_backups))
         .route(
             "/api/v1/system/config/backups/:name",

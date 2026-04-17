@@ -33,6 +33,7 @@ impl Modify for SecurityAddon {
         crate::api::routes::system::put_solo,
         crate::api::routes::system::get_monitor,
         crate::api::routes::system::put_monitor,
+        crate::api::routes::system::get_config_backup_download,
         crate::api::routes::inputs::get_channels,
         crate::api::routes::inputs::get_channel,
         crate::api::routes::inputs::put_channel,
