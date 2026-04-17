@@ -1,5 +1,5 @@
 use crate::api::{
-    input_dsp_to_value, parse_bus_id, ws_broadcast, EnabledBody, GainBody, MutedBody, PolarityBody,
+    dsp_to_value, parse_bus_id, ws_broadcast, EnabledBody, GainBody, MutedBody, PolarityBody,
 };
 use crate::state::AppState;
 use axum::{
@@ -64,7 +64,7 @@ pub(crate) fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusRespon
         muted: bus.muted,
         routing: bus.routing.clone(),
         routing_gain: bus.routing_gain.clone(),
-        dsp: input_dsp_to_value(&bus.dsp),
+        dsp: dsp_to_value(&bus.dsp),
     }
 }
 

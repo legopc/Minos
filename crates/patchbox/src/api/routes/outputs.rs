@@ -1,6 +1,4 @@
-use crate::api::{
-    output_dsp_to_value, parse_tx_id, ws_broadcast, EnabledBody, GainBody, MutedBody,
-};
+use crate::api::{dsp_to_value, parse_tx_id, ws_broadcast, EnabledBody, GainBody, MutedBody};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
@@ -72,7 +70,7 @@ pub(crate) async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse 
                 volume_db: dsp.gain_db,
                 muted: dsp.muted,
                 polarity: dsp.polarity,
-                dsp: output_dsp_to_value(&dsp),
+                dsp: dsp_to_value(&dsp),
             }
         })
         .collect();
@@ -120,7 +118,7 @@ pub(crate) async fn get_output_resource(
         volume_db: dsp.gain_db,
         muted: dsp.muted,
         polarity: dsp.polarity,
-        dsp: output_dsp_to_value(&dsp),
+        dsp: dsp_to_value(&dsp),
     })
     .into_response()
 }

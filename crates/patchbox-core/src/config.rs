@@ -584,6 +584,35 @@ impl Default for InputChannelDsp {
     }
 }
 
+/// Trait implemented by every DSP chain struct. Allows a single generic serializer
+/// in the API layer instead of one function per channel kind.
+pub trait DspChain {
+    fn to_dsp_value(&self) -> serde_json::Value;
+}
+
+impl DspChain for InputChannelDsp {
+    fn to_dsp_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "flt": {
+                "kind": "flt", "version": 1,
+                "enabled": self.hpf.enabled || self.lpf.enabled,
+                "bypassed": false,
+                "params": {"hpf": {"enabled": self.hpf.enabled, "freq_hz": self.hpf.freq_hz}, "lpf": {"enabled": self.lpf.enabled, "freq_hz": self.lpf.freq_hz}}
+            },
+            "am": {"kind": "am", "version": 1, "enabled": true, "bypassed": self.gain_db == 0.0_f32 && !self.polarity, "params": {"gain_db": self.gain_db, "invert_polarity": self.polarity}},
+            "peq": {"kind": "peq", "version": 1, "enabled": self.eq.enabled, "bypassed": false, "params": &self.eq},
+            "gte": {"kind": "gte", "version": 1, "enabled": self.gate.enabled, "bypassed": false, "params": &self.gate},
+            "cmp": {"kind": "cmp", "version": 1, "enabled": self.compressor.enabled, "bypassed": false, "params": &self.compressor},
+            "aec": {"kind": "aec", "version": 1, "enabled": self.aec.enabled, "bypassed": false, "params": &self.aec},
+            "axm": {"kind": "axm", "version": 1, "enabled": true, "bypassed": false, "params": {"group_id": self.automixer.group_id, "weight": self.automixer.weight}},
+            "afs": {"kind": "afs", "version": 1, "enabled": self.feedback.enabled, "bypassed": false, "params": {"enabled": self.feedback.enabled, "threshold_db": self.feedback.threshold_db,
+                    "hysteresis_db": self.feedback.hysteresis_db, "bandwidth_hz": self.feedback.bandwidth_hz,
+                    "max_notches": self.feedback.max_notches, "auto_reset": self.feedback.auto_reset}},
+            "deq": {"kind": "deq", "version": 1, "enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "params": {"enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "bands": &self.deq.bands}},
+        })
+    }
+}
+
 /// Full DSP chain for one output channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputChannelDsp {
@@ -632,6 +661,28 @@ impl Default for OutputChannelDsp {
             dither_bits: 0,
             deq: DynamicEqConfig::default(),
         }
+    }
+}
+
+impl DspChain for OutputChannelDsp {
+    fn to_dsp_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "flt": {
+                "kind": "flt", "version": 1,
+                "enabled": self.hpf.enabled || self.lpf.enabled,
+                "bypassed": false,
+                "params": {"hpf": {"enabled": self.hpf.enabled, "freq_hz": self.hpf.freq_hz}, "lpf": {"enabled": self.lpf.enabled, "freq_hz": self.lpf.freq_hz}}
+            },
+            "peq": {"kind": "peq", "version": 1, "enabled": self.eq.enabled, "bypassed": false, "params": &self.eq},
+            "cmp": {"kind": "cmp", "version": 1, "enabled": self.compressor.enabled, "bypassed": false, "params": &self.compressor},
+            "lim": {"kind": "lim", "version": 1, "enabled": self.limiter.enabled, "bypassed": false, "params": &self.limiter},
+            "dly": {"kind": "dly", "version": 1, "enabled": self.delay.enabled, "bypassed": !self.delay.enabled, "params": serde_json::json!({
+                "delay_ms": self.delay.delay_ms,
+                "bypassed": !self.delay.enabled,
+                "dither_bits": self.dither_bits,
+            })},
+            "deq": {"kind": "deq", "version": 1, "enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "params": {"enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "bands": &self.deq.bands}},
+        })
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::api::{input_dsp_to_value, parse_rx_id, EnabledBody, GainBody, PolarityBody};
+use crate::api::{dsp_to_value, parse_rx_id, EnabledBody, GainBody, PolarityBody};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
@@ -75,7 +75,7 @@ pub(crate) async fn get_channels(State(s): State<AppState>) -> impl IntoResponse
                 gain_db: dsp.gain_db,
                 enabled: dsp.enabled,
                 colour_index,
-                dsp: input_dsp_to_value(&dsp),
+                dsp: dsp_to_value(&dsp),
             }
         })
         .collect();
@@ -112,7 +112,7 @@ pub(crate) async fn get_channel(
         gain_db: dsp.gain_db,
         enabled: dsp.enabled,
         colour_index,
-        dsp: input_dsp_to_value(&dsp),
+        dsp: dsp_to_value(&dsp),
     })
     .into_response()
 }

@@ -82,7 +82,7 @@ use routes::scenes::*;
 use routes::system::*;
 use routes::zones::*;
 
-use patchbox_core::config::{InputChannelDsp, OutputChannelDsp};
+use patchbox_core::config::DspChain;
 
 /// Returns HTTP 500 with structured JSON if config persist fails.
 /// The change remains live in memory until next restart (documented in response body).
@@ -145,45 +145,8 @@ pub(crate) fn parse_zone_id(id: &str) -> Option<usize> {
     id.strip_prefix("zone_")?.parse().ok()
 }
 
-pub(crate) fn input_dsp_to_value(dsp: &InputChannelDsp) -> serde_json::Value {
-    serde_json::json!({
-        "flt": {
-            "kind": "flt", "version": 1,
-            "enabled": dsp.hpf.enabled || dsp.lpf.enabled,
-            "bypassed": false,
-            "params": {"hpf": {"enabled": dsp.hpf.enabled, "freq_hz": dsp.hpf.freq_hz}, "lpf": {"enabled": dsp.lpf.enabled, "freq_hz": dsp.lpf.freq_hz}}
-        },
-        "am": {"kind": "am", "version": 1, "enabled": true, "bypassed": dsp.gain_db == 0.0_f32 && !dsp.polarity, "params": {"gain_db": dsp.gain_db, "invert_polarity": dsp.polarity}},
-        "peq": {"kind": "peq", "version": 1, "enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
-        "gte": {"kind": "gte", "version": 1, "enabled": dsp.gate.enabled, "bypassed": false, "params": &dsp.gate},
-        "cmp": {"kind": "cmp", "version": 1, "enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
-        "aec": {"kind": "aec", "version": 1, "enabled": dsp.aec.enabled, "bypassed": false, "params": &dsp.aec},
-        "axm": {"kind": "axm", "version": 1, "enabled": true, "bypassed": false, "params": {"group_id": dsp.automixer.group_id, "weight": dsp.automixer.weight}},
-        "afs": {"kind": "afs", "version": 1, "enabled": dsp.feedback.enabled, "bypassed": false, "params": {"enabled": dsp.feedback.enabled, "threshold_db": dsp.feedback.threshold_db,
-                "hysteresis_db": dsp.feedback.hysteresis_db, "bandwidth_hz": dsp.feedback.bandwidth_hz,
-                "max_notches": dsp.feedback.max_notches, "auto_reset": dsp.feedback.auto_reset}},
-        "deq": {"kind": "deq", "version": 1, "enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "params": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "bands": &dsp.deq.bands}},
-    })
-}
-
-pub(crate) fn output_dsp_to_value(dsp: &OutputChannelDsp) -> serde_json::Value {
-    serde_json::json!({
-        "flt": {
-            "kind": "flt", "version": 1,
-            "enabled": dsp.hpf.enabled || dsp.lpf.enabled,
-            "bypassed": false,
-            "params": {"hpf": {"enabled": dsp.hpf.enabled, "freq_hz": dsp.hpf.freq_hz}, "lpf": {"enabled": dsp.lpf.enabled, "freq_hz": dsp.lpf.freq_hz}}
-        },
-        "peq": {"kind": "peq", "version": 1, "enabled": dsp.eq.enabled, "bypassed": false, "params": &dsp.eq},
-        "cmp": {"kind": "cmp", "version": 1, "enabled": dsp.compressor.enabled, "bypassed": false, "params": &dsp.compressor},
-        "lim": {"kind": "lim", "version": 1, "enabled": dsp.limiter.enabled, "bypassed": false, "params": &dsp.limiter},
-        "dly": {"kind": "dly", "version": 1, "enabled": dsp.delay.enabled, "bypassed": !dsp.delay.enabled, "params": serde_json::json!({
-            "delay_ms": dsp.delay.delay_ms,
-            "bypassed": !dsp.delay.enabled,
-            "dither_bits": dsp.dither_bits,
-        })},
-        "deq": {"kind": "deq", "version": 1, "enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "params": {"enabled": dsp.deq.enabled, "bypassed": dsp.deq.bypassed, "bands": &dsp.deq.bands}},
-    })
+pub(crate) fn dsp_to_value(dsp: &impl DspChain) -> serde_json::Value {
+    dsp.to_dsp_value()
 }
 
 pub(crate) fn linear_to_dbfs(v: f32) -> f32 {
