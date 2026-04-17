@@ -350,9 +350,17 @@ export function render(container) {
 
   viewport.appendChild(grid);
   
+  // Compute and display routing warnings
+  const routes = st.routeList();
+  const busMatrix = st.state.busMatrix ?? {};
+  const stereoLinks = st.state.stereoLinks ?? [];
+  _currentWarnings = _computeWarnings(channels, outputs, routes, buses, busMatrix, stereoLinks);
+  const warningBanner = _buildWarningBanner(_currentWarnings);
+  
   // Create and insert filter bar
   const filterBar = _buildFilterBar();
   _container.appendChild(filterBar);
+  _container.appendChild(warningBanner);
   _container.appendChild(viewport);
 
   // Apply stored filters if any
