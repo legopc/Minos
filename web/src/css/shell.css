@@ -463,3 +463,91 @@ body.offline .xp-cell {
     min-height: 44px;
   }
 }
+
+/* ── responsive v2: tablet/midwidth layouts ─────────────────────────────── */
+
+/* At <600px: horizontal scroll tabbar with fade edges */
+@media (max-width: 599px) {
+  #tabbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+  }
+
+  #tabbar::after {
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    width: 20px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent 0%, var(--bg-dark) 100%);
+    pointer-events: none;
+    flex-shrink: 0;
+  }
+
+  .tab-btn {
+    flex-shrink: 0;
+  }
+
+  .tabbar-spacer {
+    display: none;
+  }
+
+  .tabbar-logo,
+  .tabbar-device,
+  .tabbar-sep,
+  .tabbar-user,
+  .tabbar-help {
+    display: none;
+  }
+
+  #statusbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    height: auto;
+    padding: 6px 8px;
+    font-size: 10px;
+    min-height: 28px;
+  }
+
+  .status-sep {
+    display: none;
+  }
+
+  .status-item {
+    flex-shrink: 0;
+  }
+}
+
+/* At 600px–900px: show core info, compact layout */
+@media (min-width: 600px) and (max-width: 899px) {
+  .tabbar-device,
+  .tabbar-user,
+  .tabbar-sep,
+  .tabbar-help {
+    display: none;
+  }
+
+  .tabbar-logo {
+    padding: 0 6px;
+    font-size: 10px;
+  }
+
+  .tab-btn {
+    padding: 0 12px;
+    font-size: 11px;
+  }
+
+  #statusbar {
+    gap: 12px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+}
+
+/* At 900px+: full tabbar with all info */
+@media (min-width: 900px) {
+  /* default desktop layout */
+}

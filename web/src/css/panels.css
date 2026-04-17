@@ -243,3 +243,42 @@
     min-height: 44px;
   }
 }
+
+/* ── responsive v2: DSP panels full-viewport on <900px ─────────────────────── */
+
+@media (max-width: 899px) {
+  .dsp-panel {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    min-width: 90vw;
+    max-width: 95vw;
+    max-height: 85vh;
+    z-index: 5000;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.8);
+  }
+
+  .dsp-panel-body {
+    max-height: calc(85vh - 60px);
+    overflow-y: auto;
+  }
+
+  @media (max-width: 599px) {
+    .dsp-panel {
+      min-width: 95vw;
+      max-width: 98vw;
+      max-height: 90vh;
+    }
+
+    .dsp-panel-body {
+      max-height: calc(90vh - 60px);
+    }
+  }
+}
+
+@media (min-width: 900px) {
+  .dsp-panel {
+    position: absolute;
+  }
+}

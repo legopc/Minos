@@ -1337,3 +1337,66 @@
 }
 
 .mixer-add-gen-btn:hover { opacity: 1; }
+
+/* ── responsive v2: tablet/midwidth mixer layouts ─────────────────────────── */
+
+/* At <900px: horizontal scroll strip lane with snap points */
+@media (max-width: 899px) {
+  .mixer-strips {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mixer-strip,
+  .mixer-zone-master {
+    flex: 0 0 100px;
+    min-width: 100px;
+    max-width: none;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+  }
+
+  /* At <600px: one strip per row full-width */
+  @media (max-width: 599px) {
+    .mixer-body {
+      flex-direction: column;
+    }
+
+    .mixer-strips {
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-snap-type: y mandatory;
+      width: 100%;
+      height: auto;
+      gap: 1px;
+    }
+
+    .mixer-strip,
+    .mixer-zone-master {
+      flex: 0 1 150px;
+      min-height: 150px;
+      max-height: 200px;
+      width: 100%;
+      margin: 0;
+    }
+
+    .mixer-zone-masters {
+      display: none;
+    }
+  }
+}
+
+/* At 900px+: return to horizontal scroll (default) */
+@media (min-width: 900px) {
+  .mixer-strips {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .mixer-zone-masters {
+    display: flex;
+    flex-direction: row;
+  }
+}

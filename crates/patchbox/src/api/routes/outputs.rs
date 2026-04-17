@@ -12,8 +12,8 @@ use patchbox_core::config::{
 use patchbox_core::dsp::DspBlock;
 use tracing;
 
-#[derive(serde::Serialize)]
-pub(crate) struct OutputResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct OutputResponse {
     id: String,
     name: String,
     zone_id: String,
@@ -21,11 +21,12 @@ pub(crate) struct OutputResponse {
     volume_db: f32,
     muted: bool,
     polarity: bool,
+    #[schema(value_type = Object)]
     dsp: serde_json::Value,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateOutputRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateOutputRequest {
     name: Option<String>,
     volume_db: Option<f32>,
     muted: Option<bool>,
@@ -37,7 +38,15 @@ pub(crate) struct DitherBody {
 }
 
 // GET /api/v1/outputs
-pub(crate) async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/outputs",
+    tag = "outputs",
+    responses(
+        (status = 200, description = "List of outputs", body = Vec<OutputResponse>)
+    )
+)]
+pub async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let outputs: Vec<OutputResponse> = (0..cfg.tx_channels)
         .map(|i| {
@@ -78,7 +87,17 @@ pub(crate) async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse 
 }
 
 // GET /api/v1/outputs/:id
-pub(crate) async fn get_output_resource(
+#[utoipa::path(
+    get,
+    path = "/api/v1/outputs/{id}",
+    tag = "outputs",
+    params(("id" = String, Path, description = "Output ID e.g. tx_0")),
+    responses(
+        (status = 200, description = "Output details", body = OutputResponse),
+        (status = 404, description = "Not found")
+    )
+)]
+pub async fn get_output_resource(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -124,8 +143,19 @@ pub(crate) async fn get_output_resource(
 }
 
 // PUT /api/v1/outputs/:id
+#[utoipa::path(
+    put,
+    path = "/api/v1/outputs/{id}",
+    tag = "outputs",
+    params(("id" = String, Path, description = "Output ID e.g. tx_0")),
+    request_body = UpdateOutputRequest,
+    responses(
+        (status = 204, description = "Updated"),
+        (status = 404, description = "Not found")
+    )
+)]
 #[tracing::instrument(skip_all, fields(output_id = %id))]
-pub(crate) async fn put_output_resource(
+pub async fn put_output_resource(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateOutputRequest>,

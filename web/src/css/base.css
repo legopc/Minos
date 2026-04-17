@@ -1,4 +1,9 @@
 :root {
+  /* ── responsive v2: breakpoint tokens ──────────────────────────────────── */
+  --bp-sm: 600px;
+  --bp-md: 900px;
+  --bp-lg: 1200px;
+
   /* ── Colors: Backgrounds ───────────────────────────────────────────────── */
   --bg-workspace:   #1a1d24;
   --bg-surface:     #1e2230;
@@ -8,7 +13,7 @@
   --bg-input:       #0f1117;
   --bg-hover:       #2a2a2a;
 
-  /* ── Colors: Borders ───────────────────────────────────────────────────── */
+  /* ── Colors: Borders ───────────────────────────────────────────────────– */
   --border-primary: #2d3140;
   --border-subtle:  #1a1d2a;
 
@@ -18,6 +23,7 @@
   --text-muted:     #8b949e;
   --text-dim:       #484f58;
   --text-accent:    #58a6ff;
+  --focus:          #58a6ff;
 
   /* ── Colors: Status indicators ─────────────────────────────────────────── */
   --vu-green:       #3fb950;
@@ -167,7 +173,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 1px solid var(--text-accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -185,8 +191,8 @@ textarea {
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 1px solid var(--text-accent);
-  outline-offset: -1px;
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 input[type="range"] {
@@ -316,5 +322,87 @@ input[type="range"] {
     inset: -4px -8px;
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+/* ── Accessibility: Screen Reader Only ─────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Accessibility: Skip Link ──────────────────────────────────────────── */
+#skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-accent);
+  color: var(--bg-dark);
+  padding: 8px 16px;
+  text-decoration: none;
+  z-index: 10000;
+  font-weight: 600;
+}
+
+#skip-link:focus {
+  top: 0;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Accessibility: Enhanced Focus Rings ───────────────────────────────– */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* Button roving tabindex focus on tab navigation */
+[role="tablist"] [role="tab"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* ── Accessibility: Reduced Motion ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Disable fader animations */
+  .strip-fader {
+    transition: none !important;
+  }
+
+  /* Disable meter bar animations */
+  .strip-meter-bar {
+    transition: none !important;
+  }
+
+  /* Disable modal transitions */
+  .modal-overlay,
+  .modal-box {
+    transition: none !important;
+  }
+
+  /* Disable toast animations */
+  .toast-item {
+    transition: none !important;
   }
 }

@@ -985,3 +985,105 @@
   box-shadow: inset 0 0 0 2px #e8b923;
   background: rgba(232, 185, 35, 0.08);
 }
+
+/* ── responsive v2: tablet/midwidth matrix layouts ──────────────────────────── */
+
+/* At <900px: adjust grid dimensions and enable dual-axis scroll with sticky headers */
+@media (max-width: 899px) {
+  .matrix-viewport {
+    --label-w: 300px;
+    --col-w:   56px;
+    --row-h:   48px;
+  }
+
+  .corner-inner {
+    padding: 6px 8px 6px 10px;
+    gap: 4px;
+  }
+
+  .corner-filter-input {
+    font-size: 11px;
+    padding: var(--sp-2) var(--sp-3);
+    height: 32px;
+  }
+
+  .corner-btn {
+    font-size: 11px;
+    height: 32px;
+    padding: 0 var(--sp-3);
+  }
+
+  .corner-actions-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+  }
+
+  /* Column headers stay sticky on horizontal scroll; row labels stay sticky on vertical */
+  .matrix-hdr-row {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .corner-cell {
+    position: sticky;
+    left: 0;
+    z-index: 30;
+  }
+
+  .xp-row .ch-label {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    width: var(--label-w);
+    min-width: var(--label-w);
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 599px) {
+    .matrix-viewport {
+      --label-w: 120px;
+      --col-w:   48px;
+      --row-h:   44px;
+    }
+
+    .corner-inner {
+      padding: 4px 6px;
+      gap: 3px;
+    }
+
+    .corner-filter-input {
+      font-size: 10px;
+      padding: var(--sp-1) var(--sp-2);
+      height: 28px;
+    }
+
+    .corner-btn {
+      font-size: 10px;
+      height: 28px;
+      padding: 0 var(--sp-2);
+    }
+
+    .corner-actions-row {
+      grid-template-columns: 1fr;
+      gap: 3px;
+    }
+
+    .ch-label {
+      font-size: 10px;
+    }
+
+    .xp-cell {
+      width: var(--col-w);
+      min-width: var(--col-w);
+    }
+  }
+}
+
+@media (min-width: 900px) {
+  .matrix-viewport {
+    --label-w: 560px;
+    --col-w:   68px;
+    --row-h:   50px;
+  }
+}

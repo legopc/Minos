@@ -253,3 +253,57 @@
     min-height: 44px;
   }
 }
+
+/* ── responsive v2: zone card grid responsive ───────────────────────────────── */
+
+@media (max-width: 899px) {
+  .zones-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    padding: 8px;
+    gap: 8px;
+  }
+
+  @media (max-width: 699px) {
+    .zones-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 599px) {
+    .zones-toolbar {
+      height: var(--row-h);
+      overflow-x: auto;
+    }
+
+    .zones-add-btn {
+      flex-shrink: 0;
+    }
+
+    .zones-grid {
+      grid-template-columns: 1fr;
+      padding: 8px;
+    }
+
+    .zone-card {
+      padding: 8px;
+      border-radius: 2px;
+      gap: 6px;
+    }
+
+    .zone-vol-row {
+      flex-wrap: wrap;
+    }
+
+    .zone-mute-btn {
+      width: 100%;
+    }
+  }
+}
+
+@media (min-width: 900px) {
+  .zones-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    padding: 12px;
+    gap: 12px;
+  }
+}

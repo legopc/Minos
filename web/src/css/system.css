@@ -209,3 +209,84 @@
     min-height: 44px;
   }
 }
+
+/* ── responsive v2: system cards responsive layout ────────────────────────── */
+
+@media (max-width: 899px) {
+  .sys-page {
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .sys-card {
+    min-width: 100%;
+    width: 100%;
+  }
+
+  @media (max-width: 599px) {
+    .sys-page {
+      padding: 8px;
+      gap: 8px;
+    }
+
+    .sys-card {
+      padding: 12px;
+      border-radius: 2px;
+    }
+
+    .sys-card-title {
+      font-size: 10px;
+      padding-bottom: 6px;
+    }
+
+    .sys-row {
+      gap: 12px;
+      min-height: 32px;
+      flex-wrap: wrap;
+    }
+
+    .sys-lbl {
+      font-size: 10px;
+      min-width: 100px;
+    }
+
+    .sys-val {
+      font-size: 10px;
+    }
+
+    .sys-btn {
+      padding: 6px 12px;
+      min-height: 32px;
+      font-size: 10px;
+    }
+
+    .sys-btn-sm {
+      padding: 3px 8px;
+      min-height: 24px;
+      font-size: 9px;
+    }
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .sys-page {
+    flex-wrap: wrap;
+  }
+
+  .sys-card {
+    min-width: calc(50% - 8px);
+    flex: 0 1 calc(50% - 8px);
+  }
+}
+
+@media (min-width: 1200px) {
+  .sys-page {
+    flex-wrap: wrap;
+  }
+
+  .sys-card {
+    min-width: calc(33.33% - 12px);
+    flex: 0 1 calc(33.33% - 12px);
+  }
+}

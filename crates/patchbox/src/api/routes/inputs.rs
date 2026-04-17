@@ -51,7 +51,15 @@ pub(crate) struct UpdateFeedbackSuppressorRequest {
 }
 
 // GET /api/v1/channels
-pub(crate) async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/channels",
+    tag = "channels",
+    responses(
+        (status = 200, description = "List of input channels", body = Vec<ChannelResponse>)
+    )
+)]
+pub async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let channels: Vec<ChannelResponse> = (0..cfg.rx_channels)
         .map(|i| {
@@ -83,7 +91,17 @@ pub(crate) async fn get_channels(State(s): State<AppState>) -> impl IntoResponse
 }
 
 // GET /api/v1/channels/:id
-pub(crate) async fn get_channel(
+#[utoipa::path(
+    get,
+    path = "/api/v1/channels/{id}",
+    tag = "channels",
+    params(("id" = String, Path, description = "Channel ID e.g. rx_0")),
+    responses(
+        (status = 200, description = "Channel details", body = ChannelResponse),
+        (status = 404, description = "Not found")
+    )
+)]
+pub async fn get_channel(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -118,8 +136,19 @@ pub(crate) async fn get_channel(
 }
 
 // PUT /api/v1/channels/:id
+#[utoipa::path(
+    put,
+    path = "/api/v1/channels/{id}",
+    tag = "channels",
+    params(("id" = String, Path, description = "Channel ID e.g. rx_0")),
+    request_body = UpdateChannelRequest,
+    responses(
+        (status = 204, description = "Updated"),
+        (status = 404, description = "Not found")
+    )
+)]
 #[tracing::instrument(skip_all, fields(channel_id = %id))]
-pub(crate) async fn put_channel(
+pub async fn put_channel(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateChannelRequest>,
@@ -158,7 +187,7 @@ pub(crate) async fn put_channel(
 }
 
 // GET /api/v1/inputs/:ch/dsp
-pub(crate) async fn get_input_dsp(
+pub async fn get_input_dsp(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
 ) -> impl IntoResponse {
@@ -170,7 +199,7 @@ pub(crate) async fn get_input_dsp(
 }
 
 // PUT /api/v1/inputs/:ch/gain
-pub(crate) async fn put_input_gain(
+pub async fn put_input_gain(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<GainBody>,
@@ -206,7 +235,7 @@ pub(crate) async fn put_input_gain(
 }
 
 // PUT /api/v1/inputs/:ch/polarity
-pub(crate) async fn put_input_polarity(
+pub async fn put_input_polarity(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<PolarityBody>,
@@ -222,7 +251,7 @@ pub(crate) async fn put_input_polarity(
 }
 
 // PUT /api/v1/inputs/:ch/hpf
-pub(crate) async fn put_input_hpf(
+pub async fn put_input_hpf(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
@@ -240,7 +269,7 @@ pub(crate) async fn put_input_hpf(
 }
 
 // PUT /api/v1/inputs/:ch/lpf
-pub(crate) async fn put_input_lpf(
+pub async fn put_input_lpf(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
@@ -258,7 +287,7 @@ pub(crate) async fn put_input_lpf(
 }
 
 // PUT /api/v1/inputs/:ch/eq
-pub(crate) async fn put_input_eq(
+pub async fn put_input_eq(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<EqConfig>>,
@@ -276,7 +305,7 @@ pub(crate) async fn put_input_eq(
 }
 
 // PUT /api/v1/inputs/:ch/eq/enabled
-pub(crate) async fn put_input_eq_enabled(
+pub async fn put_input_eq_enabled(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
@@ -292,7 +321,7 @@ pub(crate) async fn put_input_eq_enabled(
 }
 
 // PUT /api/v1/inputs/:ch/gate
-pub(crate) async fn put_input_gate(
+pub async fn put_input_gate(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<GateConfig>>,
@@ -310,7 +339,7 @@ pub(crate) async fn put_input_gate(
 }
 
 // PUT /api/v1/inputs/:ch/compressor
-pub(crate) async fn put_input_compressor(
+pub async fn put_input_compressor(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<CompressorConfig>>,
@@ -328,7 +357,7 @@ pub(crate) async fn put_input_compressor(
 }
 
 // GET /api/v1/inputs/:ch/aec
-pub(crate) async fn get_input_aec(
+pub async fn get_input_aec(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
 ) -> impl IntoResponse {
@@ -340,7 +369,7 @@ pub(crate) async fn get_input_aec(
 }
 
 // PUT /api/v1/inputs/:ch/aec
-pub(crate) async fn put_input_aec(
+pub async fn put_input_aec(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<AecConfig>>,
@@ -358,7 +387,7 @@ pub(crate) async fn put_input_aec(
 }
 
 // PUT /api/v1/inputs/:ch/enabled
-pub(crate) async fn put_input_enabled(
+pub async fn put_input_enabled(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
@@ -392,7 +421,7 @@ pub(crate) async fn put_input_enabled(
 }
 
 // PUT /api/v1/inputs/:ch/automixer
-pub(crate) async fn put_input_automixer(
+pub async fn put_input_automixer(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<UpdateAutomixerChannelRequest>,
@@ -413,7 +442,7 @@ pub(crate) async fn put_input_automixer(
 }
 
 // GET /api/v1/inputs/:ch/feedback
-pub(crate) async fn get_input_feedback(
+pub async fn get_input_feedback(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
 ) -> impl IntoResponse {
@@ -425,7 +454,7 @@ pub(crate) async fn get_input_feedback(
 }
 
 // PUT /api/v1/inputs/:ch/feedback
-pub(crate) async fn put_input_feedback(
+pub async fn put_input_feedback(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<UpdateFeedbackSuppressorRequest>,
@@ -477,7 +506,7 @@ pub(crate) async fn put_input_feedback(
 }
 
 // GET /api/v1/inputs/:ch/deq
-pub(crate) async fn get_input_deq(
+pub async fn get_input_deq(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
 ) -> impl IntoResponse {
@@ -489,7 +518,7 @@ pub(crate) async fn get_input_deq(
 }
 
 // PUT /api/v1/inputs/:ch/deq
-pub(crate) async fn put_input_deq(
+pub async fn put_input_deq(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<DynamicEqConfig>>,
