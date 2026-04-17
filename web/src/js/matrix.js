@@ -885,15 +885,13 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     row.appendChild(divCell);
 
     buses.forEach(bus => {
-      const active = Array.isArray(bus.routing) && bus.routing[idx] === true;
+      const active = Array.isArray(bus.routing) && bus.routing[chIdx] === true;
       const cell = document.createElement('div');
       cell.className = 'xp-cell bus-src' + (active ? ' active' : '');
       cell.dataset.rxId = ch.id;
       cell.dataset.busId = bus.id;
-      
-      // ARIA label for bus crosspoint
-      const rxIdx = parseInt(ch.id.split('_')[1], 10);
-      const cellLabel = `${ch.name || `Input ${rxIdx + 1}`} to ${bus.name || bus.id}`;
+
+      const cellLabel = `${ch.name || `Input ${chIdx + 1}`} to ${bus.name || bus.id}`;
       cell.setAttribute('role', 'button');
       cell.setAttribute('aria-label', cellLabel);
       cell.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -906,21 +904,21 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       // Gain label for bus crosspoints
       const busGainLabel = document.createElement('span');
       busGainLabel.className = 'xp-gain-label';
-      const busGainDb = bus.routing_gain?.[idx] ?? 0;
+      const busGainDb = bus.routing_gain?.[chIdx] ?? 0;
       busGainLabel.textContent = busGainDb !== 0 ? (busGainDb > 0 ? `+${busGainDb.toFixed(1)}` : busGainDb.toFixed(1)) : '';
       busGainLabel.style.display = busGainDb !== 0 ? '' : 'none';
       busGainLabel.setAttribute('aria-hidden', 'true');
       if (busGainDb !== 0) cell.classList.add('xp-gain-nonunity');
       cell.appendChild(busGainLabel);
 
-      cell.addEventListener('click', () => _toggleInputToBus(bus, idx, cell));
+      cell.addEventListener('click', () => _toggleInputToBus(bus, chIdx, cell));
       cell.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          _toggleInputToBus(bus, idx, cell);
+          _toggleInputToBus(bus, chIdx, cell);
         }
       });
-      cell.addEventListener('wheel', (e) => _onBusXpWheel(e, bus, idx, cell, busGainLabel), { passive: false });
+      cell.addEventListener('wheel', (e) => _onBusXpWheel(e, bus, chIdx, cell, busGainLabel), { passive: false });
       row.appendChild(cell);
     });
   }
