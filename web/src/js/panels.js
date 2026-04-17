@@ -106,6 +106,12 @@ function injectStyles() {
 
 injectStyles();
 
+/**
+ * Open a DSP processor panel for an audio channel.
+ * @param {DspKind} blockKey - DSP processor kind (peq, cmp, gte, etc.)
+ * @param {string} channelId - Channel ID (e.g., "rx_0", "tx_1", "bus_0")
+ * @param {Element|DOMRect} triggerEl - Trigger element or its bounding rect
+ */
 export function openPanel(blockKey, channelId, triggerEl) {
   const pid = `panel_${blockKey}_${channelId}`;
   if (state.openPanels.has(pid)) {
@@ -145,6 +151,10 @@ export function openPanel(blockKey, channelId, triggerEl) {
   state.openPanels.set(pid, { blockKey, channelId, el, triggerEl });
 }
 
+/**
+ * Close a DSP processor panel.
+ * @param {string} pid - Panel ID (e.g., "panel_peq_rx_0")
+ */
 export function closePanel(pid) {
   const p = state.openPanels.get(pid);
   if (!p) return;
@@ -153,6 +163,9 @@ export function closePanel(pid) {
   state.openPanels.delete(pid);
 }
 
+/**
+ * Close all open DSP processor panels.
+ */
 export function closeAllPanels() {
   for (const pid of state.openPanels.keys()) {
     closePanel(pid);
