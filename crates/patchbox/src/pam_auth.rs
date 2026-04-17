@@ -116,8 +116,6 @@ pub enum PamError {
     AuthFailed,
     #[error("user unknown")]
     UserUnknown,
-    #[error("account not allowed")]
-    AccountDenied,
     #[error("PAM system error: {0}")]
     System(c_int),
     #[error("string contains null byte")]

@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 use crate::state::AppState;
-use crate::api::{EnabledBody, parse_zone_id};
+use crate::api::parse_zone_id;
 use patchbox_core::config::ZoneConfig;
 
 #[derive(serde::Deserialize)]

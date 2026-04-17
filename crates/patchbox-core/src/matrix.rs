@@ -830,7 +830,6 @@ pub fn process(
     outputs: &mut [&mut [f32]],
     config: &PatchboxConfig,
     dsp: &mut [PerOutputDsp],
-    sample_rate: f32,
 ) {
     let nframes = outputs.first().map(|o| o.len()).unwrap_or(0);
 

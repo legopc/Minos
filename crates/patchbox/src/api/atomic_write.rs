@@ -27,6 +27,7 @@ use std::path::Path;
 /// ```ignore
 /// atomic_write(Path::new("/etc/config.toml"), "key = \"value\"")?;
 /// ```
+#[allow(dead_code)]
 pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     // Create temporary file path by appending .tmp
     let tmp_path = path.with_extension(format!(
@@ -45,6 +46,7 @@ pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
         let file = std::fs::OpenOptions::new()
             .write(true)
             .open(&tmp_path)?;
+        #[allow(unused_imports)]
         use std::os::unix::fs::OpenOptionsExt;
         file.sync_all()?;
     }

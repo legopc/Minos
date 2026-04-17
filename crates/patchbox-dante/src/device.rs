@@ -395,16 +395,9 @@ impl DanteDevice {
                 if m.tx_gr_db.len() != n_tx {
                     m.tx_gr_db.resize(n_tx, 0.0);
                 }
-                if m.gr_db.len() != n_tx {
-                    m.gr_db.resize(n_tx, 0.0);
-                }
                 for (i, d) in matrix_proc.output_dsp.iter().enumerate() {
                     if i < m.tx_gr_db.len() {
                         m.tx_gr_db[i] = d.last_gr_db;
-                    }
-                    // Maintain backward compat with deprecated gr_db field
-                    if i < m.gr_db.len() {
-                        m.gr_db[i] = d.last_gr_db;
                     }
                 }
 

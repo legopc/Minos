@@ -36,7 +36,7 @@ pub(crate) struct BusInputGainBody { rx: usize, gain_db: f32 }
 #[derive(serde::Deserialize)]
 pub(crate) struct BusFeedBody { src_id: String, dst_id: String, active: bool }
 
-pub(crate) fn bus_to_response(idx: usize, bus: &InternalBusConfig) -> BusResponse {
+pub(crate) fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusResponse {
     BusResponse {
         id: bus.id.clone(),
         name: bus.name.clone(),

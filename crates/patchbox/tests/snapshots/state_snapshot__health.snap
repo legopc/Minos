@@ -1,0 +1,5 @@
+---
+source: crates/patchbox/tests/state_snapshot.rs
+expression: json.to_string()
+---
+{"audio":{"active_routes":0,"callbacks_total":0,"resyncs":0,"rx_channels":4,"rx_levels_rms_db":[-60.0,-60.0,-60.0,-60.0],"tx_channels":2,"tx_levels_rms_db":[-60.0,-60.0]},"dante":{"connected":false,"name":"patchbox","nic":"eth0"},"ptp":{"offset_ns":null,"socket_path":"/tmp/ptp-usrvclock","synced":false},"status":"ok","uptime_secs":0,"version":"0.1.0","zones":[{"active_sources":[],"eq_enabled":false,"gain_db":0.0,"index":0,"limiter_enabled":false,"muted":false,"name":"Zone 1"},{"active_sources":[],"eq_enabled":false,"gain_db":0.0,"index":1,"limiter_enabled":false,"muted":false,"name":"Zone 2"}]}

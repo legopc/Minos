@@ -1,14 +1,14 @@
 use axum::{
     middleware,
-    extract::{Path, State, WebSocketUpgrade, ws::{WebSocket, Message}},
+    extract::{State, WebSocketUpgrade, ws::WebSocket},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, put, post, delete},
     Json, Router,
 };
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
-use tokio::time::{interval, Duration};
+use serde::Deserialize;
+use tokio::time::interval;
 use std::sync::Arc;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;

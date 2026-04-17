@@ -38,14 +38,6 @@ impl Claims {
             iat:  now,
         }
     }
-
-    pub fn is_expired(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        self.exp < now
-    }
 }
 
 /// Generate a signed JWT.

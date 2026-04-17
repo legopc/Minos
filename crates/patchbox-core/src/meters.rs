@@ -41,6 +41,7 @@ impl MeterState {
             bus_rms: vec![],
             rx_clip_count: vec![0; rx],
             tx_clip_count: vec![0; tx],
+            #[allow(deprecated)]
             gr_db: vec![0.0; tx],
         }
     }

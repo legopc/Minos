@@ -28,7 +28,9 @@ pub struct AecProcessor {
     pub reference_tx_idx: Option<usize>,
 
     /// Circular accumulator for capture (microphone) input
+    #[allow(dead_code)]
     capture_acc: Vec<f32>,
+    #[allow(dead_code)]
     capture_acc_pos: usize,
 
     /// Circular accumulator for render (loudspeaker) input
@@ -36,8 +38,11 @@ pub struct AecProcessor {
     render_acc_pos: usize,
 
     /// Output ring: processed samples waiting to be drained back to caller
+    #[allow(dead_code)]
     output_ring: Vec<f32>,
+    #[allow(dead_code)]
     output_read: usize,
+    #[allow(dead_code)]
     output_write: usize,
 
     #[cfg(feature = "aec")]

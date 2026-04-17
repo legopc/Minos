@@ -27,8 +27,12 @@ pub struct AppState {
     /// Broadcast channel — WS handler subscribes; API mutation handlers send events
     pub ws_tx: Arc<broadcast::Sender<String>>,
     /// Shutdown signal for the ALSA monitor writer thread.
+    /// (Reserved for future monitor thread restart API; not currently read from AppState)
+    #[allow(dead_code)]
     pub monitor_shutdown: Arc<std::sync::atomic::AtomicBool>,
     /// Handle to monitor writer thread for restart.
+    /// (Reserved for future monitor thread restart API; not currently read from AppState)
+    #[allow(dead_code)]
     pub monitor_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
