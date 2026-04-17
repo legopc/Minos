@@ -297,8 +297,156 @@ impl DynamicEq {
     }
 }
 
-impl Default for DynamicEq {
-    fn default() -> Self {
-        Self::new()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{DynamicEqBandConfig, DynamicEqBandType, DynamicEqConfig};
+
+    fn make_cfg(enabled: bool) -> DynamicEqConfig {
+        DynamicEqConfig {
+            enabled,
+            bypassed: false,
+            bands: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn disabled_dynamic_eq_passes_unchanged() {
+        let mut deq = DynamicEq::new();
+        deq.sync(&make_cfg(false), 48_000.0);
+
+        let input = vec![0.5f32; 64];
+        let mut buf = input.clone();
+        deq.process_block(&mut buf);
+
+        for (a, b) in input.iter().zip(buf.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "disabled dynamic EQ must pass signal unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn bypass_flag_passes_unchanged() {
+        let mut deq = DynamicEq::new();
+        let mut cfg = make_cfg(true);
+        cfg.bypassed = true;
+        deq.sync(&cfg, 48_000.0);
+
+        let input = vec![0.5f32; 64];
+        let mut buf = input.clone();
+        deq.process_block(&mut buf);
+
+        for (a, b) in input.iter().zip(buf.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "bypassed dynamic EQ must pass signal unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn threshold_triggered_band_gain_below_threshold() {
+        // Configure band 0 as peaking, 0 dB range below threshold
+        let mut deq = DynamicEq::new();
+        let mut cfg = make_cfg(true);
+        cfg.bands.push(DynamicEqBandConfig {
+            enabled: true,
+            band_type: DynamicEqBandType::Peaking,
+            freq_hz: 1000.0,
+            q: 0.707,
+            threshold_db: -20.0, // Threshold at -20 dB
+            ratio: 2.0,
+            range_db: -6.0, // Max reduction 6 dB above threshold
+            attack_ms: 10.0,
+            release_ms: 100.0,
+        });
+
+        deq.sync(&cfg, 48_000.0);
+
+        // Signal below threshold: -30 dB
+        let level_linear = 10.0_f32.powf(-30.0 / 20.0);
+        let mut buf = vec![level_linear; 512];
+        deq.process_block(&mut buf);
+
+        // Below threshold, gain should be 0 dB (no reduction)
+        let gains = deq.band_gains();
+        assert!(
+            gains[0].abs() < 0.1,
+            "below threshold, band gain should be ~0 dB: got {}",
+            gains[0]
+        );
+    }
+
+    #[test]
+    fn threshold_triggered_band_gain_above_threshold() {
+        // Configure band 0 with threshold and range
+        let mut deq = DynamicEq::new();
+        let mut cfg = make_cfg(true);
+        cfg.bands.push(DynamicEqBandConfig {
+            enabled: true,
+            band_type: DynamicEqBandType::Peaking,
+            freq_hz: 1000.0,
+            q: 0.707,
+            threshold_db: -20.0,
+            ratio: 2.0,
+            range_db: -6.0, // Negative: reduction
+            attack_ms: 1.0,
+            release_ms: 100.0,
+        });
+
+        deq.sync(&cfg, 48_000.0);
+
+        // Signal well above threshold: -10 dB
+        let level_linear = 10.0_f32.powf(-10.0 / 20.0);
+        let mut buf = vec![level_linear; 4800]; // 100ms to settle
+        deq.process_block(&mut buf);
+
+        // Above threshold, should see gain reduction
+        let gains = deq.band_gains();
+        assert!(
+            gains[0] < -1.0,
+            "above threshold, band gain should be < -1 dB: got {}",
+            gains[0]
+        );
+    }
+
+    #[test]
+    fn band_gains_returns_all_active_bands() {
+        let mut deq = DynamicEq::new();
+        let mut cfg = make_cfg(true);
+        cfg.bands.push(DynamicEqBandConfig {
+            enabled: true,
+            band_type: DynamicEqBandType::Peaking,
+            freq_hz: 500.0,
+            q: 0.707,
+            threshold_db: -30.0,
+            ratio: 2.0,
+            range_db: -3.0,
+            attack_ms: 10.0,
+            release_ms: 100.0,
+        });
+        cfg.bands.push(DynamicEqBandConfig {
+            enabled: true,
+            band_type: DynamicEqBandType::HighShelf,
+            freq_hz: 3000.0,
+            q: 0.707,
+            threshold_db: -25.0,
+            ratio: 3.0,
+            range_db: -6.0,
+            attack_ms: 10.0,
+            release_ms: 100.0,
+        });
+
+        deq.sync(&cfg, 48_000.0);
+
+        let mut buf = vec![0.1f32; 256];
+        deq.process_block(&mut buf);
+
+        let gains = deq.band_gains();
+        // Should return gains for all 4 bands (even inactive ones = 0.0)
+        assert_eq!(gains.len(), 4, "band_gains should return all 4 bands");
+        assert!(gains.iter().all(|g| g.is_finite()), "all gains should be finite");
     }
 }
