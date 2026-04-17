@@ -3,7 +3,7 @@
  * blockKey: 'cmp'
  */
 
-import { sliderRow, bypRow, grMeter, fmtDb, fmtMs, fmtRatio } from './common.js';
+import { sliderRow, toggleRow, bypRow, grMeter, fmtDb, fmtMs, fmtRatio } from './common.js';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
@@ -12,6 +12,8 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
   // GR meter
   el.appendChild(grMeter(`${channelId}_cmp`));
 
+  // Enable
+  el.appendChild(toggleRow('Enable', params.enabled ?? false, v => onBypass('cmp', !v)));
   // Threshold
   el.appendChild(sliderRow(
     'Threshold',

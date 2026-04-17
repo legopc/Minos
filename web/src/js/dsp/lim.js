@@ -3,7 +3,7 @@
  * blockKey: 'lim'
  */
 
-import { sliderRow, bypRow, grMeter, fmtDb, fmtMs } from './common.js';
+import { sliderRow, toggleRow, bypRow, grMeter, fmtDb, fmtMs } from './common.js';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
@@ -11,6 +11,9 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
 
   // GR meter
   el.appendChild(grMeter(`${channelId}_lim`));
+
+  // Enable
+  el.appendChild(toggleRow('Enable', params.enabled ?? false, v => onBypass('lim', !v)));
 
   // Threshold
   el.appendChild(sliderRow(

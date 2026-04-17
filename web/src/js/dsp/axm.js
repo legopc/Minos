@@ -1,5 +1,5 @@
 // dsp/axm.js — Automixer (Dugan gain-sharing) channel panel
-import { selectRow, sliderRow, fmtPlain } from './common.js';
+import { selectRow, sliderRow, toggleRow, fmtPlain } from './common.js';
 
 const BK = 'axm';
 
@@ -17,12 +17,17 @@ async function _fetchGroups() {
 
 export function invalidateGroupCache() { _groupCache = null; }
 
-export function buildContent(channelId, params, accentColor, { onChange }) {
-  const p = Object.assign({ group_id: null, weight: 1.0 }, params);
+export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
+  const p = Object.assign({ group_id: null, weight: 1.0, enabled: false }, params);
   const el = document.createElement('div');
   el.className = 'dsp-content axm';
 
-  function emit() { onChange(BK, { group_id: p.group_id ?? '', weight: p.weight }); }
+  function emit() { onChange(BK, { group_id: p.group_id ?? '', weight: p.weight, enabled: p.enabled }); }
+
+  el.appendChild(toggleRow('Enable', p.enabled, v => {
+    p.enabled = v;
+    onBypass(BK, !v);
+  }));
 
   const { el: groupRow, sel: groupSel } = selectRow('Group', [{ value: '', label: '— no group —' }], p.group_id ?? '', v => {
     p.group_id = v === '' ? null : v;

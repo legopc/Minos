@@ -1,23 +1,22 @@
 // dsp/dly.js — Delay panel (+ TPDF dither for output channels)
 import * as api from '../api.js';
-import { sliderRow, bypRow, selectRow, fmtMs } from './common.js';
+import { sliderRow, toggleRow, selectRow, fmtMs } from './common.js';
 
 const BK = 'dly';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
-  const p = Object.assign({ delay_ms: 0.0, bypassed: false }, params);
+  const p = Object.assign({ delay_ms: 0.0, enabled: false, bypassed: false }, params);
   const el = document.createElement('div');
   function emit() { onChange(BK, { ...p }); }
+
+  el.appendChild(toggleRow('Enable', p.enabled, v => {
+    p.enabled = v;
+    onBypass(BK, !v);
+  }));
 
   el.appendChild(sliderRow('Delay', 0, 1000, 0.1, p.delay_ms, fmtMs, v => {
     p.delay_ms = v;
     emit();
-  }));
-
-  el.appendChild(bypRow(p.bypassed, v => {
-    p.bypassed = v;
-    onBypass(BK, v);
-    el.style.opacity = v ? '0.22' : '1';
   }));
 
   if (channelId.startsWith('tx_')) {

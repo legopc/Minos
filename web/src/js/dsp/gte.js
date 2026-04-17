@@ -3,11 +3,14 @@
  * blockKey: 'gte'
  */
 
-import { sliderRow, bypRow, fmtDb, fmtMs } from './common.js';
+import { sliderRow, toggleRow, bypRow, fmtDb, fmtMs } from './common.js';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
   el.className = 'dsp-content gte';
+
+  // Enable
+  el.appendChild(toggleRow('Enable', params.enabled ?? false, v => onBypass('gte', !v)));
 
   // Threshold
   el.appendChild(sliderRow(

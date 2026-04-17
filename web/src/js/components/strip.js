@@ -92,7 +92,11 @@ function _buildDspRow(dsp, entityId, onDspOpen) {
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
     const btn = document.createElement('button');
     btn.className = 'strip-dsp-btn';
-    if (!block.enabled || block.bypassed) btn.classList.add('byp');
+    if (!block.enabled || block.bypassed) {
+      btn.classList.add('byp');
+    } else if (block.enabled && !block.bypassed) {
+      btn.classList.add('dsp-active');
+    }
     btn.textContent = colour.label ?? blk.toUpperCase();
     btn.title = blk.toUpperCase();
     btn.dataset.block = blk;

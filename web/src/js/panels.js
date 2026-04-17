@@ -106,6 +106,7 @@ function buildPanelEl(blockKey, channelId, pid, isWide) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'dsp-panel-close';
   closeBtn.textContent = '×';
+  closeBtn.addEventListener('pointerdown', e => e.stopPropagation());
   closeBtn.addEventListener('click', () => closePanel(pid));
   header.appendChild(closeBtn);
 
@@ -246,6 +247,7 @@ function _onParamChange(channelId, block, newParams) {
         };
 
         await applyBlock(after, afterEnabled);
+        syncBadges(channelId, block);
 
         undo.push({
           label: `DSP ${block}: ${channelId}`,
