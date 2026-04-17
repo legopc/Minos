@@ -392,11 +392,8 @@
   opacity: 0.35;
 }
 
-.strip-dsp-btn:not(.byp) {
-  border-bottom: 2px solid currentColor;
-}
-
 .strip-dsp-btn.dsp-active {
+  border-bottom: 2px solid currentColor;
   box-shadow: 0 0 8px 2px currentColor;
 }
 

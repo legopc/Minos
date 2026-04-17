@@ -165,6 +165,12 @@ function _renderStrips(strips, masters) {
         getId:        el => el.dataset.busId,
         onReorder:    ids => saveOrder('buses', ids),
       });
+      const addBusBtn = document.createElement('button');
+      addBusBtn.className = 'mixer-add-vca-btn';
+      addBusBtn.textContent = '+';
+      addBusBtn.title = 'Add internal bus';
+      addBusBtn.onclick = () => _showAddBusDialog();
+      masters.appendChild(addBusBtn);
     }
 
     // VCA Groups section
@@ -484,6 +490,19 @@ async function _showAddVcaDialog() {
     const result = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
     const vca = { id: result?.id ?? `vca_?`, name, group_type: type, members: [], gain_db: 0, muted: false };
     st.setVcaGroup(vca);
+    const masters = document.getElementById('mixer-masters');
+    const strips  = document.querySelector('.mixer-strips');
+    if (strips && masters) _renderStrips(strips, masters);
+  } catch(e) { toast(e.message, true); }
+}
+
+async function _showAddBusDialog() {
+  const name = prompt('Internal bus name:');
+  if (!name) return;
+  try {
+    const result = await api.createBus(name);
+    const bus = { id: result?.id ?? `bus_?`, name: result?.name ?? name, routing: [], routing_gain: [], dsp: {}, muted: false };
+    st.setBus(bus);
     const masters = document.getElementById('mixer-masters');
     const strips  = document.querySelector('.mixer-strips');
     if (strips && masters) _renderStrips(strips, masters);

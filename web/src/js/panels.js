@@ -5,6 +5,19 @@ import * as api from './api.js';
 import { toast } from './toast.js';
 import { undo } from './undo.js';
 
+const DSP_HELP = {
+  peq: 'Parametric EQ — 4 bands with Bell, Low-shelf, and High-shelf filters. Drag the frequency response curve to tune.',
+  cmp: 'Compressor — reduces dynamic range above the threshold. Shows gain reduction in the GR meter.',
+  gte: 'Gate/Expander — silences signals below the threshold, eliminating background noise.',
+  lim: 'Limiter — hard ceiling that prevents clipping. Shows gain reduction in the GR meter.',
+  dly: 'Delay — adds latency (0–1000 ms). TX channels also offer TPDF dither control.',
+  aec: 'Acoustic Echo Canceller — uses an output reference to remove echo and feedback.',
+  axm: 'Automixer — Dugan gain-sharing across a mic group. Higher weight = higher priority.',
+  afs: 'Feedback Suppressor — dynamic notch filters that automatically detect and kill feedback.',
+  deq: 'Dynamic EQ — parametric EQ bands with dynamic compression per band.',
+  flt: 'Filter — high-pass and low-pass frequency filters to shape the signal.',
+};
+
 let zTop = 200;
 let paramChangeDebounce = new Map();
 
@@ -83,6 +96,24 @@ export function closeAllPanels() {
   }
 }
 
+function _showHelp(blockKey, desc) {
+  document.getElementById('dsp-help-overlay')?.remove();
+  const label = (DSP_COLOURS[blockKey]?.label ?? blockKey).toUpperCase();
+  const overlay = document.createElement('div');
+  overlay.id = 'dsp-help-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <h2 class="modal-title">${label}</h2>
+      <p class="modal-body" style="font-size:12px;line-height:1.6">${desc}</p>
+      <div class="modal-actions"><button class="modal-confirm">OK</button></div>
+    </div>
+  `;
+  overlay.querySelector('.modal-confirm').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 function buildPanelEl(blockKey, channelId, pid, isWide) {
   const panel = document.createElement('div');
   panel.className = 'dsp-panel' + (isWide ? ' dsp-panel--wide' : '');
@@ -108,6 +139,18 @@ function buildPanelEl(blockKey, channelId, pid, isWide) {
   closeBtn.textContent = '×';
   closeBtn.addEventListener('pointerdown', e => e.stopPropagation());
   closeBtn.addEventListener('click', () => closePanel(pid));
+
+  const helpDesc = DSP_HELP[blockKey];
+  if (helpDesc) {
+    const helpBtn = document.createElement('button');
+    helpBtn.className = 'dsp-panel-help';
+    helpBtn.textContent = 'ⓘ';
+    helpBtn.title = helpDesc;
+    helpBtn.addEventListener('pointerdown', e => e.stopPropagation());
+    helpBtn.addEventListener('click', () => _showHelp(blockKey, helpDesc));
+    header.appendChild(helpBtn);
+  }
+
   header.appendChild(closeBtn);
 
   panel.appendChild(header);
@@ -126,7 +169,7 @@ async function _loadContent(blockKey, channelId, contentEl) {
     const mod = await import(`./dsp/${blockKey}.js`);
     const ch = _getCh(channelId);
     const blockData = ch?.dsp?.[blockKey] ?? {};
-    const params = { ...(blockData.params ?? {}), bypassed: blockData.bypassed ?? false, enabled: blockData.enabled ?? true };
+    const params = { ...(blockData.params ?? {}), bypassed: blockData.bypassed ?? false, enabled: blockData.enabled ?? false };
     const accent = DSP_COLOURS[blockKey]?.fg ?? '#888';
 
     contentEl.appendChild(
@@ -178,7 +221,7 @@ function _onParamChange(channelId, block, newParams) {
     const ch = getCh();
     const bd = ch?.dsp?.[block] ?? {};
     return {
-      enabled: bd.enabled ?? true,
+      enabled: bd.enabled ?? false,
       params: _clone(bd.params ?? {}),
       flt: block === 'flt'
         ? {
@@ -232,7 +275,7 @@ function _onParamChange(channelId, block, newParams) {
 
         const mappedBlock = dspBlockMap[block] || block;
         const endpoint = `${base}/${mappedBlock}`;
-        const afterEnabled = after?.enabled ?? true;
+        const afterEnabled = after?.enabled ?? false;
 
         const applyBlock = async (params, enabled) => {
           await api.put(endpoint, { kind: block, enabled, version: 1, params });

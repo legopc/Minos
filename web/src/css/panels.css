@@ -52,6 +52,20 @@
 }
 .dsp-panel-close:hover { color: var(--text-primary); }
 
+.dsp-panel-help {
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  line-height: 1;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  flex-shrink: 0;
+  margin-right: 2px;
+  opacity: 0.7;
+}
+.dsp-panel-help:hover { opacity: 1; color: var(--text-primary); }
+
 .dsp-panel-body {
   padding: 10px 12px;
   display: flex;

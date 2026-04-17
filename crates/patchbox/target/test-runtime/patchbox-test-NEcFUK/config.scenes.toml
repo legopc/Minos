@@ -1,0 +1,52 @@
+[scenes.scene1]
+name = "scene1"
+description = "test"
+is_favourite = false
+matrix = [
+    [
+    false,
+    false,
+],
+    [
+    false,
+    false,
+],
+]
+input_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+output_gain_db = [
+    0.0,
+    0.0,
+]
+matrix_gain_db = [
+    [
+    0.0,
+    0.0,
+],
+    [
+    0.0,
+    0.0,
+],
+]
+input_dsp_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+output_dsp_gain_db = [
+    0.0,
+    0.0,
+]
+output_muted = [
+    false,
+    false,
+]
+bus_matrix = [
+    [false],
+    [false],
+]
