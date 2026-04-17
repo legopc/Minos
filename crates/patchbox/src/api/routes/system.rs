@@ -482,8 +482,10 @@ pub async fn get_metering(State(s): State<AppState>) -> impl IntoResponse {
     get,
     path = "/api/v1/system",
     tag = "system",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "System info", body = SystemResponse)
+        (status = 200, description = "System info", body = SystemResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
@@ -679,8 +681,10 @@ pub async fn restore_config_backup(
     get,
     path = "/api/v1/solo",
     tag = "system",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Current solo state", body = SoloResponse)
+        (status = 200, description = "Current solo state", body = SoloResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
@@ -696,9 +700,11 @@ pub async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
     put,
     path = "/api/v1/solo",
     tag = "system",
+    security(("bearer_auth" = [])),
     request_body = SoloRequest,
     responses(
-        (status = 204, description = "Solo updated")
+        (status = 204, description = "Solo updated"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn put_solo(
@@ -778,8 +784,10 @@ pub async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
     get,
     path = "/api/v1/system/monitor",
     tag = "system",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Monitor state", body = MonitorResponse)
+        (status = 200, description = "Monitor state", body = MonitorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
@@ -795,9 +803,11 @@ pub async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
     put,
     path = "/api/v1/system/monitor",
     tag = "system",
+    security(("bearer_auth" = [])),
     request_body = MonitorRequest,
     responses(
-        (status = 200, description = "Monitor updated", body = MonitorResponse)
+        (status = 200, description = "Monitor updated", body = MonitorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn put_monitor(
@@ -812,9 +822,7 @@ pub async fn put_monitor(
         cfg.monitor_device = body.device.clone();
         cfg.monitor_volume_db = body.volume_db;
     }
-    if let Err(e) = s.persist().await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
-    }
+    crate::persist_or_500!(s);
     ws_broadcast(
         &s,
         serde_json::json!({

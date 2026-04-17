@@ -28,8 +28,10 @@ pub struct UpdateSceneRequest {
     get,
     path = "/api/v1/scenes",
     tag = "scenes",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "List of scenes")
+        (status = 200, description = "List of scenes"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
@@ -43,9 +45,11 @@ pub async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
     post,
     path = "/api/v1/scenes",
     tag = "scenes",
+    security(("bearer_auth" = [])),
     request_body = SaveSceneRequest,
     responses(
-        (status = 200, description = "Scene saved")
+        (status = 200, description = "Scene saved"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn save_scene(
@@ -67,9 +71,11 @@ pub async fn save_scene(
     post,
     path = "/api/v1/scenes/{name}/load",
     tag = "scenes",
+    security(("bearer_auth" = [])),
     params(("name" = String, Path, description = "Scene name")),
     responses(
         (status = 200, description = "Scene loaded"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Scene not found")
     )
 )]

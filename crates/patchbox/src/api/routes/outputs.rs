@@ -42,8 +42,10 @@ pub struct DitherBody {
     get,
     path = "/api/v1/outputs",
     tag = "outputs",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "List of outputs", body = Vec<OutputResponse>)
+        (status = 200, description = "List of outputs", body = Vec<OutputResponse>),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
@@ -91,9 +93,11 @@ pub async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
     get,
     path = "/api/v1/outputs/{id}",
     tag = "outputs",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Output ID e.g. tx_0")),
     responses(
         (status = 200, description = "Output details", body = OutputResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]
@@ -147,10 +151,12 @@ pub async fn get_output_resource(
     put,
     path = "/api/v1/outputs/{id}",
     tag = "outputs",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Output ID e.g. tx_0")),
     request_body = UpdateOutputRequest,
     responses(
         (status = 204, description = "Updated"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]

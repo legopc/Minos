@@ -216,8 +216,10 @@ pub async fn put_gain_output(
     get,
     path = "/api/v1/routes",
     tag = "routing",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "All active routes", body = Vec<RouteResponse>)
+        (status = 200, description = "All active routes", body = Vec<RouteResponse>),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
@@ -258,9 +260,11 @@ pub async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
     post,
     path = "/api/v1/routes",
     tag = "routing",
+    security(("bearer_auth" = [])),
     request_body = CreateRouteRequest,
     responses(
-        (status = 201, description = "Route created", body = RouteResponse)
+        (status = 201, description = "Route created", body = RouteResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 #[tracing::instrument(skip_all, fields(rx_id, tx_id))]
@@ -337,9 +341,11 @@ pub async fn post_route(
     delete,
     path = "/api/v1/routes/{id}",
     tag = "routing",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Route ID")),
     responses(
-        (status = 204, description = "Route deleted")
+        (status = 204, description = "Route deleted"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {

@@ -74,8 +74,10 @@ pub fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusResponse {
     get,
     path = "/api/v1/buses",
     tag = "buses",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "List of buses", body = Vec<BusResponse>)
+        (status = 200, description = "List of buses", body = Vec<BusResponse>),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
@@ -94,9 +96,11 @@ pub async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
     post,
     path = "/api/v1/buses",
     tag = "buses",
+    security(("bearer_auth" = [])),
     request_body = CreateBusRequest,
     responses(
-        (status = 201, description = "Bus created", body = BusResponse)
+        (status = 201, description = "Bus created", body = BusResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn post_bus(
@@ -135,9 +139,11 @@ pub async fn post_bus(
     get,
     path = "/api/v1/buses/{id}",
     tag = "buses",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Bus ID")),
     responses(
         (status = 200, description = "Bus", body = BusResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]
@@ -157,10 +163,12 @@ pub async fn get_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl 
     put,
     path = "/api/v1/buses/{id}",
     tag = "buses",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Bus ID")),
     request_body = UpdateBusRequest,
     responses(
         (status = 204, description = "Updated"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]
@@ -194,9 +202,11 @@ pub async fn put_bus(
     delete,
     path = "/api/v1/buses/{id}",
     tag = "buses",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Bus ID")),
     responses(
         (status = 204, description = "Deleted"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]

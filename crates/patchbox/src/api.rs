@@ -11,7 +11,7 @@ use axum::{
 };
 use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, Quota, RateLimiter};
 use rust_embed::RustEmbed;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -87,6 +87,12 @@ use routes::zones::*;
 
 use patchbox_core::config::DspChain;
 
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub in_memory: Option<bool>,
+}
+
 /// Returns HTTP 500 with structured JSON if config persist fails.
 /// The change remains live in memory until next restart (documented in response body).
 #[macro_export]
@@ -96,8 +102,12 @@ macro_rules! persist_or_500 {
             tracing::error!(error = %e, "config persist failed");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("persist failed: {e}"), "in_memory": true}))
-            ).into_response();
+                Json($crate::api::ErrorResponse {
+                    error: format!("persist failed: {e}"),
+                    in_memory: Some(true),
+                }),
+            )
+                .into_response();
         }
     };
 }
@@ -109,8 +119,12 @@ macro_rules! persist_scenes_or_500 {
             tracing::error!(error = %e, "scenes persist failed");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("scenes persist failed: {e}"), "in_memory": true}))
-            ).into_response();
+                Json($crate::api::ErrorResponse {
+                    error: format!("scenes persist failed: {e}"),
+                    in_memory: Some(true),
+                }),
+            )
+                .into_response();
         }
     };
 }

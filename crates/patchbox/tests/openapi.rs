@@ -30,7 +30,7 @@ async fn openapi_json_returns_200() {
     let router = api::router(state);
 
     let response = router
-        .oneshot(make_request("/api/openapi.json"))
+        .oneshot(make_request("/api/v1/openapi.json"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -43,7 +43,7 @@ async fn openapi_json_is_valid_json() {
     let router = api::router(state);
 
     let response = router
-        .oneshot(make_request("/api/openapi.json"))
+        .oneshot(make_request("/api/v1/openapi.json"))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -66,7 +66,24 @@ async fn openapi_docs_returns_html() {
     let state = AppState::new(config, PathBuf::from("/nonexistent/openapi-test3.toml"));
     let router = api::router(state);
 
-    let response = router.oneshot(make_request("/api/docs")).await.unwrap();
+    let response1 = router
+        .clone()
+        .oneshot(make_request("/api/v1/docs"))
+        .await
+        .unwrap();
+
+    let response = if response1.status().is_redirection() {
+        let loc = response1
+            .headers()
+            .get("location")
+            .expect("location header must be present")
+            .to_str()
+            .unwrap();
+        router.oneshot(make_request(loc)).await.unwrap()
+    } else {
+        response1
+    };
+
     assert_eq!(response.status(), StatusCode::OK);
 
     let ct = response
@@ -76,4 +93,29 @@ async fn openapi_docs_returns_html() {
         .to_str()
         .unwrap();
     assert!(ct.contains("text/html"), "expected text/html, got: {ct}");
+}
+
+#[tokio::test]
+async fn legacy_openapi_json_redirects_to_v1() {
+    let config = PatchboxConfig::default();
+    let state = AppState::new(config, PathBuf::from("/nonexistent/openapi-test4.toml"));
+    let router = api::router(state);
+
+    let response = router.oneshot(make_request("/api/openapi.json")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(
+        response.headers().get("location").unwrap(),
+        "/api/v1/openapi.json"
+    );
+}
+
+#[tokio::test]
+async fn legacy_docs_redirects_to_v1() {
+    let config = PatchboxConfig::default();
+    let state = AppState::new(config, PathBuf::from("/nonexistent/openapi-test5.toml"));
+    let router = api::router(state);
+
+    let response = router.oneshot(make_request("/api/docs")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(response.headers().get("location").unwrap(), "/api/v1/docs");
 }

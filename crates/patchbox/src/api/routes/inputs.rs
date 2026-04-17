@@ -57,8 +57,10 @@ pub struct UpdateFeedbackSuppressorRequest {
     get,
     path = "/api/v1/channels",
     tag = "channels",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "List of input channels", body = Vec<ChannelResponse>)
+        (status = 200, description = "List of input channels", body = Vec<ChannelResponse>),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
@@ -97,9 +99,11 @@ pub async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
     get,
     path = "/api/v1/channels/{id}",
     tag = "channels",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Channel ID e.g. rx_0")),
     responses(
         (status = 200, description = "Channel details", body = ChannelResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]
@@ -139,10 +143,12 @@ pub async fn get_channel(State(s): State<AppState>, Path(id): Path<String>) -> i
     put,
     path = "/api/v1/channels/{id}",
     tag = "channels",
+    security(("bearer_auth" = [])),
     params(("id" = String, Path, description = "Channel ID e.g. rx_0")),
     request_body = UpdateChannelRequest,
     responses(
         (status = 204, description = "Updated"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
         (status = 404, description = "Not found")
     )
 )]

@@ -1,4 +1,22 @@
-use utoipa::OpenApi;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
+
+pub struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer_auth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .build(),
+            ),
+        );
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -7,8 +25,10 @@ use utoipa::OpenApi;
         version = env!("CARGO_PKG_VERSION"),
         description = "Dante patchbox HTTP API"
     ),
+    modifiers(&SecurityAddon),
     paths(
         crate::api::routes::system::get_health,
+        crate::api::routes::system::get_system,
         crate::api::routes::system::get_solo,
         crate::api::routes::system::put_solo,
         crate::api::routes::system::get_monitor,
@@ -35,6 +55,7 @@ use utoipa::OpenApi;
         crate::api::routes::scenes::save_scene,
         crate::api::routes::scenes::load_scene,
         crate::auth_api::login,
+        crate::auth_api::refresh_token,
     ),
     components(
         schemas(
@@ -95,8 +116,10 @@ use utoipa::OpenApi;
             crate::api::routes::system::SoloResponse,
             crate::api::routes::system::MonitorRequest,
             crate::api::routes::system::MonitorResponse,
+            crate::api::ErrorResponse,
             crate::auth_api::LoginRequest,
             crate::auth_api::LoginResponse,
+            crate::auth_api::RefreshTokenResponse,
         )
     ),
     tags(

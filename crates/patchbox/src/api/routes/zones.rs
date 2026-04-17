@@ -104,8 +104,10 @@ pub async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
     get,
     path = "/api/v1/zones",
     tag = "zones",
+    security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "List of zones")
+        (status = 200, description = "List of zones"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
@@ -118,9 +120,11 @@ pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
     post,
     path = "/api/v1/zones",
     tag = "zones",
+    security(("bearer_auth" = [])),
     request_body = CreateZoneRequest,
     responses(
-        (status = 201, description = "Zone created")
+        (status = 201, description = "Zone created"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn post_zone(
@@ -146,10 +150,12 @@ pub async fn post_zone(
     put,
     path = "/api/v1/zones/{zone_id}",
     tag = "zones",
+    security(("bearer_auth" = [])),
     params(("zone_id" = String, Path, description = "Zone ID")),
     request_body = UpdateZoneRequest,
     responses(
-        (status = 204, description = "Updated")
+        (status = 204, description = "Updated"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 #[tracing::instrument(skip_all, fields(zone_id))]
@@ -187,9 +193,11 @@ pub async fn put_zone_resource(
     delete,
     path = "/api/v1/zones/{zone_id}",
     tag = "zones",
+    security(("bearer_auth" = [])),
     params(("zone_id" = String, Path, description = "Zone ID")),
     responses(
-        (status = 204, description = "Deleted")
+        (status = 204, description = "Deleted"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
 pub async fn delete_zone_resource(
