@@ -798,3 +798,92 @@
     min-height: 44px;
   }
 }
+
+/* ── Matrix Filter Bar (s7-ui-matrix-filter) ────────────────────────────── */
+.matrix-filter-bar {
+  display: flex;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-primary);
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter-input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+}
+
+.filter-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--r-2);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--bg-surface);
+}
+
+.filter-input::placeholder {
+  color: var(--text-dim);
+}
+
+.filter-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--r-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.12s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.filter-clear-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.filter-clear-btn:active {
+  filter: brightness(1.2);
+}
+
+/* s7-ui-touch-targets: expand tap target for filter clear buttons on touch devices */
+@media (pointer: coarse) {
+  .filter-clear-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

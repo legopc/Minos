@@ -17,6 +17,12 @@ const _clipMap = new Map(); // chId -> bool (currently clipping)
 const _pendingCrosspoints = new Map(); // key (rx|tx) -> Date.now()
 const _xpGain = new Map(); // key (rx|tx) -> gain_db (0.0 = unity)
 
+// ── Matrix filter state ─────────────────────────────────────────────────────
+let _filterRxInput = null;
+let _filterTxInput = null;
+let _currentFilterRx = '';
+let _currentFilterTx = '';
+
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
   _container = container;
@@ -29,6 +35,12 @@ export function render(container) {
   _container.innerHTML = '';
   _container.className = 'tab-content active';
   _container.id = 'tab-matrix';
+
+  // Load filter values from session storage on first render
+  if (!_filterRxInput) {
+    _currentFilterRx = sessionStorage.getItem('patchbox.matrix.filter.rx') || '';
+    _currentFilterTx = sessionStorage.getItem('patchbox.matrix.filter.tx') || '';
+  }
 
   const channels = st.channelList();
   const outputs  = st.outputList();
@@ -123,7 +135,19 @@ export function render(container) {
   }
 
   viewport.appendChild(grid);
+  
+  // Create and insert filter bar
+  const filterBar = _buildFilterBar();
+  _container.appendChild(filterBar);
   _container.appendChild(viewport);
+
+  // Apply stored filters if any
+  if (_currentFilterRx || _currentFilterTx) {
+    requestAnimationFrame(() => _applyFilters());
+  }
+
+  // Setup keyboard shortcuts for matrix filter
+  _setupKeyboardShortcuts();
 
   // C5: Show empty matrix hint when no routes exist (only after state has loaded — channels populated)
   const routeCount = (st.routeList?.() ?? []).length;
@@ -1415,6 +1439,182 @@ async function _toggleGenOutput(gen, genIdx, txIdx, txId, cell, outputs) {
   } finally {
     cell.classList.remove('pending');
   }
+}
+
+// ── Build filter bar UI ────────────────────────────────────────────────────
+function _buildFilterBar() {
+  const bar = document.createElement('div');
+  bar.className = 'matrix-filter-bar';
+
+  // Rx (rows) filter
+  const rxContainer = document.createElement('div');
+  rxContainer.className = 'filter-input-container';
+  const rxLabel = document.createElement('label');
+  rxLabel.className = 'filter-label';
+  rxLabel.textContent = 'Filter rows:';
+  _filterRxInput = document.createElement('input');
+  _filterRxInput.type = 'text';
+  _filterRxInput.className = 'filter-input';
+  _filterRxInput.placeholder = 'search…';
+  _filterRxInput.value = _currentFilterRx;
+  _filterRxInput.addEventListener('input', (e) => {
+    _currentFilterRx = e.target.value.toLowerCase();
+    sessionStorage.setItem('patchbox.matrix.filter.rx', _currentFilterRx);
+    _applyFilters();
+  });
+  const rxClear = document.createElement('button');
+  rxClear.className = 'filter-clear-btn';
+  rxClear.textContent = '✕';
+  rxClear.title = 'Clear row filter';
+  rxClear.addEventListener('click', () => {
+    _currentFilterRx = '';
+    _filterRxInput.value = '';
+    sessionStorage.setItem('patchbox.matrix.filter.rx', '');
+    _applyFilters();
+    _filterRxInput.focus();
+  });
+  rxContainer.appendChild(rxLabel);
+  rxContainer.appendChild(_filterRxInput);
+  rxContainer.appendChild(rxClear);
+  bar.appendChild(rxContainer);
+
+  // Tx (columns) filter
+  const txContainer = document.createElement('div');
+  txContainer.className = 'filter-input-container';
+  const txLabel = document.createElement('label');
+  txLabel.className = 'filter-label';
+  txLabel.textContent = 'Filter columns:';
+  _filterTxInput = document.createElement('input');
+  _filterTxInput.type = 'text';
+  _filterTxInput.className = 'filter-input';
+  _filterTxInput.placeholder = 'search…';
+  _filterTxInput.value = _currentFilterTx;
+  _filterTxInput.addEventListener('input', (e) => {
+    _currentFilterTx = e.target.value.toLowerCase();
+    sessionStorage.setItem('patchbox.matrix.filter.tx', _currentFilterTx);
+    _applyFilters();
+  });
+  const txClear = document.createElement('button');
+  txClear.className = 'filter-clear-btn';
+  txClear.textContent = '✕';
+  txClear.title = 'Clear column filter';
+  txClear.addEventListener('click', () => {
+    _currentFilterTx = '';
+    _filterTxInput.value = '';
+    sessionStorage.setItem('patchbox.matrix.filter.tx', '');
+    _applyFilters();
+    _filterTxInput.focus();
+  });
+  txContainer.appendChild(txLabel);
+  txContainer.appendChild(_filterTxInput);
+  txContainer.appendChild(txClear);
+  bar.appendChild(txContainer);
+
+  return bar;
+}
+
+// ── Apply filters to matrix ────────────────────────────────────────────────
+function _applyFilters() {
+  const grid = _container?.querySelector('.matrix-grid');
+  if (!grid) return;
+
+  // Collect visible output columns based on Tx filter
+  const visibleOutputIds = new Set();
+  grid.querySelectorAll('.out-hdr:not(.bus-col-hdr):not(.bus-col-div-hdr)').forEach(hdr => {
+    const outId = hdr.dataset.outId || hdr.dataset.txId;
+    if (!outId) return;
+    const label = hdr.querySelector('.out-name');
+    const name = (label?.textContent ?? '').toLowerCase();
+    const matches = !_currentFilterTx || name.includes(_currentFilterTx);
+    if (matches) {
+      visibleOutputIds.add(outId);
+    }
+  });
+
+  // Apply row and column visibility
+  grid.querySelectorAll('.xp-row').forEach(row => {
+    // Skip separator rows (bus-separator-row, gen-separator-row)
+    if (row.classList.contains('bus-separator-row') || row.classList.contains('gen-separator-row')) {
+      row.style.display = '';
+      return;
+    }
+
+    // Check Rx (row) filter
+    const chLabel = row.querySelector('.ch-label');
+    const chName = (chLabel?.querySelector('.ch-name')?.textContent ?? '').toLowerCase();
+    const rxMatches = !_currentFilterRx || chName.includes(_currentFilterRx);
+    row.style.display = rxMatches ? '' : 'none';
+
+    // Hide/show individual cells based on Tx (column) filter
+    const cells = row.querySelectorAll('.xp-cell');
+    cells.forEach((cell) => {
+      if (cell.classList.contains('bus-col-div-cell') || 
+          cell.classList.contains('bus-src') || 
+          cell.classList.contains('bus-feed') ||
+          cell.classList.contains('bus-feed-self')) {
+        // Bus columns hidden when Tx filter active
+        cell.style.display = _currentFilterTx ? 'none' : '';
+      } else {
+        // Regular output crosspoint cells
+        const txId = cell.dataset.txId;
+        cell.style.display = visibleOutputIds.has(txId) ? '' : 'none';
+      }
+    });
+  });
+
+  // Hide output column headers that don't match
+  grid.querySelectorAll('.out-hdr').forEach(hdr => {
+    if (hdr.classList.contains('bus-col-div-hdr')) {
+      hdr.style.display = _currentFilterTx ? 'none' : '';
+    } else if (hdr.classList.contains('bus-col-hdr')) {
+      hdr.style.display = _currentFilterTx ? 'none' : '';
+    } else {
+      const outId = hdr.dataset.outId || hdr.dataset.txId;
+      if (outId) {
+        hdr.style.display = visibleOutputIds.has(outId) ? '' : 'none';
+      }
+    }
+  });
+}
+
+// ── Keyboard shortcuts for filter ──────────────────────────────────────────
+function _setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Only intercept if focus is within the matrix tab
+    if (!_container?.querySelector('#tab-matrix')) return;
+
+    // Ctrl+F or ⌘F focuses row filter
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      if (_filterRxInput) {
+        _filterRxInput.focus();
+        _filterRxInput.select();
+      }
+      return;
+    }
+
+    // Escape clears/blurs from filter inputs
+    if (e.key === 'Escape') {
+      if (document.activeElement === _filterRxInput || document.activeElement === _filterTxInput) {
+        if (document.activeElement === _filterRxInput && _currentFilterRx) {
+          // If Rx filter has text, clear it
+          _currentFilterRx = '';
+          _filterRxInput.value = '';
+          sessionStorage.setItem('patchbox.matrix.filter.rx', '');
+          _applyFilters();
+        } else if (document.activeElement === _filterTxInput && _currentFilterTx) {
+          // If Tx filter has text, clear it
+          _currentFilterTx = '';
+          _filterTxInput.value = '';
+          sessionStorage.setItem('patchbox.matrix.filter.tx', '');
+          _applyFilters();
+        } else {
+          // Otherwise blur the input
+          document.activeElement.blur();
+        }
+      }
+    }
+  });
 }
 
 // ── Bus change listener ───────────────────────────────────────────────────

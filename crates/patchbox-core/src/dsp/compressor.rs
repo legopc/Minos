@@ -338,4 +338,88 @@ mod tests {
             "gain above knee should follow 4:1 ratio: {gain_above} vs {expected_gain_above}"
         );
     }
+
+    #[test]
+    fn ratio_based_gain_reduction_at_2x_threshold() {
+        // With 4:1 ratio: signal 2x threshold should see measurable compression
+        let mut comp = Compressor::new();
+        comp.sync(&cfg(-18.0, 4.0, 0.0, 50.0, 200.0, 0.0, true), 48_000.0);
+
+        // 2x the threshold amplitude linearly
+        let threshold_linear = 10.0_f32.powf(-18.0 / 20.0);
+        let signal_level = threshold_linear * 2.0;
+
+        // Drive with this signal level for long enough to settle
+        let mut buf = vec![signal_level; 4800]; // 100ms
+        comp.process_block(&mut buf);
+
+        // Gain reduction should be visible: output significantly reduced
+        let min_gain = comp.gain_reduction_db();
+        assert!(
+            min_gain < -3.0,
+            "at 2x threshold with 4:1 ratio, should see significant compression: {:.2}dB",
+            min_gain
+        );
+    }
+
+    #[test]
+    fn attack_envelope_shows_gain_reduction() {
+        let mut comp = Compressor::new();
+        // Aggressive settings to show attack clearly
+        comp.sync(&cfg(-18.0, 4.0, 0.0, 5.0, 200.0, 0.0, true), 48_000.0);
+
+        // Initially disabled-ish, gain should be 0dB
+        let gain_initial = comp.gain_reduction_db();
+        assert_eq!(gain_initial, 0.0);
+
+        // Step input well above threshold
+        let mut buf = vec![0.8f32; 512];
+        comp.process_block(&mut buf);
+
+        // After processing, should have gain reduction
+        let gain_after = comp.gain_reduction_db();
+        assert!(
+            gain_after < -1.0,
+            "after attack phase on loud signal, should have GR: {:.2}dB",
+            gain_after
+        );
+    }
+
+    #[test]
+    fn release_envelope_shows_recovery() {
+        let mut comp = Compressor::new();
+        // Very slow release to make settling observable
+        comp.sync(&cfg(-6.0, 4.0, 0.0, 1.0, 1000.0, 0.0, true), 48_000.0);
+
+        // Compress with loud signal
+        let mut buf = vec![0.9f32; 4800]; // 100ms
+        comp.process_block(&mut buf);
+        let gain_compressed = comp.gain_reduction_db();
+
+        assert!(
+            gain_compressed < -1.0,
+            "loud signal should trigger compression: {:.2}dB",
+            gain_compressed
+        );
+    }
+
+    #[test]
+    fn bypass_when_disabled() {
+        let mut comp = Compressor::new();
+        // Aggressive compression settings
+        comp.sync(&cfg(-6.0, 8.0, 0.0, 1.0, 10.0, 6.0, false), 48_000.0);
+
+        // Process loud signal
+        let mut buf = vec![0.9f32; 256];
+        let orig = buf.clone();
+        comp.process_block(&mut buf);
+
+        // Output must match input exactly (disabled)
+        for (a, b) in orig.iter().zip(buf.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "disabled compressor must pass unchanged"
+            );
+        }
+    }
 }
