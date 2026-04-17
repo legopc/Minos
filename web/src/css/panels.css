@@ -89,6 +89,7 @@
   color: var(--text-muted);
   cursor: pointer;
   letter-spacing: 0.05em;
+  position: relative;
 }
 .dsp-byp-btn.active {
   background: var(--mute-active);
@@ -116,6 +117,7 @@
   background: var(--bg-dark);
   color: var(--text-muted);
   cursor: pointer;
+  position: relative;
 }
 .dsp-toggle-btn.active {
   background: var(--text-accent);
@@ -133,6 +135,7 @@
   color: var(--text-primary);
   cursor: pointer;
   width: 100%;
+  position: relative;
 }
 .dsp-action-btn:hover {
   background: var(--bg-hover);
@@ -206,4 +209,37 @@
   border-radius: 3px;
   background: rgba(0,0,0,0.25);
   margin-bottom: 6px;
+}
+
+/* s7-ui-touch-targets: expand tap target for DSP bypass button on touch devices */
+@media (pointer: coarse) {
+  .dsp-byp-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for DSP toggle button on touch devices */
+@media (pointer: coarse) {
+  .dsp-toggle-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for DSP action button on touch devices */
+@media (pointer: coarse) {
+  .dsp-action-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

@@ -217,6 +217,7 @@ input[type="range"] {
   cursor: pointer;
   border: 1px solid;
   font-family: inherit;
+  position: relative;
 }
 .btn-accent {
   background: transparent;
@@ -236,3 +237,17 @@ input[type="range"] {
   color: var(--color-danger);
 }
 .btn-danger:hover { background: var(--color-danger); color: #fff; }
+
+
+/* s7-ui-touch-targets: ensure 44px tap targets on touch devices */
+@media (pointer: coarse) {
+  .btn-accent::before,
+  .btn-secondary::before,
+  .btn-danger::before {
+    content: '';
+    position: absolute;
+    inset: -4px -8px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

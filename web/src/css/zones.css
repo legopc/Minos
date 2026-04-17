@@ -25,6 +25,7 @@
   background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
+  position: relative;
 }
 .zones-add-btn:hover { background: var(--bg-row-hover); }
 
@@ -71,6 +72,7 @@
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  position: relative;
 }
 
 .zone-card-label {
@@ -121,6 +123,7 @@
   cursor: pointer;
   transition: all 0.1s;
   flex-shrink: 0;
+  position: relative;
 }
 .zone-mute-btn:hover {
   border-color: var(--mute-active);
@@ -162,6 +165,7 @@
   background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
+  position: relative;
 }
 .zone-panel-back-btn:hover { background: var(--bg-row-hover); color: var(--text-primary); }
 
@@ -205,3 +209,47 @@
   text-decoration: underline dotted;
 }
 .zone-card-name-btn:hover { color: var(--accent-primary); }
+
+/* s7-ui-touch-targets: expand tap target for zone mute button on touch devices */
+@media (pointer: coarse) {
+  .zone-mute-btn::before {
+    content: '';
+    position: absolute;
+    inset: -4px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for zones add button on touch devices */
+@media (pointer: coarse) {
+  .zones-add-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for zone card edit button */
+@media (pointer: coarse) {
+  .zone-card-edit-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for zone panel back button */
+@media (pointer: coarse) {
+  .zone-panel-back-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

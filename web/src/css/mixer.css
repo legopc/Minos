@@ -33,7 +33,21 @@
   color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
+  position: relative;
+  position: relative;
 }
+
+/* s7-ui-touch-targets: ensure 44px tap target on touch devices */
+@media (pointer: coarse) {
+  .mixer-scene-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .mixer-scene-btn:hover { background: var(--bg-row-hover); }
 .mixer-scene-btn.active {
   border-color: var(--color-accent);
@@ -437,6 +451,7 @@
   flex-direction: column;
   align-items: center;
   background: var(--bg-surface);
+  border-left: 3px solid var(--ch-accent, transparent);
   border-right: 1px solid var(--border-subtle);
   padding: 4px 2px;
   gap: 4px;
@@ -670,7 +685,20 @@
   border-radius: 2px;
   cursor: pointer;
   transition: all 0.1s;
+  position: relative;
 }
+
+/* s7-ui-touch-targets: ensure 44px tap target on touch devices */
+@media (pointer: coarse) {
+  .mixer-polarity-btn::before {
+    content: '';
+    position: absolute;
+    inset: -4px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .mixer-polarity-btn:hover { border-color: var(--color-accent); color: var(--text-primary); }
 .mixer-polarity-btn.active {
   background: var(--color-accent);
@@ -1051,6 +1079,24 @@
   border-color: #58a6ff;
   color: #58a6ff;
   background: rgba(88,166,255,0.12);
+}
+
+.strip-colour-btn {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #3d4451;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.strip-colour-btn:hover {
+  border-color: currentColor;
+  color: var(--ch-accent, #58a6ff);
 }
 
 /* VCA member editor popover */

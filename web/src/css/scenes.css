@@ -40,6 +40,7 @@
   background: var(--bg-dark);
   color: var(--text-secondary);
   cursor: pointer;
+  position: relative;
 }
 .scenes-new-btn:hover { background: var(--bg-row-hover); }
 
@@ -88,6 +89,7 @@
   background: var(--bg-dark);
   color: var(--text-muted);
   cursor: pointer;
+  position: relative;
 }
 .scene-action-btn:hover { color: var(--text-primary); }
 .scene-action-btn.load { color: var(--text-accent); }
@@ -125,6 +127,7 @@
   background: transparent;
   color: var(--text-accent);
   cursor: pointer;
+  position: relative;
 }
 .scenes-load-btn:hover { background: var(--text-accent); color: var(--bg-dark); }
 
@@ -242,6 +245,7 @@
   font-size: 14px;
   cursor: pointer;
   padding: 0 2px;
+  position: relative;
 }
 .scene-fav-btn.fav-on { color: var(--solo-active); }
 
@@ -300,4 +304,18 @@
   border-radius: 2px;
   background: var(--bg-dark);
   font-family: inherit;
+}
+
+/* s7-ui-touch-targets: expand tap target for scene buttons on touch devices */
+@media (pointer: coarse) {
+  .scenes-new-btn::before,
+  .scenes-load-btn::before,
+  .scene-action-btn::before,
+  .scene-fav-btn::before {
+    content: '';
+    position: absolute;
+    inset: -6px -6px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

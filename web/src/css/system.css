@@ -71,6 +71,7 @@
   font-family: inherit;
   cursor: pointer;
   min-height: 36px;
+  position: relative;
 }
 .sys-btn:hover { background: var(--bg-row-hover); }
 .sys-btn-sm { padding: 4px 10px; min-height: 28px; font-size: 10px; }
@@ -195,4 +196,15 @@
   color: var(--text-primary);
   min-width: 48px;
   text-align: right;
+}
+
+/* s7-ui-touch-targets: expand tap target for system buttons on touch devices */
+@media (pointer: coarse) {
+  .sys-btn::before {
+    content: '';
+    position: absolute;
+    inset: -4px -8px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

@@ -148,6 +148,7 @@
   gap: 4px;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
   touch-action: manipulation;
+  position: relative;
 }
 .corner-btn:hover {
   background: var(--bg-row-hover, #2a2a2a);
@@ -468,6 +469,7 @@
   transition: filter 0.1s;
   flex-shrink: 0;
   position: relative;
+  position: relative;
 }
 
 .ch-dsp-badge:hover {
@@ -500,6 +502,7 @@
   justify-content: center;
   cursor: pointer;
   border-right: 1px solid var(--border-subtle);
+  position: relative;
   position: relative;
 }
 
@@ -632,6 +635,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 13px;
+  position: relative;
 }
 
 /* ── Internal Buses ─────────────────────────────────────── */
@@ -745,4 +749,48 @@
     rgba(255,255,255,0.05) 3px,
     rgba(255,255,255,0.05) 6px
   );
+}
+
+/* s7-ui-touch-targets: expand tap target for DSP badges on touch devices */
+@media (pointer: coarse) {
+  .ch-dsp-badge::before {
+    content: '';
+    position: absolute;
+    inset: -3px -5px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for matrix cells on touch devices */
+@media (pointer: coarse) {
+  .xp-cell::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for corner buttons on touch devices */
+@media (pointer: coarse) {
+  .corner-btn::before {
+    content: '';
+    position: absolute;
+    inset: -4px -4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* s7-ui-touch-targets: expand tap target for matrix hint dismiss button */
+@media (pointer: coarse) {
+  .matrix-hint-dismiss::before {
+    content: '';
+    position: absolute;
+    inset: -4px -8px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
