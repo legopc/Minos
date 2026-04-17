@@ -84,6 +84,12 @@ export async function render(container) {
         <div class="sys-row"><span class="sys-lbl">Volume:</span><input type="range" id="monitor-volume-slider" class="cfg-range" min="-60" max="12" step="1" value="${sys.monitor_volume_db ?? 0}" aria-label="Monitor volume in dB"><span id="monitor-volume-label" class="cfg-label">${sys.monitor_volume_db ?? 0} dB</span></div>
       </div>
 
+      <!-- Metering Preferences card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Metering Preferences</div>
+        <div class="sys-row"><span class="sys-lbl">Meter Style</span><div id="meter-ballistics-group"></div></div>
+      </div>
+
       <!-- Actions card -->
       <div class="sys-card">
         <div class="sys-card-title">Actions</div>
@@ -197,6 +203,9 @@ export async function render(container) {
     }
   });
 
+  // Wire ballistics preference (meter style)
+  _setupMeterBallisticsPreference();
+
   // Load and render backups
   _loadBackups();
 
@@ -258,6 +267,49 @@ export async function render(container) {
     }
   });
   if (monitorSelect) _cleanup.observe(document.body, { childList: true, subtree: true });
+}
+
+/**
+ * Setup meter ballistics preference radio buttons.
+ * Reads from localStorage, renders radios, and wires up the ballistics system.
+ */
+function _setupMeterBallisticsPreference() {
+  const group = document.getElementById('meter-ballistics-group');
+  if (!group) return;
+
+  // Import ballistics module dynamically to get presets and set function
+  import('./metering.js').then(meter => {
+    import('./ws.js').then(ws => {
+      const saved = localStorage.getItem('patchbox.meters.ballistics') ?? 'Digital';
+      const presetNames = Object.keys(meter.BALLISTICS_PRESETS);
+
+      // Build radio buttons
+      presetNames.forEach(name => {
+        const label = document.createElement('label');
+        label.style.display = 'inline-block';
+        label.style.marginRight = '1rem';
+        label.style.cursor = 'pointer';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'meter-ballistics';
+        radio.value = name;
+        radio.checked = (name === saved);
+
+        radio.onchange = () => {
+          localStorage.setItem('patchbox.meters.ballistics', name);
+          ws.setMeteringBallistics(meter.BALLISTICS_PRESETS[name]);
+        };
+
+        label.appendChild(radio);
+        label.appendChild(document.createTextNode(` ${name}`));
+        group.appendChild(label);
+      });
+
+      // Set initial ballistics from saved preference
+      ws.setMeteringBallistics(meter.BALLISTICS_PRESETS[saved]);
+    });
+  });
 }
 
 async function _saveMonitorConfig(devSelect, volSlider) {

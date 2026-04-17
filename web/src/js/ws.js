@@ -7,6 +7,15 @@ let _ws       = null;
 let _retryMs  = 1000;
 let _retryTmr = null;
 let _meterFilter = null;  // null = all, Set = filtered ids
+let _ballistics = meter.BALLISTICS_PRESETS.Digital;
+
+export function setMeteringBallistics(ballistics) {
+  _ballistics = ballistics;
+}
+
+export function getMeteringBallistics() {
+  return _ballistics;
+}
 
 export function initWs() {
   _connect();
@@ -69,7 +78,7 @@ function _dispatch(msg) {
 
     case 'metering':
       st.setMetering(msg.rx, msg.tx, msg.gr, msg.bus);
-      meter.updateAll(msg);
+      meter.updateAll(msg, _ballistics);
       window.dispatchEvent(new CustomEvent('pb:metering', { detail: msg }));
       break;
 
