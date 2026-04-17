@@ -1,5 +1,7 @@
 # dante-patchbox — *Minos*
 
+[![Docs](https://img.shields.io/badge/docs-online-blue)](https://legopc.github.io/dante-patchbox/)
+
 A Dante AoIP software patchbay and DSP mixer for venue audio systems. Runs as a single binary — no separate web server, no database, no runtime dependencies.
 
 This patchbay is named **Minos** after the judge in Dante Alighieri's *Divine Comedy* — the figure who stands at the entrance to the Inferno and routes each soul to where they belong. Just as Minos directs souls to their proper circle, this software routes audio sources to their proper destinations. All credit for the Dante protocol implementation goes to the creators of the [Inferno AoIP project](https://gitlab.com/lumifaza/inferno) — this patchbay builds on their work.

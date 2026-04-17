@@ -12,4 +12,33 @@ fn main() {
         .find(|p| std::path::Path::new(p).exists())
         .expect("libpam.so.0 not found — install pam");
     println!("cargo:rustc-link-arg={path}");
+
+    build_docs();
+}
+fn build_docs() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let docs_dir = std::path::Path::new(&manifest_dir)
+        .join("../../docs")
+        .canonicalize()
+        .expect("docs/ directory not found relative to crates/patchbox/");
+
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed={}", docs_dir.join("src").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        docs_dir.join("book.toml").display()
+    );
+
+    let status = std::process::Command::new("mdbook")
+        .arg("build")
+        .arg(&docs_dir)
+        .status()
+        .unwrap_or_else(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                panic!("mdbook not found — install with: cargo install mdbook");
+            }
+            panic!("failed to run mdbook: {e}");
+        });
+
+    assert!(status.success(), "mdbook build failed");
 }

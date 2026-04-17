@@ -1,36 +1,66 @@
-use axum::{
-    middleware,
-    extract::{State, WebSocketUpgrade, ws::WebSocket},
-    http::{StatusCode, header},
-    response::{IntoResponse, Response},
-    routing::{get, put, post, delete},
-    Json, Router,
-};
-use rust_embed::RustEmbed;
-use serde::Deserialize;
-use tokio::time::interval;
-use std::sync::Arc;
-use std::net::{IpAddr, SocketAddr};
-use std::num::NonZeroU32;
 use axum::extract::ConnectInfo;
 use axum::http::Request;
 use axum::middleware::Next;
-use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+use axum::{
+    extract::{ws::WebSocket, State, WebSocketUpgrade},
+    http::{header, StatusCode},
+    middleware,
+    response::{IntoResponse, Response},
+    routing::{delete, get, post, put},
+    Json, Router,
+};
+use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, Quota, RateLimiter};
+use rust_embed::RustEmbed;
+use serde::Deserialize;
+use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
+use std::sync::Arc;
+use tokio::time::interval;
 
 type IpLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
 #[derive(RustEmbed)]
 #[folder = "../../web/src/"]
 struct Assets;
+#[derive(RustEmbed)]
+#[folder = "../../docs/book/"]
+struct DocsAssets;
+
+async fn serve_docs(axum::extract::Path(path): axum::extract::Path<String>) -> Response {
+    let path = path.trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    match DocsAssets::get(path) {
+        Some(content) => {
+            let mime = path
+                .rsplit('.')
+                .next()
+                .map(mime_for_ext)
+                .unwrap_or("application/octet-stream");
+            ([(header::CONTENT_TYPE, mime)], content.data.into_owned()).into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn serve_docs_index() -> Response {
+    match DocsAssets::get("index.html") {
+        Some(content) => (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            content.data.into_owned(),
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
 
 fn serve_asset(path: &str) -> Response {
     match Assets::get(path) {
         Some(content) => {
             let mime = match path.rsplit('.').next() {
-                Some("css")  => "text/css; charset=utf-8",
-                Some("js")   => "application/javascript; charset=utf-8",
+                Some("css") => "text/css; charset=utf-8",
+                Some("js") => "application/javascript; charset=utf-8",
                 Some("html") => "text/html; charset=utf-8",
-                _            => "application/octet-stream",
+                _ => "application/octet-stream",
             };
             ([(header::CONTENT_TYPE, mime)], content.data.into_owned()).into_response()
         }
@@ -38,19 +68,19 @@ fn serve_asset(path: &str) -> Response {
     }
 }
 
-use crate::state::AppState;
 use crate::auth_api;
+use crate::state::AppState;
 
-pub mod routes;
 pub mod atomic_write;
+pub mod routes;
 
+use routes::buses::*;
 use routes::inputs::*;
 use routes::outputs::*;
-use routes::buses::*;
-use routes::zones::*;
-use routes::scenes::*;
 use routes::routing::*;
+use routes::scenes::*;
 use routes::system::*;
+use routes::zones::*;
 
 use patchbox_core::config::{InputChannelDsp, OutputChannelDsp};
 
@@ -82,10 +112,22 @@ macro_rules! persist_scenes_or_500 {
     };
 }
 
-#[derive(Deserialize)] pub(crate) struct GainBody { pub(crate) gain_db: f32 }
-#[derive(Deserialize)] pub(crate) struct EnabledBody { pub(crate) enabled: bool }
-#[derive(Deserialize)] pub(crate) struct MutedBody { pub(crate) muted: bool }
-#[derive(Deserialize)] pub(crate) struct PolarityBody { pub(crate) invert: bool }
+#[derive(Deserialize)]
+pub(crate) struct GainBody {
+    pub(crate) gain_db: f32,
+}
+#[derive(Deserialize)]
+pub(crate) struct EnabledBody {
+    pub(crate) enabled: bool,
+}
+#[derive(Deserialize)]
+pub(crate) struct MutedBody {
+    pub(crate) muted: bool,
+}
+#[derive(Deserialize)]
+pub(crate) struct PolarityBody {
+    pub(crate) invert: bool,
+}
 
 pub(crate) fn parse_rx_id(id: &str) -> Option<usize> {
     id.strip_prefix("rx_")?.parse().ok()
@@ -143,7 +185,9 @@ pub(crate) fn output_dsp_to_value(dsp: &OutputChannelDsp) -> serde_json::Value {
 }
 
 pub(crate) fn linear_to_dbfs(v: f32) -> f32 {
-    if v <= 0.0 { return -60.0; }
+    if v <= 0.0 {
+        return -60.0;
+    }
     (20.0 * v.log10()).max(-60.0)
 }
 
@@ -330,23 +374,27 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
         }
     }
 
-    let _ = cancel_tx.send(());  // signal send task if still running
+    let _ = cancel_tx.send(()); // signal send task if still running
     send_task.abort();
 }
 
-async fn serve_ui() -> impl IntoResponse { serve_asset("index.html") }
+async fn serve_ui() -> impl IntoResponse {
+    serve_asset("index.html")
+}
 
 fn mime_for_ext(ext: &str) -> &'static str {
     match ext {
-        "css"   => "text/css; charset=utf-8",
-        "js"    => "application/javascript; charset=utf-8",
-        "html"  => "text/html; charset=utf-8",
-        "svg"   => "image/svg+xml",
+        "css" => "text/css; charset=utf-8",
+        "js" => "application/javascript; charset=utf-8",
+        "html" => "text/html; charset=utf-8",
+        "svg" => "image/svg+xml",
         "woff2" => "font/woff2",
-        "woff"  => "font/woff",
-        "ico"   => "image/x-icon",
-        "png"   => "image/png",
-        _       => "application/octet-stream",
+        "woff" => "font/woff",
+        "ico" => "image/x-icon",
+        "png" => "image/png",
+        "json" => "application/json",
+        "txt" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
     }
 }
 
@@ -410,12 +458,14 @@ async fn rate_limit_mw(
             axum::http::StatusCode::TOO_MANY_REQUESTS,
             [("Retry-After", "1")],
             "rate limit exceeded",
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
 pub fn router(state: AppState) -> Router {
-    let quota = Quota::per_second(NonZeroU32::new(100).unwrap()).allow_burst(NonZeroU32::new(200).unwrap());
+    let quota =
+        Quota::per_second(NonZeroU32::new(100).unwrap()).allow_burst(NonZeroU32::new(200).unwrap());
     let limiter: IpLimiter = Arc::new(RateLimiter::keyed(quota));
     // Protected routes — require valid JWT
     let protected = Router::new()
@@ -429,14 +479,23 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/unmute-all", post(unmute_all))
         .route("/api/v1/scenes", get(list_scenes).post(save_scene))
         .route("/api/v1/scenes/:name/load", post(load_scene))
-        .route("/api/v1/scenes/:name", get(get_scene_by_id).put(put_scene).delete(delete_scene))
+        .route(
+            "/api/v1/scenes/:name",
+            get(get_scene_by_id).put(put_scene).delete(delete_scene),
+        )
         .route("/api/v1/scenes/:name/diff", get(get_scene_diff))
         .route("/api/v1/sources/:idx/name", put(put_source_name))
         .route("/api/v1/zones/:idx/name", put(put_zone_name))
         .route("/api/v1/zones/:tx/eq", get(get_eq).put(put_eq))
         .route("/api/v1/zones/:tx/eq/enabled", put(put_eq_enabled))
-        .route("/api/v1/zones/:tx/limiter", get(get_limiter).put(put_limiter))
-        .route("/api/v1/zones/:tx/limiter/enabled", put(put_limiter_enabled))
+        .route(
+            "/api/v1/zones/:tx/limiter",
+            get(get_limiter).put(put_limiter),
+        )
+        .route(
+            "/api/v1/zones/:tx/limiter/enabled",
+            put(put_limiter_enabled),
+        )
         // Input DSP
         .route("/api/v1/inputs/:ch/dsp", get(get_input_dsp))
         .route("/api/v1/inputs/:ch/gain", put(put_input_gain))
@@ -465,24 +524,48 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/channels", get(get_channels))
         .route("/api/v1/channels/:id", get(get_channel).put(put_channel))
         .route("/api/v1/outputs", get(get_outputs))
-        .route("/api/v1/outputs/:id", get(get_output_resource).put(put_output_resource))
+        .route(
+            "/api/v1/outputs/:id",
+            get(get_output_resource).put(put_output_resource),
+        )
         .route("/api/v1/zones", get(get_zones_list).post(post_zone))
-        .route("/api/v1/zones/:zone_id", put(put_zone_resource).delete(delete_zone_resource))
-        .route("/api/v1/routes", get(get_routes).post(post_route).delete(delete_routes_bulk))
+        .route(
+            "/api/v1/zones/:zone_id",
+            put(put_zone_resource).delete(delete_zone_resource),
+        )
+        .route(
+            "/api/v1/routes",
+            get(get_routes).post(post_route).delete(delete_routes_bulk),
+        )
         .route("/api/v1/routes/:id", delete(delete_route))
         .route("/api/v1/metering", get(get_metering))
         .route("/api/v1/system", get(get_system))
         .route("/api/v1/system/config", put(put_system_config))
-        .route("/api/v1/system/config/export", get(get_system_config_export))
-        .route("/api/v1/system/config/import", post(post_system_config_import))
+        .route(
+            "/api/v1/system/config/export",
+            get(get_system_config_export),
+        )
+        .route(
+            "/api/v1/system/config/import",
+            post(post_system_config_import),
+        )
         .route("/api/v1/system/config/backups", get(get_config_backups))
-        .route("/api/v1/system/config/backups/:name", get(get_config_backup))
-        .route("/api/v1/system/config/backups/:name/restore", post(restore_config_backup))
+        .route(
+            "/api/v1/system/config/backups/:name",
+            get(get_config_backup),
+        )
+        .route(
+            "/api/v1/system/config/backups/:name/restore",
+            post(restore_config_backup),
+        )
         .route("/api/v1/admin/channels", post(post_admin_channels))
         .route("/api/v1/admin/restart", post(post_admin_restart))
         // Sprint E — Internal buses
         .route("/api/v1/buses", get(get_buses).post(post_bus))
-        .route("/api/v1/buses/:id", get(get_bus).put(put_bus).delete(delete_bus))
+        .route(
+            "/api/v1/buses/:id",
+            get(get_bus).put(put_bus).delete(delete_bus),
+        )
         .route("/api/v1/buses/:id/gain", put(put_bus_gain))
         .route("/api/v1/buses/:id/polarity", put(put_bus_polarity))
         .route("/api/v1/buses/:id/hpf", put(put_bus_hpf))
@@ -497,25 +580,70 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/bus-matrix", put(put_bus_matrix))
         .route("/api/v1/bus-feed-matrix", get(get_bus_feed_matrix))
         .route("/api/v1/bus-feed", put(put_bus_feed))
-        .route("/api/v1/vca-groups", get(get_vca_groups).post(post_vca_group))
-        .route("/api/v1/vca-groups/:id", put(put_vca_group).delete(delete_vca_group))
-        .route("/api/v1/automixer-groups", get(get_automixer_groups).post(post_automixer_group))
-        .route("/api/v1/automixer-groups/:id", put(put_automixer_group).delete(delete_automixer_group))
-        .route("/api/v1/signal-generators", get(get_signal_generators).post(post_signal_generator))
-        .route("/api/v1/signal-generators/:id", put(put_signal_generator).delete(delete_signal_generator))
-        .route("/api/v1/signal-generators/:id/routing", get(get_generator_routing).put(put_generator_routing))
-        .route("/api/v1/stereo-links", get(get_stereo_links).post(post_stereo_link))
-        .route("/api/v1/stereo-links/:left_ch", put(put_stereo_link).delete(delete_stereo_link))
-        .route("/api/v1/inputs/:ch/aec", get(get_input_aec).put(put_input_aec))
+        .route(
+            "/api/v1/vca-groups",
+            get(get_vca_groups).post(post_vca_group),
+        )
+        .route(
+            "/api/v1/vca-groups/:id",
+            put(put_vca_group).delete(delete_vca_group),
+        )
+        .route(
+            "/api/v1/automixer-groups",
+            get(get_automixer_groups).post(post_automixer_group),
+        )
+        .route(
+            "/api/v1/automixer-groups/:id",
+            put(put_automixer_group).delete(delete_automixer_group),
+        )
+        .route(
+            "/api/v1/signal-generators",
+            get(get_signal_generators).post(post_signal_generator),
+        )
+        .route(
+            "/api/v1/signal-generators/:id",
+            put(put_signal_generator).delete(delete_signal_generator),
+        )
+        .route(
+            "/api/v1/signal-generators/:id/routing",
+            get(get_generator_routing).put(put_generator_routing),
+        )
+        .route(
+            "/api/v1/stereo-links",
+            get(get_stereo_links).post(post_stereo_link),
+        )
+        .route(
+            "/api/v1/stereo-links/:left_ch",
+            put(put_stereo_link).delete(delete_stereo_link),
+        )
+        .route(
+            "/api/v1/inputs/:ch/aec",
+            get(get_input_aec).put(put_input_aec),
+        )
         .route("/api/v1/inputs/:ch/automixer", put(put_input_automixer))
-        .route("/api/v1/inputs/:ch/feedback", get(get_input_feedback).put(put_input_feedback))
-        .route("/api/v1/inputs/:ch/deq", get(get_input_deq).put(put_input_deq))
-        .route("/api/v1/outputs/:ch/deq", get(get_output_deq).put(put_output_deq))
-        .route("/api/v1/solo", get(get_solo).put(put_solo).delete(delete_solo))
+        .route(
+            "/api/v1/inputs/:ch/feedback",
+            get(get_input_feedback).put(put_input_feedback),
+        )
+        .route(
+            "/api/v1/inputs/:ch/deq",
+            get(get_input_deq).put(put_input_deq),
+        )
+        .route(
+            "/api/v1/outputs/:ch/deq",
+            get(get_output_deq).put(put_output_deq),
+        )
+        .route(
+            "/api/v1/solo",
+            get(get_solo).put(put_solo).delete(delete_solo),
+        )
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))
         .route("/api/v1/system/audio-devices", get(list_audio_devices))
-        .route_layer(middleware::from_fn_with_state(state.clone(), auth_api::require_auth));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_api::require_auth,
+        ));
 
     // Public routes — no auth required
     let mut app = Router::new()
@@ -524,6 +652,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/login", post(auth_api::login))
         .route("/api/v1/auth/refresh", post(auth_api::refresh_token))
         .route("/api/v1/config", get(get_config))
+        .route("/docs", get(serve_docs_index))
+        .route("/docs/", get(serve_docs_index))
+        .route("/docs/*path", get(serve_docs))
         .merge(protected);
 
     if let Ok(dev_dir) = std::env::var("PATCHBOX_DEV_ASSETS") {
