@@ -10,3 +10,4 @@ pub mod filters;
 pub mod gate;
 pub mod limiter;
 pub use envelope::DspBlock;
+pub use envelope::DspBlockAny;

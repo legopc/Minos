@@ -348,4 +348,67 @@ mod tests {
             "process_block should return false when gate is closed after peak decay"
         );
     }
+
+    #[test]
+    fn open_threshold_and_range_are_db_scale_correct() {
+        let mut gate = GateExpander::new();
+        let mut cfg = cfg(-20.0, true);
+        cfg.range_db = -60.0;
+        gate.sync(&cfg, 48_000.0);
+
+        // Verify thresholds are dB converted correctly
+        let threshold_linear = 10.0_f32.powf(-20.0 / 20.0);
+        assert!((gate.threshold_linear - threshold_linear).abs() < 1e-6);
+
+        let range_linear = 10.0_f32.powf(-60.0 / 20.0);
+        assert!((gate.range_linear - range_linear).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hold_time_prevents_rapid_gate_closure() {
+        let mut gate = GateExpander::new();
+        let mut cfg = cfg(-40.0, true);
+        cfg.hold_ms = 100.0; // 100ms hold
+        cfg.attack_ms = 1.0;
+        cfg.release_ms = 20.0;
+        gate.sync(&cfg, 48_000.0);
+
+        // Open gate with loud signal
+        let mut buf = vec![0.9f32; 256];
+        let _ = gate.process_block(&mut buf);
+
+        // Signal drops below threshold
+        let mut buf = vec![0.0f32; 1024];
+        let result = gate.process_block(&mut buf);
+
+        // Gate should still be open or in hold state (not yet released)
+        assert!(
+            result || gate.state() == "hold",
+            "hold timer should keep gate open/held: state={}",
+            gate.state()
+        );
+    }
+
+    #[test]
+    fn range_db_sets_minimum_attenuation() {
+        // range_db = -60dB means silence is -60dB, not 0dB
+        let mut gate = GateExpander::new();
+        let mut cfg = cfg(-40.0, true);
+        cfg.range_db = -60.0;
+        gate.sync(&cfg, 48_000.0);
+
+        // Process signal below threshold for long time to let gate settle to "closed"
+        let silent_level = 10.0_f32.powf(-50.0 / 20.0); // Well below -40dB threshold
+        let mut buf = vec![silent_level; 30000];
+        let _ = gate.process_block(&mut buf);
+
+        // After gate fully closes, output should be at -60dB
+        let range_linear = 10.0_f32.powf(-60.0 / 20.0);
+        assert!(
+            (gate.current_gain - range_linear).abs() < range_linear * 0.1,
+            "closed gate should attenuate to range_db: gain={}, range={}",
+            gate.current_gain,
+            range_linear
+        );
+    }
 }

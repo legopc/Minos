@@ -1,9 +1,10 @@
 //! Configuration types — loaded from config.toml
 
 use serde::{Deserialize, Deserializer, Serialize};
+use utoipa::ToSchema;
 
 /// EQ band filter type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub enum EqBandType {
     LowShelf,
     Peaking,
@@ -17,7 +18,7 @@ impl Default for EqBandType {
 }
 
 /// One band of a parametric EQ.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EqBand {
     /// Centre frequency in Hz (20–20000)
     pub freq_hz: f32,
@@ -41,12 +42,13 @@ impl Default for EqBand {
 }
 
 /// Per-output 5-band EQ.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EqConfig {
     #[serde(
         deserialize_with = "deser_eq_bands",
         default = "EqConfig::default_bands"
     )]
+    #[schema(value_type = Vec<EqBand>)]
     pub bands: [EqBand; 5],
     #[serde(default)]
     pub enabled: bool,
@@ -111,7 +113,7 @@ impl Default for EqConfig {
 }
 
 /// High-pass or low-pass filter config.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FilterConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -141,7 +143,7 @@ impl Default for FilterConfig {
 }
 
 /// Noise gate / expander.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GateConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -195,7 +197,7 @@ impl Default for GateConfig {
 }
 
 /// Dynamics compressor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CompressorConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -246,7 +248,7 @@ impl Default for CompressorConfig {
 }
 
 /// Sample-accurate delay line.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DelayConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -266,7 +268,7 @@ impl Default for DelayConfig {
 
 /// AEC (Acoustic Echo Cancellation) config per input channel.
 /// Only active when the binary is compiled with `--features aec`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct AecConfig {
     /// Enable echo cancellation on this input
     #[serde(default)]
@@ -278,7 +280,7 @@ pub struct AecConfig {
 }
 
 /// Per-channel automixer settings.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct AutomixerChannelConfig {
     /// Which automixer group this channel belongs to (matches `AutomixerGroupConfig::id`).
     /// None = not participating in any automixer group.
@@ -294,7 +296,7 @@ fn default_am_weight() -> f32 {
 }
 
 /// Automatic Feedback Suppressor (AFS) config per input channel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeedbackSuppressorConfig {
     /// Enable the feedback suppressor on this channel.
     #[serde(default)]
@@ -357,7 +359,7 @@ impl Default for FeedbackSuppressorConfig {
 }
 
 /// Dynamic EQ band type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub enum DynamicEqBandType {
     #[serde(rename = "peaking")]
     Peaking,
@@ -373,7 +375,7 @@ impl Default for DynamicEqBandType {
 }
 
 /// One band of the Dynamic EQ.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DynamicEqBandConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -437,7 +439,7 @@ impl Default for DynamicEqBandConfig {
 }
 
 /// Dynamic EQ — up to 4 bands.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DynamicEqConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -483,7 +485,7 @@ impl Default for DynamicEqConfig {
 }
 
 /// One automixer group (Dugan gain-sharing + optional NOM gating).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AutomixerGroupConfig {
     pub id: String,
     pub name: String,
@@ -532,7 +534,7 @@ impl Default for AutomixerGroupConfig {
 }
 
 /// Full DSP chain for one input channel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct InputChannelDsp {
     #[serde(default = "default_channel_enabled")]
     pub enabled: bool,
@@ -614,7 +616,7 @@ impl DspChain for InputChannelDsp {
 }
 
 /// Full DSP chain for one output channel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct OutputChannelDsp {
     #[serde(default = "default_channel_enabled")]
     pub enabled: bool,
@@ -687,7 +689,7 @@ impl DspChain for OutputChannelDsp {
 }
 
 /// Per-output brick-wall limiter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct LimiterConfig {
     /// Threshold in dBFS above which limiting engages (-40 to 0)
     pub threshold_db: f32,
@@ -711,7 +713,7 @@ impl Default for LimiterConfig {
 }
 
 /// Zone grouping — a named set of TX output channels with a palette colour.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ZoneConfig {
     /// Stable string ID synthesised as "zone_{n}"
     pub id: String,
@@ -726,7 +728,7 @@ pub struct ZoneConfig {
 }
 
 /// Internal submix bus — N RX inputs summed and DSP-processed, then routable to TX outputs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct InternalBusConfig {
     pub id: String,
     pub name: String,
@@ -753,7 +755,7 @@ impl Default for InternalBusConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
 pub enum VcaGroupType {
     #[serde(rename = "input")]
     Input,
@@ -766,7 +768,7 @@ impl Default for VcaGroupType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct VcaGroupConfig {
     pub id: String,
     pub name: String,
@@ -781,7 +783,7 @@ pub struct VcaGroupConfig {
     pub group_type: VcaGroupType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StereoLinkConfig {
     /// Left channel index (0-based rx index, should be even)
     pub left_channel: usize,
@@ -812,7 +814,7 @@ fn default_sweep_duration() -> f32 {
 }
 
 /// Type of built-in signal generator
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SignalGenType {
     #[default]
@@ -823,7 +825,7 @@ pub enum SignalGenType {
 }
 
 /// Built-in test-signal generator
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SignalGeneratorConfig {
     pub id: String,
     pub name: String,

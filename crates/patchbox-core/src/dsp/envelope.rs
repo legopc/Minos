@@ -67,7 +67,15 @@ impl<'de, P: Deserialize<'de>> Deserialize<'de> for DspBlock<P> {
     }
 }
 
-#[cfg(test)]
+/// Opaque DSP block envelope for OpenAPI schema generation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct DspBlockAny {
+    pub kind: String,
+    pub enabled: bool,
+    pub version: u32,
+    #[schema(value_type = Object)]
+    pub params: serde_json::Value,
+}
 mod tests {
     use super::DspBlock;
 
