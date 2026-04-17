@@ -68,7 +68,11 @@ function _buildFaderMeterWrap(meterEl, faderEl) {
   scaleCol.className = 'strip-vu-scale';
   [0, -6, -12, -18, -30].forEach(db => {
     const lbl = document.createElement('span');
-    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
+    // Meter scale is linear (-60 … 0 dB). Position labels relative to fader taper
+    // so they align visually with corresponding fader positions.
+    const sliderPos = st.dbToSlider(db);
+    const faderPct = (sliderPos / 1000) * 100;
+    lbl.style.bottom = faderPct + '%';
     lbl.textContent = db === 0 ? '0' : String(db);
     scaleCol.appendChild(lbl);
   });
