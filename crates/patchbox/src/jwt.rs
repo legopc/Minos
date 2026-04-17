@@ -9,6 +9,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const TOKEN_EXPIRY_SECS: u64 = 8 * 3600; // 8 hours
 
+/// Ordered role levels for RBAC enforcement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Viewer = 0,
+    Operator = 1,
+    Admin = 2,
+}
+
+impl Role {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "admin" => Self::Admin,
+            "operator" | "bar_staff" => Self::Operator,
+            _ => Self::Viewer, // "viewer", "readonly", missing = viewer (backward compat)
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::Operator => "operator",
+            Self::Viewer => "viewer",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     /// Subject (username)
@@ -25,6 +52,10 @@ pub struct Claims {
 }
 
 impl Claims {
+    pub fn role_level(&self) -> Role {
+        Role::from_str(&self.role)
+    }
+
     pub fn new(username: &str, role: &str, zone: Option<String>) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
