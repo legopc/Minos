@@ -64,11 +64,14 @@ export function setMatrixGainCell(txIdx, rxIdx, db) {
   if (!_state.matrixGain[txIdx]) _state.matrixGain[txIdx] = [];
   _state.matrixGain[txIdx][rxIdx] = db;
 }
+function _sceneKey(s) { return s?.id ?? s?.name; }
+
 export function setScene(s)                {
-  const idx = _state.scenes.findIndex(x => x.id === s.id);
+  const k = _sceneKey(s);
+  const idx = _state.scenes.findIndex(x => _sceneKey(x) === k);
   if (idx >= 0) _state.scenes[idx] = s; else _state.scenes.push(s);
 }
-export function removeScene(id)            { _state.scenes = _state.scenes.filter(s => s.id !== id); }
+export function removeScene(id)            { _state.scenes = _state.scenes.filter(s => _sceneKey(s) !== id); }
 export function setScenes(arr)             { _state.scenes = arr; }
 export function setMetering(rx, tx, gr, bus) {
   if (rx)  Object.entries(rx).forEach(([k,v])  => _state.metering.set(k, v));

@@ -142,6 +142,9 @@ pub async fn delete_scene(
     if store.scenes.remove(&name).is_none() {
         return (StatusCode::NOT_FOUND, "scene not found").into_response();
     }
+    if store.active.as_deref() == Some(&name) {
+        store.active = None;
+    }
     drop(store);
     crate::persist_scenes_or_500!(s);
     StatusCode::OK.into_response()
@@ -166,12 +169,36 @@ pub async fn put_scene(
     Json(body): Json<UpdateSceneRequest>,
 ) -> impl IntoResponse {
     let mut store = s.scenes.write().await;
+
+    // Rename requires re-keying the HashMap; handle it by moving the scene.
+    if let Some(new_id) = body.name {
+        if new_id != id {
+            if store.scenes.contains_key(&new_id) {
+                return StatusCode::CONFLICT.into_response();
+            }
+            let Some(mut scene) = store.scenes.remove(&id) else {
+                return StatusCode::NOT_FOUND.into_response();
+            };
+            scene.name = new_id.clone();
+            if let Some(desc) = body.description {
+                scene.description = Some(desc);
+            }
+            if let Some(fav) = body.is_favourite {
+                scene.is_favourite = fav;
+            }
+            if store.active.as_deref() == Some(&id) {
+                store.active = Some(new_id.clone());
+            }
+            store.scenes.insert(new_id, scene);
+            drop(store);
+            crate::persist_scenes_or_500!(s);
+            return StatusCode::NO_CONTENT.into_response();
+        }
+    }
+
     let Some(scene) = store.scenes.get_mut(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(name) = body.name {
-        scene.name = name;
-    }
     if let Some(desc) = body.description {
         scene.description = Some(desc);
     }
