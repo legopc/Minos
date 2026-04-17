@@ -40,9 +40,14 @@ async function req(method, path, body) {
 
 const get  = (path)        => req('GET',    path);
 const post = (path, body)  => req('POST',   path, body);
-const put  = (path, body)  => req('PUT',    path, body);
+export const put  = (path, body)  => req('PUT',    path, body);
 const del  = (path)        => req('DELETE', path);
-export const patch = (path, body) => req('PUT', path, body);
+
+// deprecated: use api.put() instead — patch was a misnomer; the actual HTTP method is PUT
+export const patch = (path, body) => {
+  console.warn('[deprecated] api.patch → api.put');
+  return put(path, body);
+};
 
 async function reqWithRetry(method, path, body, maxRetries = 3) {
   let lastError;

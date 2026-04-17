@@ -236,8 +236,8 @@ function _onParamChange(channelId, block, newParams) {
 
       if (block === 'flt') {
         const promises = [];
-        if (newParams.hpf) promises.push(api.patch(`${base}/hpf`, newParams.hpf));
-        if (newParams.lpf) promises.push(api.patch(`${base}/lpf`, newParams.lpf));
+        if (newParams.hpf) promises.push(api.put(`${base}/hpf`, newParams.hpf));
+        if (newParams.lpf) promises.push(api.put(`${base}/lpf`, newParams.lpf));
         await Promise.all(promises);
         let ch;
         if (isBus) {
@@ -267,7 +267,7 @@ function _onParamChange(channelId, block, newParams) {
       const mappedBlock = blockMap[block] || block;
       const endpoint = `${base}/${mappedBlock}`;
 
-      await api.patch(endpoint, newParams);
+      await api.put(endpoint, newParams);
 
       const ch = isBus
         ? state.buses.get(channelId)
@@ -308,8 +308,8 @@ async function _onBypass(channelId, block, bypassed) {
     if (block === 'flt') {
       const fltParams = ch?.dsp?.flt?.params ?? {};
       await Promise.all([
-        api.patch(`${base}/hpf`, { enabled: !bypassed, freq_hz: fltParams.hpf?.freq_hz ?? 80 }),
-        api.patch(`${base}/lpf`, { enabled: !bypassed, freq_hz: fltParams.lpf?.freq_hz ?? 18000 }),
+        api.put(`${base}/hpf`, { enabled: !bypassed, freq_hz: fltParams.hpf?.freq_hz ?? 80 }),
+        api.put(`${base}/lpf`, { enabled: !bypassed, freq_hz: fltParams.lpf?.freq_hz ?? 18000 }),
       ]);
       if (ch?.dsp?.flt) ch.dsp.flt.bypassed = bypassed;
       // Sync badge DOM for flt block
@@ -327,7 +327,7 @@ async function _onBypass(channelId, block, bypassed) {
     const blockData = ch?.dsp?.[block] ?? {};
     const fullParams = { ...(blockData.params ?? {}), enabled: !bypassed };
 
-    await api.patch(`${base}/${mappedBlock}`, fullParams);
+    await api.put(`${base}/${mappedBlock}`, fullParams);
 
     if (ch?.dsp?.[block]) ch.dsp[block].bypassed = bypassed;
     // Sync badge DOM for other blocks
