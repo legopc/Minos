@@ -188,6 +188,19 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
     match token.and_then(|t| jwt::validate(t, &secret).ok()) {
         Some(claims) => {
             drop(secret);
+            let min_role = required_role_for(req.method(), req.uri().path());
+            let actual = claims.role_level();
+            if actual < min_role {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(RbacForbidden {
+                        error: "insufficient_role",
+                        required: min_role.as_str(),
+                        actual: actual.as_str(),
+                    }),
+                )
+                    .into_response();
+            }
             req.extensions_mut().insert(claims);
             next.run(req).await
         }
@@ -200,6 +213,19 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
         )
             .into_response(),
     }
+}
+
+fn required_role_for(method: &axum::http::Method, path: &str) -> jwt::Role {
+    use axum::http::Method;
+    if method == Method::GET || method == Method::HEAD || method == Method::OPTIONS {
+        return jwt::Role::Viewer;
+    }
+    // Non-GET: system config writes and admin endpoints require Admin
+    if path.starts_with("/api/v1/system/") || path.starts_with("/api/v1/admin/") {
+        return jwt::Role::Admin;
+    }
+    // All other writes require Operator
+    jwt::Role::Operator
 }
 
 pub async fn check_min_role(
