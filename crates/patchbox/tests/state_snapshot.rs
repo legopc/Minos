@@ -78,12 +78,7 @@ async fn snapshot_config() {
 // - GET /api/v1/outputs — requires valid JWT
 // - GET /api/v1/zones — requires valid JWT
 // - GET /api/v1/buses — requires valid JWT
-// 
+//
 // TODO: Add auth harness to generate and pass JWT tokens, then snapshot these routes.
 // For now, these two public endpoints (health, config) provide coverage of schema changes
 // in the core configuration structures and system status reporting.
-
-
-
-
-

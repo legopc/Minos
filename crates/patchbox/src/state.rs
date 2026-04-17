@@ -1,11 +1,11 @@
+use crate::jwt;
+use crate::scenes::SceneStore;
 use patchbox_core::config::PatchboxConfig;
 pub use patchbox_core::meters::MeterState;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use tokio::sync::{RwLock, broadcast};
-use crate::scenes::SceneStore;
-use crate::jwt;
+use std::sync::Arc;
+use tokio::sync::{broadcast, RwLock};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -68,8 +68,11 @@ impl AppState {
         let tmp_path = self.config_path.with_extension("toml.tmp");
         {
             let mut f = std::fs::OpenOptions::new()
-                .write(true).create(true).truncate(true)
-                .open(&tmp_path).map_err(|e| e.to_string())?;
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&tmp_path)
+                .map_err(|e| e.to_string())?;
             f.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
             f.sync_all().map_err(|e| e.to_string())?;
         }
@@ -88,4 +91,3 @@ impl AppState {
         store.save(&self.scenes_path)
     }
 }
-

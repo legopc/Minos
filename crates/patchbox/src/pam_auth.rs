@@ -22,23 +22,23 @@ use thiserror::Error;
 #[repr(C)]
 struct PamMessage {
     msg_style: c_int,
-    msg:       *const c_char,
+    msg: *const c_char,
 }
 
 #[repr(C)]
 struct PamResponse {
-    resp:         *mut c_char,
+    resp: *mut c_char,
     resp_retcode: c_int,
 }
 
 #[repr(C)]
 struct PamConv {
-    conv:        Option<
+    conv: Option<
         unsafe extern "C" fn(
-            num_msg:  c_int,
-            msg:      *const *const PamMessage,
-            resp:     *mut *mut PamResponse,
-            appdata:  *mut c_void,
+            num_msg: c_int,
+            msg: *const *const PamMessage,
+            resp: *mut *mut PamResponse,
+            appdata: *mut c_void,
         ) -> c_int,
     >,
     appdata_ptr: *mut c_void,
@@ -48,10 +48,10 @@ enum PamHandle {}
 
 extern "C" {
     fn pam_start(
-        service_name:     *const c_char,
-        user:             *const c_char,
+        service_name: *const c_char,
+        user: *const c_char,
         pam_conversation: *const PamConv,
-        pamh:             *mut *mut PamHandle,
+        pamh: *mut *mut PamHandle,
     ) -> c_int;
 
     fn pam_authenticate(pamh: *mut PamHandle, flags: c_int) -> c_int;
@@ -59,8 +59,8 @@ extern "C" {
     fn pam_end(pamh: *mut PamHandle, pam_status: c_int) -> c_int;
 }
 
-const PAM_SUCCESS:   c_int = 0;
-const PAM_AUTH_ERR:  c_int = 7;
+const PAM_SUCCESS: c_int = 0;
+const PAM_AUTH_ERR: c_int = 7;
 const PAM_USER_UNKNOWN: c_int = 10;
 
 /// Callback state passed to the PAM conversation function.
@@ -70,10 +70,10 @@ struct ConvState {
 
 /// PAM conversation function: responds to PAM_PROMPT_ECHO_OFF with the password.
 unsafe extern "C" fn pam_conv_fn(
-    num_msg:  c_int,
-    msg:      *const *const PamMessage,
-    resp:     *mut *mut PamResponse,
-    appdata:  *mut c_void,
+    num_msg: c_int,
+    msg: *const *const PamMessage,
+    resp: *mut *mut PamResponse,
+    appdata: *mut c_void,
 ) -> c_int {
     // PAM_PROMPT_ECHO_OFF = 1
     const PROMPT_ECHO_OFF: c_int = 1;
@@ -99,7 +99,7 @@ unsafe extern "C" fn pam_conv_fn(
                 return 4;
             }
             std::ptr::copy_nonoverlapping(pw_bytes.as_ptr() as *const c_char, buf, pw_bytes.len());
-            r.resp         = buf;
+            r.resp = buf;
             r.resp_retcode = 0;
         }
     }
@@ -127,11 +127,11 @@ pub enum PamError {
 ///
 /// Runs in a blocking thread — call via `tokio::task::spawn_blocking`.
 pub fn pam_authenticate_sync(
-    service:  &str,
+    service: &str,
     username: &str,
     password: &str,
 ) -> Result<(), PamError> {
-    let c_service  = CString::new(service)?;
+    let c_service = CString::new(service)?;
     let c_username = CString::new(username)?;
 
     let conv_state = ConvState {
@@ -139,7 +139,7 @@ pub fn pam_authenticate_sync(
     };
 
     let pam_conversation = PamConv {
-        conv:        Some(pam_conv_fn),
+        conv: Some(pam_conv_fn),
         appdata_ptr: &conv_state as *const ConvState as *mut c_void,
     };
 
@@ -168,19 +168,15 @@ pub fn pam_authenticate_sync(
 
     match auth_ret {
         PAM_SUCCESS if acct_ret == PAM_SUCCESS => Ok(()),
-        PAM_AUTH_ERR   => Err(PamError::AuthFailed),
+        PAM_AUTH_ERR => Err(PamError::AuthFailed),
         PAM_USER_UNKNOWN => Err(PamError::UserUnknown),
-        other          => Err(PamError::System(other)),
+        other => Err(PamError::System(other)),
     }
 }
 
 /// Async wrapper — spawns onto a blocking thread.
-pub async fn authenticate(
-    service:  &str,
-    username: &str,
-    password: &str,
-) -> Result<(), PamError> {
-    let service  = service.to_owned();
+pub async fn authenticate(service: &str, username: &str, password: &str) -> Result<(), PamError> {
+    let service = service.to_owned();
     let username = username.to_owned();
     let password = password.to_owned();
 
@@ -201,12 +197,10 @@ pub fn role_for_user(username: &str) -> (&'static str, Option<String>) {
         .output();
 
     let groups: Vec<String> = match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .split_whitespace()
-                .map(|s| s.to_owned())
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .split_whitespace()
+            .map(|s| s.to_owned())
+            .collect(),
         _ => vec![],
     };
 

@@ -1,19 +1,23 @@
+use crate::api::{linear_to_dbfs, ws_broadcast};
+use crate::state::AppState;
 use axum::{
     extract::{Path, State},
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
+use patchbox_core::config::{InputChannelDsp, InternalBusConfig, PatchboxConfig};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering as AOrdering;
 use std::os::unix::fs::FileTypeExt;
+use std::sync::atomic::Ordering as AOrdering;
 use tokio::time::Duration;
-use crate::state::AppState;
-use crate::api::{linear_to_dbfs, ws_broadcast};
-use patchbox_core::config::{PatchboxConfig, InternalBusConfig, InputChannelDsp};
 
 #[derive(serde::Serialize)]
-pub(crate) struct HealthDante { pub name: String, pub nic: String, pub connected: bool }
+pub(crate) struct HealthDante {
+    pub name: String,
+    pub nic: String,
+    pub connected: bool,
+}
 
 #[derive(serde::Serialize)]
 pub(crate) struct HealthPtp {
@@ -95,7 +99,9 @@ pub(crate) struct AdminChannelsReq {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct SoloRequest { channels: Vec<usize> }
+pub(crate) struct SoloRequest {
+    channels: Vec<usize>,
+}
 
 #[derive(serde::Serialize)]
 pub(crate) struct SoloResponse {
@@ -117,17 +123,25 @@ pub(crate) struct MonitorResponse {
 }
 
 fn linear_to_db(v: f32) -> f32 {
-    if v <= 0.0 { return -60.0; }
+    if v <= 0.0 {
+        return -60.0;
+    }
     (20.0 * v.log10()).max(-60.0)
 }
 
 async fn query_ptp_offset(socket_path: &str) -> Option<i64> {
     use tokio::io::AsyncReadExt;
     let connect = tokio::net::UnixStream::connect(socket_path);
-    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect).await.ok()?.ok()?;
+    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect)
+        .await
+        .ok()?
+        .ok()?;
     let mut buf = String::new();
-    let read = tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
-    if read.is_err() { return None; }
+    let read =
+        tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
+    if read.is_err() {
+        return None;
+    }
     for line in buf.lines() {
         if line.starts_with("statime_offset_from_master") && !line.starts_with('#') {
             if let Some(val_str) = line.split_whitespace().last() {
@@ -152,17 +166,30 @@ async fn _create_backup(s: &AppState) -> Result<String, String> {
     let cfg = s.config.read().await;
     let toml_str = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
     drop(cfg);
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     let bak_path = s.config_path.with_file_name(format!(
         "{}-bak-{}.toml",
-        s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox"),
+        s.config_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("patchbox"),
         ts
     ));
     std::fs::write(&bak_path, &toml_str).map_err(|e| e.to_string())?;
     if let Some(dir) = s.config_path.parent() {
-        let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+        let stem = s
+            .config_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("patchbox")
+            .to_string();
         let mut baks: Vec<_> = std::fs::read_dir(dir)
-            .ok().into_iter().flatten()
+            .ok()
+            .into_iter()
+            .flatten()
             .filter_map(|e| e.ok())
             .filter(|e| {
                 let n = e.file_name();
@@ -196,21 +223,46 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let active_routes = cfg.matrix.iter().flatten().filter(|&&v| v).count();
     let rx_levels_rms_db = meters.rx_rms.iter().map(|&v| linear_to_db(v)).collect();
     let tx_levels_rms_db = meters.tx_rms.iter().map(|&v| linear_to_db(v)).collect();
-    let zones = (0..cfg.tx_channels).map(|tx| {
-        let active_sources = (0..cfg.rx_channels)
-            .filter(|&rx| cfg.matrix.get(tx).and_then(|row| row.get(rx)).copied().unwrap_or(false))
-            .map(|rx| cfg.sources.get(rx).cloned().unwrap_or_else(|| format!("Source {rx}")))
-            .collect();
-        HealthZone {
-            name: cfg.zones.get(tx).cloned().unwrap_or_else(|| format!("Zone {tx}")),
-            index: tx,
-            muted: cfg.output_muted.get(tx).copied().unwrap_or(false),
-            gain_db: cfg.output_gain_db.get(tx).copied().unwrap_or(0.0),
-            eq_enabled: cfg.per_output_eq.get(tx).map(|e| e.enabled).unwrap_or(false),
-            limiter_enabled: cfg.per_output_limiter.get(tx).map(|l| l.enabled).unwrap_or(false),
-            active_sources,
-        }
-    }).collect();
+    let zones = (0..cfg.tx_channels)
+        .map(|tx| {
+            let active_sources = (0..cfg.rx_channels)
+                .filter(|&rx| {
+                    cfg.matrix
+                        .get(tx)
+                        .and_then(|row| row.get(rx))
+                        .copied()
+                        .unwrap_or(false)
+                })
+                .map(|rx| {
+                    cfg.sources
+                        .get(rx)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Source {rx}"))
+                })
+                .collect();
+            HealthZone {
+                name: cfg
+                    .zones
+                    .get(tx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Zone {tx}")),
+                index: tx,
+                muted: cfg.output_muted.get(tx).copied().unwrap_or(false),
+                gain_db: cfg.output_gain_db.get(tx).copied().unwrap_or(0.0),
+                eq_enabled: cfg
+                    .per_output_eq
+                    .get(tx)
+                    .map(|e| e.enabled)
+                    .unwrap_or(false),
+                limiter_enabled: cfg
+                    .per_output_limiter
+                    .get(tx)
+                    .map(|l| l.enabled)
+                    .unwrap_or(false),
+                active_sources,
+            }
+        })
+        .collect();
     Json(HealthResponse {
         status: "ok",
         version: env!("CARGO_PKG_VERSION"),
@@ -246,13 +298,38 @@ pub(crate) async fn get_metering(State(s): State<AppState>) -> impl IntoResponse
     drop(cfg);
     let meters = s.meters.read().await;
     let rx: HashMap<String, f32> = (0..rx_count)
-        .map(|i| (format!("rx_{}", i), meters.rx_rms.get(i).copied().map(linear_to_dbfs).unwrap_or(-60.0)))
+        .map(|i| {
+            (
+                format!("rx_{}", i),
+                meters
+                    .rx_rms
+                    .get(i)
+                    .copied()
+                    .map(linear_to_dbfs)
+                    .unwrap_or(-60.0),
+            )
+        })
         .collect();
     let tx: HashMap<String, f32> = (0..tx_count)
-        .map(|i| (format!("tx_{}", i), meters.tx_rms.get(i).copied().map(linear_to_dbfs).unwrap_or(-60.0)))
+        .map(|i| {
+            (
+                format!("tx_{}", i),
+                meters
+                    .tx_rms
+                    .get(i)
+                    .copied()
+                    .map(linear_to_dbfs)
+                    .unwrap_or(-60.0),
+            )
+        })
         .collect();
     let gr: HashMap<String, f32> = (0..tx_count)
-        .map(|i| (format!("tx_{}", i), meters.tx_gr_db.get(i).copied().unwrap_or(0.0)))
+        .map(|i| {
+            (
+                format!("tx_{}", i),
+                meters.tx_gr_db.get(i).copied().unwrap_or(0.0),
+            )
+        })
         .collect();
     Json(MeteringResponse { rx, tx, gr })
 }
@@ -270,7 +347,12 @@ pub(crate) async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     drop(cfg);
     let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
     let ptp_locked = dante_connected;
-    let dante_status = if dante_connected { "connected" } else { "disconnected" }.to_string();
+    let dante_status = if dante_connected {
+        "connected"
+    } else {
+        "disconnected"
+    }
+    .to_string();
     Json(SystemResponse {
         version: env!("CARGO_PKG_VERSION"),
         hostname: get_hostname(),
@@ -290,11 +372,20 @@ pub(crate) async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/system/config
-pub(crate) async fn put_system_config(State(s): State<AppState>, Json(body): Json<UpdateSystemConfig>) -> impl IntoResponse {
+pub(crate) async fn put_system_config(
+    State(s): State<AppState>,
+    Json(body): Json<UpdateSystemConfig>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
-    if let Some(v) = body.scene_crossfade_ms { cfg.scene_crossfade_ms = v.max(0.0); }
-    if let Some(v) = body.gain_ramp_ms { cfg.gain_ramp_ms = v.clamp(0.0, 5000.0); }
-    if let Some(v) = body.show_buses_in_mixer { cfg.show_buses_in_mixer = v; }
+    if let Some(v) = body.scene_crossfade_ms {
+        cfg.scene_crossfade_ms = v.max(0.0);
+    }
+    if let Some(v) = body.gain_ramp_ms {
+        cfg.gain_ramp_ms = v.clamp(0.0, 5000.0);
+    }
+    if let Some(v) = body.show_buses_in_mixer {
+        cfg.show_buses_in_mixer = v;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -307,16 +398,23 @@ pub(crate) async fn get_system_config_export(State(s): State<AppState>) -> impl 
         Ok(toml_str) => (
             [
                 (header::CONTENT_TYPE, "application/toml"),
-                (header::CONTENT_DISPOSITION, "attachment; filename=\"patchbox.toml\""),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"patchbox.toml\"",
+                ),
             ],
             toml_str,
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
 // POST /api/v1/system/config/import
-pub(crate) async fn post_system_config_import(State(s): State<AppState>, body: axum::body::Bytes) -> impl IntoResponse {
+pub(crate) async fn post_system_config_import(
+    State(s): State<AppState>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
     let toml_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
         Err(_) => return (StatusCode::BAD_REQUEST, "body is not valid UTF-8").into_response(),
@@ -334,13 +432,20 @@ pub(crate) async fn post_system_config_import(State(s): State<AppState>, body: a
 
 // GET /api/v1/system/config/backups
 pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse {
-    let stem = s.config_path.file_stem().and_then(|s| s.to_str()).unwrap_or("patchbox").to_string();
+    let stem = s
+        .config_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("patchbox")
+        .to_string();
     let dir = match s.config_path.parent() {
         Some(d) => d,
         None => return Json(serde_json::json!([])).into_response(),
     };
     let mut baks: Vec<serde_json::Value> = std::fs::read_dir(dir)
-        .ok().into_iter().flatten()
+        .ok()
+        .into_iter()
+        .flatten()
         .filter_map(|e| e.ok())
         .filter(|e| {
             let n = e.file_name();
@@ -362,7 +467,10 @@ pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoRe
 }
 
 // GET /api/v1/system/config/backups/:name
-pub(crate) async fn get_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+pub(crate) async fn get_config_backup(
+    State(s): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
     if name.contains('/') || name.contains("..") {
         return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
     }
@@ -373,16 +481,25 @@ pub(crate) async fn get_config_backup(State(s): State<AppState>, Path(name): Pat
     let path = dir.join(&name);
     match std::fs::read_to_string(&path) {
         Ok(content) => (
-            [(header::CONTENT_TYPE, "application/toml"),
-             (header::CONTENT_DISPOSITION, &format!("attachment; filename=\"{name}\"") as &str)],
+            [
+                (header::CONTENT_TYPE, "application/toml"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    &format!("attachment; filename=\"{name}\"") as &str,
+                ),
+            ],
             content,
-        ).into_response(),
+        )
+            .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
 // POST /api/v1/system/config/backups/:name/restore
-pub(crate) async fn restore_config_backup(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+pub(crate) async fn restore_config_backup(
+    State(s): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
     if name.contains('/') || name.contains("..") {
         return (StatusCode::BAD_REQUEST, "invalid backup name").into_response();
     }
@@ -416,9 +533,14 @@ pub(crate) async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/solo
-pub(crate) async fn put_solo(State(s): State<AppState>, Json(body): Json<SoloRequest>) -> impl IntoResponse {
+pub(crate) async fn put_solo(
+    State(s): State<AppState>,
+    Json(body): Json<SoloRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
-    cfg.solo_channels = body.channels.into_iter()
+    cfg.solo_channels = body
+        .channels
+        .into_iter()
         .filter(|&rx| rx < cfg.rx_channels)
         .collect();
     cfg.solo_channels.sort_unstable();
@@ -427,16 +549,23 @@ pub(crate) async fn put_solo(State(s): State<AppState>, Json(body): Json<SoloReq
         channels: cfg.solo_channels.clone(),
         monitor_device: cfg.monitor_device.clone(),
     };
-    ws_broadcast(&s, serde_json::json!({
-        "type": "solo_update",
-        "channels": &resp.channels,
-        "monitor_device": &resp.monitor_device,
-    }).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({
+            "type": "solo_update",
+            "channels": &resp.channels,
+            "monitor_device": &resp.monitor_device,
+        })
+        .to_string(),
+    );
     Json(resp)
 }
 
 // POST /api/v1/solo/:rx/toggle
-pub(crate) async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> impl IntoResponse {
+pub(crate) async fn toggle_solo(
+    State(s): State<AppState>,
+    Path(rx): Path<usize>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "Invalid RX index").into_response();
@@ -451,11 +580,15 @@ pub(crate) async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>
         channels: cfg.solo_channels.clone(),
         monitor_device: cfg.monitor_device.clone(),
     };
-    ws_broadcast(&s, serde_json::json!({
-        "type": "solo_update",
-        "channels": &resp.channels,
-        "monitor_device": &resp.monitor_device,
-    }).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({
+            "type": "solo_update",
+            "channels": &resp.channels,
+            "monitor_device": &resp.monitor_device,
+        })
+        .to_string(),
+    );
     Json(resp).into_response()
 }
 
@@ -463,11 +596,15 @@ pub(crate) async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>
 pub(crate) async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     cfg.solo_channels.clear();
-    ws_broadcast(&s, serde_json::json!({
-        "type": "solo_update",
-        "channels": Vec::<usize>::new(),
-        "monitor_device": &cfg.monitor_device,
-    }).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({
+            "type": "solo_update",
+            "channels": Vec::<usize>::new(),
+            "monitor_device": &cfg.monitor_device,
+        })
+        .to_string(),
+    );
     StatusCode::NO_CONTENT
 }
 
@@ -481,7 +618,10 @@ pub(crate) async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse 
 }
 
 // PUT /api/v1/monitor
-pub(crate) async fn put_monitor(State(s): State<AppState>, Json(body): Json<MonitorRequest>) -> impl IntoResponse {
+pub(crate) async fn put_monitor(
+    State(s): State<AppState>,
+    Json(body): Json<MonitorRequest>,
+) -> impl IntoResponse {
     if body.volume_db < -60.0 || body.volume_db > 12.0 {
         return (StatusCode::BAD_REQUEST, "volume_db out of range [-60, 12]").into_response();
     }
@@ -493,12 +633,20 @@ pub(crate) async fn put_monitor(State(s): State<AppState>, Json(body): Json<Moni
     if let Err(e) = s.persist().await {
         return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
     }
-    ws_broadcast(&s, serde_json::json!({
-        "type": "monitor_config_update",
-        "device": &body.device,
-        "volume_db": body.volume_db,
-    }).to_string());
-    Json(MonitorResponse { device: body.device, volume_db: body.volume_db }).into_response()
+    ws_broadcast(
+        &s,
+        serde_json::json!({
+            "type": "monitor_config_update",
+            "device": &body.device,
+            "volume_db": body.volume_db,
+        })
+        .to_string(),
+    );
+    Json(MonitorResponse {
+        device: body.device,
+        volume_db: body.volume_db,
+    })
+    .into_response()
 }
 
 // GET /api/v1/audio-devices
@@ -506,9 +654,10 @@ pub(crate) async fn list_audio_devices() -> impl IntoResponse {
     #[cfg(feature = "inferno")]
     {
         let devs = patchbox_dante::monitor::enumerate_devices();
-        let list: Vec<serde_json::Value> = devs.iter().map(|(name, desc)| {
-            serde_json::json!({ "name": name, "description": desc })
-        }).collect();
+        let list: Vec<serde_json::Value> = devs
+            .iter()
+            .map(|(name, desc)| serde_json::json!({ "name": name, "description": desc }))
+            .collect();
         return Json(serde_json::json!({ "devices": list })).into_response();
     }
     #[cfg(not(feature = "inferno"))]
@@ -522,7 +671,8 @@ pub(crate) async fn whoami(
 ) -> impl IntoResponse {
     let claims = req.extensions().get::<crate::jwt::Claims>().cloned();
     match claims {
-        Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone})).into_response(),
+        Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone}))
+            .into_response(),
         None => (StatusCode::UNAUTHORIZED, "not authenticated").into_response(),
     }
 }
@@ -533,7 +683,11 @@ pub(crate) async fn post_admin_channels(
     Json(body): Json<AdminChannelsReq>,
 ) -> impl IntoResponse {
     if body.rx < 1 || body.rx > 32 || body.tx < 1 || body.tx > 32 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "channel count out of range (1-32)"}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "channel count out of range (1-32)"})),
+        )
+            .into_response();
     }
     {
         let mut cfg = state.config.write().await;
@@ -558,13 +712,21 @@ pub(crate) async fn post_admin_channels(
         cfg.normalize();
     }
     if let Err(e) = state.persist().await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("persist failed: {}", e)}))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("persist failed: {}", e)})),
+        )
+            .into_response();
     }
     tokio::spawn(async {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         std::process::exit(0);
     });
-    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"ok": true, "restarting": true})),
+    )
+        .into_response()
 }
 
 // POST /api/v1/admin/restart
@@ -574,5 +736,9 @@ pub(crate) async fn post_admin_restart(State(state): State<AppState>) -> impl In
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         std::process::exit(0);
     });
-    (StatusCode::OK, Json(serde_json::json!({"ok": true, "restarting": true}))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"ok": true, "restarting": true})),
+    )
+        .into_response()
 }

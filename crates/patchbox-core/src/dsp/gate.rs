@@ -83,7 +83,15 @@ impl GateExpander {
         let re_bits = cfg.release_ms.to_bits();
         let rg_bits = cfg.range_db.to_bits();
 
-        self.last_cfg_hash = (cfg.enabled, th_bits, ra_bits, at_bits, ho_bits, re_bits, rg_bits);
+        self.last_cfg_hash = (
+            cfg.enabled,
+            th_bits,
+            ra_bits,
+            at_bits,
+            ho_bits,
+            re_bits,
+            rg_bits,
+        );
     }
 
     /// Sync coefficients from config if changed. RT-safe: pure arithmetic.
@@ -94,7 +102,15 @@ impl GateExpander {
         let ho_bits = cfg.hold_ms.to_bits();
         let re_bits = cfg.release_ms.to_bits();
         let rg_bits = cfg.range_db.to_bits();
-        let current_hash = (cfg.enabled, th_bits, ra_bits, at_bits, ho_bits, re_bits, rg_bits);
+        let current_hash = (
+            cfg.enabled,
+            th_bits,
+            ra_bits,
+            at_bits,
+            ho_bits,
+            re_bits,
+            rg_bits,
+        );
 
         if current_hash != self.last_cfg_hash {
             self.update_coeffs(cfg, sample_rate);
@@ -161,9 +177,8 @@ impl GateExpander {
                 }
                 GateState::Release => {
                     // Ramp gain toward range_linear using release coefficient
-                    self.current_gain =
-                        self.release_coeff * self.current_gain
-                            + (1.0 - self.release_coeff) * self.range_linear;
+                    self.current_gain = self.release_coeff * self.current_gain
+                        + (1.0 - self.release_coeff) * self.range_linear;
                     if self.current_gain <= self.range_linear + 1e-4 {
                         self.state = GateState::Closed;
                         self.current_gain = self.range_linear;
@@ -239,7 +254,10 @@ mod tests {
         assert!(gate_open, "gate should be open on loud signal");
         // Output should have similar level to input (gain ~= 1.0 after attack settles)
         for s in &buf[400..] {
-            assert!(*s > 0.85, "loud signal should pass with minimal attenuation: {s}");
+            assert!(
+                *s > 0.85,
+                "loud signal should pass with minimal attenuation: {s}"
+            );
         }
     }
 
@@ -254,13 +272,17 @@ mod tests {
         // First, drive gate open with loud signal
         let mut buf = vec![0.9f32; 512];
         let _ = gate.process_block(&mut buf);
-        
+
         // Now drive with silence - peak follower with alpha=0.9999 needs ~500ms to settle
         // 500ms @ 48kHz = 24k samples
         let mut buf = vec![0.0f32; 30000];
         let gate_open = gate.process_block(&mut buf);
         // After release and peak follower decay, gate should be closed
-        assert!(!gate_open, "gate should be closed on silence after peak decay; state={}", gate.state());
+        assert!(
+            !gate_open,
+            "gate should be closed on silence after peak decay; state={}",
+            gate.state()
+        );
     }
 
     #[test]

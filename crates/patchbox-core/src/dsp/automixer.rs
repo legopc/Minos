@@ -48,16 +48,21 @@ impl AutomixerGroupState {
     }
 
     /// Sync group state from config. Called outside RT (may allocate).
-    fn sync(&mut self, cfg: &AutomixerGroupConfig, channel_members: &[(usize, f32)], sample_rate: f32) {
-        self.group_id     = cfg.id.clone();
-        self.enabled      = cfg.enabled;
+    fn sync(
+        &mut self,
+        cfg: &AutomixerGroupConfig,
+        channel_members: &[(usize, f32)],
+        sample_rate: f32,
+    ) {
+        self.group_id = cfg.id.clone();
+        self.enabled = cfg.enabled;
         self.off_att_linear = db_to_linear(cfg.off_attenuation_db);
         self.hold_samples = cfg.hold_ms * 0.001 * sample_rate;
-        self.last_mic_hold  = cfg.last_mic_hold;
+        self.last_mic_hold = cfg.last_mic_hold;
         self.gating_enabled = cfg.gating_enabled;
 
         let n = channel_members.len();
-        self.member_rx      = channel_members.iter().map(|&(rx, _)| rx).collect();
+        self.member_rx = channel_members.iter().map(|&(rx, _)| rx).collect();
         self.member_weights = channel_members.iter().map(|&(_, w)| w).collect();
 
         // Preserve existing envelope state on re-sync; resize if membership changed.
@@ -71,8 +76,15 @@ impl AutomixerGroupState {
     /// `scratch`: post-input-DSP audio, indexed by rx_idx.
     /// `nf`: number of valid frames in each scratch channel.
     #[inline]
-    pub fn process_block(&mut self, scratch: &mut [[f32; MAX_FRAMES]], nf: usize, gate_threshold_linear: f32) {
-        if !self.enabled || self.member_rx.is_empty() { return; }
+    pub fn process_block(
+        &mut self,
+        scratch: &mut [[f32; MAX_FRAMES]],
+        nf: usize,
+        gate_threshold_linear: f32,
+    ) {
+        if !self.enabled || self.member_rx.is_empty() {
+            return;
+        }
         let n = self.member_rx.len();
 
         // --- 1. Measure block RMS per member and update envelope followers ---
@@ -86,17 +98,26 @@ impl AutomixerGroupState {
         let att_alpha = 1.0 - (-block_ms / ATTACK_TC_MS).exp();
         let rel_alpha = 1.0 - (-block_ms / RELEASE_TC_MS).exp();
 
-        let mut weighted_envs = [0f32; 64];  // stack, MAX 64 members
+        let mut weighted_envs = [0f32; 64]; // stack, MAX 64 members
         let mut weighted_sum = 0.0f32;
 
-        for (slot, (&rx_idx, &weight)) in self.member_rx.iter().zip(self.member_weights.iter()).enumerate() {
+        for (slot, (&rx_idx, &weight)) in self
+            .member_rx
+            .iter()
+            .zip(self.member_weights.iter())
+            .enumerate()
+        {
             // Block RMS
             let sq: f32 = scratch[rx_idx][..nf].iter().map(|s| s * s).sum::<f32>() * inv_nf;
             let block_rms = sq.sqrt();
 
             // Envelope follower
             let env = &mut self.envelopes[slot];
-            let alpha = if block_rms > *env { att_alpha } else { rel_alpha };
+            let alpha = if block_rms > *env {
+                att_alpha
+            } else {
+                rel_alpha
+            };
             *env += (block_rms - *env) * alpha;
 
             let we = *env * weight;
@@ -108,7 +129,9 @@ impl AutomixerGroupState {
         if weighted_sum < 1e-12 {
             // All channels silent → equal gain
             let equal = 1.0 / n as f32;
-            for slot in 0..n { self.dugan_gains[slot] = equal; }
+            for slot in 0..n {
+                self.dugan_gains[slot] = equal;
+            }
         } else {
             for slot in 0..n {
                 self.dugan_gains[slot] = weighted_envs[slot] / weighted_sum;
@@ -124,7 +147,10 @@ impl AutomixerGroupState {
             let mut loudest_env: f32 = 0.0;
 
             for (slot, env) in self.envelopes.iter().enumerate().take(n) {
-                if *env > loudest_env { loudest_env = *env; loudest_slot = slot; }
+                if *env > loudest_env {
+                    loudest_env = *env;
+                    loudest_slot = slot;
+                }
                 if *env > gate_threshold_linear {
                     n_open += 1;
                     last_open = Some(slot);
@@ -171,7 +197,10 @@ pub struct AutomixerProcessor {
 
 impl AutomixerProcessor {
     pub fn new() -> Self {
-        Self { groups: Vec::new(), gate_thresholds: Vec::new() }
+        Self {
+            groups: Vec::new(),
+            gate_thresholds: Vec::new(),
+        }
     }
 
     /// Sync from config. Called outside RT; may allocate.
@@ -179,13 +208,18 @@ impl AutomixerProcessor {
         let n_groups = cfg.automixer_groups.len().min(MAX_AM_GROUPS);
 
         // Resize if needed
-        while self.groups.len() < n_groups { self.groups.push(AutomixerGroupState::new()); }
+        while self.groups.len() < n_groups {
+            self.groups.push(AutomixerGroupState::new());
+        }
         self.groups.truncate(n_groups);
         self.gate_thresholds.resize(n_groups, 0.0);
 
         for (gi, group_cfg) in cfg.automixer_groups.iter().take(n_groups).enumerate() {
             // Collect channels in this group
-            let members: Vec<(usize, f32)> = cfg.input_dsp.iter().enumerate()
+            let members: Vec<(usize, f32)> = cfg
+                .input_dsp
+                .iter()
+                .enumerate()
                 .filter_map(|(rx_idx, dsp)| {
                     if dsp.automixer.group_id.as_deref() == Some(group_cfg.id.as_str()) {
                         Some((rx_idx, dsp.automixer.weight.max(0.01)))
@@ -213,17 +247,25 @@ impl AutomixerProcessor {
     /// Returns current Dugan gains for all groups (for metering / UI).
     /// Format: Vec of (group_id, Vec<(rx_idx, gain)>)
     pub fn gains_snapshot(&self) -> Vec<(String, Vec<(usize, f32)>)> {
-        self.groups.iter().map(|g| {
-            let pairs = g.member_rx.iter().zip(g.dugan_gains.iter())
-                .map(|(&rx, &gain)| (rx, gain))
-                .collect();
-            (g.group_id.clone(), pairs)
-        }).collect()
+        self.groups
+            .iter()
+            .map(|g| {
+                let pairs = g
+                    .member_rx
+                    .iter()
+                    .zip(g.dugan_gains.iter())
+                    .map(|(&rx, &gain)| (rx, gain))
+                    .collect();
+                (g.group_id.clone(), pairs)
+            })
+            .collect()
     }
 }
 
 impl Default for AutomixerProcessor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[inline]

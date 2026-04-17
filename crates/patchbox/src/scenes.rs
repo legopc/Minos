@@ -30,7 +30,11 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn from_config(name: impl Into<String>, config: &PatchboxConfig, description: Option<String>) -> Self {
+    pub fn from_config(
+        name: impl Into<String>,
+        config: &PatchboxConfig,
+        description: Option<String>,
+    ) -> Self {
         let input_dsp_gain_db: Vec<f32> = config.input_dsp.iter().map(|d| d.gain_db).collect();
         let output_dsp_gain_db: Vec<f32> = config.output_dsp.iter().map(|d| d.gain_db).collect();
         let output_muted: Vec<bool> = config.output_dsp.iter().map(|d| d.muted).collect();
@@ -60,13 +64,17 @@ impl Scene {
         // Apply matrix_gain_db if dimensions match
         if !self.matrix_gain_db.is_empty()
             && self.matrix_gain_db.len() == config.tx_channels
-            && self.matrix_gain_db.iter().all(|r| r.len() == config.rx_channels)
+            && self
+                .matrix_gain_db
+                .iter()
+                .all(|r| r.len() == config.rx_channels)
         {
             config.matrix_gain_db = self.matrix_gain_db.clone();
         }
 
         // Apply input DSP gains (prefer extended field, fall back to legacy)
-        if !self.input_dsp_gain_db.is_empty() && self.input_dsp_gain_db.len() == config.rx_channels {
+        if !self.input_dsp_gain_db.is_empty() && self.input_dsp_gain_db.len() == config.rx_channels
+        {
             for (i, dsp) in config.input_dsp.iter_mut().enumerate() {
                 if let Some(&g) = self.input_dsp_gain_db.get(i) {
                     dsp.gain_db = g;
@@ -83,7 +91,9 @@ impl Scene {
         }
 
         // Apply output DSP gains (prefer extended field, fall back to legacy)
-        if !self.output_dsp_gain_db.is_empty() && self.output_dsp_gain_db.len() == config.tx_channels {
+        if !self.output_dsp_gain_db.is_empty()
+            && self.output_dsp_gain_db.len() == config.tx_channels
+        {
             for (i, dsp) in config.output_dsp.iter_mut().enumerate() {
                 if let Some(&g) = self.output_dsp_gain_db.get(i) {
                     dsp.gain_db = g;
@@ -138,8 +148,11 @@ impl SceneStore {
         let tmp = path.with_extension("scenes.toml.tmp");
         {
             let mut f = std::fs::OpenOptions::new()
-                .write(true).create(true).truncate(true)
-                .open(&tmp).map_err(|e| e.to_string())?;
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&tmp)
+                .map_err(|e| e.to_string())?;
             f.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
             f.sync_all().map_err(|e| e.to_string())?;
         }

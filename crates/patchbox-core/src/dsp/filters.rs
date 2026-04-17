@@ -51,8 +51,8 @@ impl ButterworthFilter {
 
     /// Update coefficients if config changed. RT-safe: pure arithmetic.
     pub fn sync(&mut self, cfg: &FilterConfig, sample_rate: f32) {
-        let changed = cfg.enabled != self.last_enabled
-            || (cfg.freq_hz - self.last_freq_hz).abs() > 0.1;
+        let changed =
+            cfg.enabled != self.last_enabled || (cfg.freq_hz - self.last_freq_hz).abs() > 0.1;
 
         if changed {
             if cfg.enabled {
@@ -163,9 +163,7 @@ mod tests {
 
     fn sine_wave(freq: f32, duration_samples: usize, sample_rate: f32) -> Vec<f32> {
         (0..duration_samples)
-            .map(|i| {
-                (2.0 * std::f32::consts::PI * freq * i as f32 / sample_rate).sin() * 0.5
-            })
+            .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / sample_rate).sin() * 0.5)
             .collect()
     }
 
@@ -328,7 +326,10 @@ mod tests {
         // Process some samples to dirty the state
         let mut buf = vec![0.5f32; 64];
         filter.process_block(&mut buf);
-        assert!(filter.s1 != 0.0 || filter.s2 != 0.0, "state should be dirty");
+        assert!(
+            filter.s1 != 0.0 || filter.s2 != 0.0,
+            "state should be dirty"
+        );
 
         // Disable and re-enable
         let cfg_disabled = FilterConfig {

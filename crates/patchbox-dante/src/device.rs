@@ -9,8 +9,8 @@
 use anyhow::Result;
 use patchbox_core::config::PatchboxConfig;
 use patchbox_core::meters::MeterState;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// A Dante virtual device (or stub).
@@ -50,7 +50,8 @@ impl DanteDevice {
     ) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(config, meters, audio_callbacks, resyncs).await
+            self.start_real(config, meters, audio_callbacks, resyncs)
+                .await
         }
         #[cfg(not(feature = "inferno"))]
         {
@@ -76,10 +77,10 @@ impl DanteDevice {
         audio_callbacks: Arc<AtomicU64>,
         resyncs: Arc<AtomicU64>,
     ) -> Result<()> {
+        use inferno_aoip::device_server::Clock;
         use inferno_aoip::device_server::{
             AtomicSample, DeviceServer, ExternalBufferParameters, Settings,
         };
-        use inferno_aoip::device_server::Clock;
         use std::sync::atomic::Ordering as AOrdering;
         use std::sync::atomic::{AtomicBool, AtomicUsize};
         use std::time::Duration;
@@ -94,7 +95,7 @@ impl DanteDevice {
         let mut settings = Settings::new(
             &self.device_name,
             short,
-            None,  // clock path set below after initial_cfg
+            None, // clock path set below after initial_cfg
             &Default::default(),
         );
         settings.make_rx_channels(self.n_rx);
@@ -114,7 +115,8 @@ impl DanteDevice {
         {
             let cfg_snapshot = config.read().await;
             if !cfg_snapshot.dante_clock_path.is_empty() {
-                settings.clock_path = Some(std::path::PathBuf::from(&cfg_snapshot.dante_clock_path));
+                settings.clock_path =
+                    Some(std::path::PathBuf::from(&cfg_snapshot.dante_clock_path));
                 tracing::info!(clock = %cfg_snapshot.dante_clock_path, "using PTP clock");
             }
             settings.rx_jitter_samples = cfg_snapshot.rx_jitter_samples;
@@ -144,18 +146,12 @@ impl DanteDevice {
             .collect();
 
         let current_timestamp = Arc::new(AtomicUsize::new(0));
-        let write_pos_atomic = Arc::new(AtomicUsize::new(0));  // callback's exclusive write pointer
+        let write_pos_atomic = Arc::new(AtomicUsize::new(0)); // callback's exclusive write pointer
 
         let tx_params: Vec<ExternalBufferParameters<i32>> = tx_bufs
             .iter()
             .map(|buf| unsafe {
-                ExternalBufferParameters::new(
-                    buf.as_ptr(),
-                    RING_SIZE,
-                    1,
-                    Arc::clone(&valid),
-                    None,
-                )
+                ExternalBufferParameters::new(buf.as_ptr(), RING_SIZE, 1, Arc::clone(&valid), None)
             })
             .collect();
 
@@ -203,14 +199,15 @@ impl DanteDevice {
         let initial_cfg = config.read().await.clone();
         let (mut tb_input, mut tb_output) = triple_buffer(&initial_cfg);
 
-        let mon_audio_queue: Arc<std::sync::Mutex<std::collections::VecDeque<f32>>> =
-            Arc::new(std::sync::Mutex::new(std::collections::VecDeque::with_capacity(9600)));
-        let mon_active  = Arc::new(AtomicBool::new(false));
-        let mon_active_cb  = mon_active.clone();
+        let mon_audio_queue: Arc<std::sync::Mutex<std::collections::VecDeque<f32>>> = Arc::new(
+            std::sync::Mutex::new(std::collections::VecDeque::with_capacity(9600)),
+        );
+        let mon_active = Arc::new(AtomicBool::new(false));
+        let mon_active_cb = mon_active.clone();
 
         // Background task: manages ALSA monitor writer lifecycle — spawns/restarts on device change.
         let config_ref = config.clone();
-        let mon_queue_watcher  = mon_audio_queue.clone();
+        let mon_queue_watcher = mon_audio_queue.clone();
         let mon_active_watcher = mon_active.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -218,7 +215,9 @@ impl DanteDevice {
             let mut monitor_shutdown: Option<Arc<std::sync::atomic::AtomicBool>> = None;
 
             // Initial monitor writer spawn — use configured device or auto-detect (Virgil-style)
-            let initial_dev = initial_cfg.monitor_device.clone()
+            let initial_dev = initial_cfg
+                .monitor_device
+                .clone()
                 .or_else(crate::monitor::auto_detect_monitor_device);
             if let Some(ref dev) = initial_dev {
                 let writer = crate::monitor::MonitorWriter::new(
@@ -248,7 +247,9 @@ impl DanteDevice {
                             tracing::info!("monitor ALSA writer stopped");
                         }
                         // Start new writer — use configured device or auto-detect fallback
-                        let new_dev = cfg.monitor_device.clone()
+                        let new_dev = cfg
+                            .monitor_device
+                            .clone()
                             .or_else(crate::monitor::auto_detect_monitor_device);
                         if let Some(ref dev) = new_dev {
                             let writer = crate::monitor::MonitorWriter::new(
@@ -306,245 +307,275 @@ impl DanteDevice {
         // ────────────────────────────────────────────────────────────────
         let lead_samples = initial_cfg.lead_samples;
 
-        let panic_count_cb    = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let panic_count_cb = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let panic_reset_ts_cb = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let panic_count_inner    = Arc::clone(&panic_count_cb);
+        let panic_count_inner = Arc::clone(&panic_count_cb);
         let panic_reset_ts_inner = Arc::clone(&panic_reset_ts_cb);
 
-        server.receive_with_callback(Box::new(move |samples_count, channels| {
-            use std::panic::{self, AssertUnwindSafe};
+        server
+            .receive_with_callback(Box::new(move |samples_count, channels| {
+                use std::panic::{self, AssertUnwindSafe};
 
-            let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            use crate::sample_conv::{i32_to_f32, f32_to_i32};
+                let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                    use crate::sample_conv::{f32_to_i32, i32_to_f32};
 
-            // Elevate DSP thread to SCHED_FIFO once per thread
-            #[cfg(target_os = "linux")]
-            try_set_rt_priority_once();
+                    // Elevate DSP thread to SCHED_FIFO once per thread
+                    #[cfg(target_os = "linux")]
+                    try_set_rt_priority_once();
 
-            // Lock-free config read from triple buffer — always has a valid snapshot
-            let cfg = tb_output.read();
+                    // Lock-free config read from triple buffer — always has a valid snapshot
+                    let cfg = tb_output.read();
 
-            let actual_rx = channels.len().min(n_rx);
-            let block     = samples_count;
+                    let actual_rx = channels.len().min(n_rx);
+                    let block = samples_count;
 
-            // Sync DSP state from latest config (RT-safe: no alloc when vecs already sized)
-            matrix_proc.sync(cfg);
+                    // Sync DSP state from latest config (RT-safe: no alloc when vecs already sized)
+                    matrix_proc.sync(cfg);
 
-            // Convert RX i32 → f32
-            let rx_f32: Vec<Vec<f32>> = (0..actual_rx)
-                .map(|i| channels[i][..block].iter().map(|&s| i32_to_f32(s)).collect())
-                .collect();
+                    // Convert RX i32 → f32
+                    let rx_f32: Vec<Vec<f32>> = (0..actual_rx)
+                        .map(|i| {
+                            channels[i][..block]
+                                .iter()
+                                .map(|&s| i32_to_f32(s))
+                                .collect()
+                        })
+                        .collect();
 
-            let mut tx_f32: Vec<Vec<f32>> = (0..n_tx)
-                .map(|_| vec![0.0f32; block])
-                .collect();
+                    let mut tx_f32: Vec<Vec<f32>> =
+                        (0..n_tx).map(|_| vec![0.0f32; block]).collect();
 
-            let inputs_ref:       Vec<&[f32]>      = rx_f32.iter().map(|v| v.as_slice()).collect();
-            let mut outputs_ref:  Vec<&mut [f32]> = tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
+                    let inputs_ref: Vec<&[f32]> = rx_f32.iter().map(|v| v.as_slice()).collect();
+                    let mut outputs_ref: Vec<&mut [f32]> =
+                        tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
-            // Run DSP matrix (input DSP → routing → output DSP)
-            matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
+                    // Run DSP matrix (input DSP → routing → output DSP)
+                    matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
 
-            // Push monitor buffer samples to FIFO queue for ALSA writer.
-            // Queue is bounded to 9600 frames (200ms) — drop oldest if overflowing.
-            mon_active_cb.store(matrix_proc.solo_active, AOrdering::Release);
-            if matrix_proc.solo_active {
-                let nf = block.min(patchbox_core::matrix::MAX_FRAMES);
-                if let Ok(mut q) = mon_audio_queue.try_lock() {
-                    for &s in &matrix_proc.monitor_buf[..nf] {
-                        q.push_back(s);
-                    }
-                    while q.len() > 9600 {
-                        q.pop_front();
-                    }
-                }
-            }
-
-            // Update meters with linear RMS, true peak, clip counts, and limiter GR (best-effort, non-blocking)
-            if let Ok(mut m) = meters.try_write() {
-                // Resize all vectors if channel count changed
-                if m.rx_peak.len() != n_rx { m.rx_peak.resize(n_rx, 0.0); }
-                if m.tx_peak.len() != n_tx { m.tx_peak.resize(n_tx, 0.0); }
-                if m.rx_clip_count.len() != n_rx { m.rx_clip_count.resize(n_rx, 0); }
-                if m.tx_clip_count.len() != n_tx { m.tx_clip_count.resize(n_tx, 0); }
-
-                for (i, ch) in rx_f32.iter().enumerate() {
-                    if i < m.rx_rms.len() {
-                        m.rx_rms[i] = rms_linear(ch);
-                    }
-                    if i < m.rx_peak.len() {
-                        let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
-                        m.rx_peak[i] = peak;
-                        if peak > 0.999 {
-                            m.rx_clip_count[i] = m.rx_clip_count[i].saturating_add(1);
-                        }
-                    }
-                }
-                for (i, ch) in tx_f32.iter().enumerate() {
-                    if i < m.tx_rms.len() {
-                        m.tx_rms[i] = rms_linear(ch);
-                    }
-                    if i < m.tx_peak.len() {
-                        let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
-                        m.tx_peak[i] = peak;
-                        if peak > 0.999 {
-                            m.tx_clip_count[i] = m.tx_clip_count[i].saturating_add(1);
-                        }
-                    }
-                }
-                if m.tx_gr_db.len() != n_tx {
-                    m.tx_gr_db.resize(n_tx, 0.0);
-                }
-                for (i, d) in matrix_proc.output_dsp.iter().enumerate() {
-                    if i < m.tx_gr_db.len() {
-                        m.tx_gr_db[i] = d.last_gr_db;
-                    }
-                }
-
-                // Bus metering
-                let n_buses = cfg.internal_buses.len().min(patchbox_core::matrix::MAX_BUSES);
-                if m.bus_rms.len() != n_buses { m.bus_rms.resize(n_buses, 0.0); }
-                for (b, bp) in matrix_proc.bus_processors.iter().enumerate().take(n_buses) {
-                    if b < m.bus_rms.len() {
-                        m.bus_rms[b] = rms_linear(&bp.sum_buf[..block.min(bp.sum_buf.len())]);
-                    }
-                }
-            }
-
-            // Write processed samples into TX ring buffers.
-            //
-            // Linear write position: advance by `block` (= PTP-derived sample count from
-            // inferno's jitter buffer) each callback.  Since `block` tracks the PTP clock
-            // at exactly the same rate as the TX transmitter, write_pos stays exactly
-            // lead_samples ahead of TX with no drift and no gaps between consecutive writes.
-            //
-            // Self-correcting from tx_ptp was removed: Tokio's 50 ms interval fires with
-            // ±jitter, so recomputing write_pos = tx_ptp + lead_samples each callback creates
-            // micro-gaps between writes whenever the interval fires late — those gaps hit
-            // TX as silent zeros → pops.  Pure linear advance eliminates the gaps.
-            //
-            // On first block: init write_pos = elapsed + lead_samples and send start_time = ptp_at_poll.
-            if let Some(tx) = start_tx_opt.take() {
-                let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
-                let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
-                write_pos_cb.store(elapsed_samples.wrapping_add(lead_samples), AOrdering::Release);
-                if let Err(e) = tx.send(ptp_at_poll) {
-                    tracing::warn!("Failed to send TX start time: {e}");
-                } else {
-                    tracing::info!(
-                        ptp_at_poll,
-                        write_pos = elapsed_samples + lead_samples,
-                        "TX ring armed — write leads TX by {} samples",
-                        lead_samples
-                    );
-                }
-            }
-
-            let write_pos = write_pos_cb.load(AOrdering::Acquire);
-
-            // ── Silence guard & gap-resumption resync ──────────────────────
-            // ExternalBuffer uses unconditional_read=true: TX reads ring
-            // positions even before write_pos reaches them.  After the first
-            // ring revolution (~682 ms at 48 kHz) those positions hold old
-            // audio → pop whenever write_pos stalls during silence.
-            //
-            //  block==0 (silence): zero-fill ring from write_pos up to
-            //    tx_current_pos + lead_samples so TX always reads silence.
-            //  block > 2×lead_samples (gap resumption): snap write_pos to tx+lead_samples
-            //    to prevent latency runaway from buffered silence samples.
-            // ──────────────────────────────────────────────────────────────
-            let tx_guard = current_ts_cb.load(AOrdering::Acquire);
-            if block == 0 {
-                if tx_guard != 0 && tx_guard != usize::MAX {
-                    let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
-                    let target = tx_off.wrapping_add(lead_samples);
-                    let needed = target.wrapping_sub(write_pos) as isize;
-                    if needed > 0 && needed < RING_SIZE as isize {
-                        for buf in &tx_bufs_cb {
-                            for i in 0..needed as usize {
-                                buf[write_pos.wrapping_add(i) % RING_SIZE]
-                                    .store(0, AOrdering::Relaxed);
+                    // Push monitor buffer samples to FIFO queue for ALSA writer.
+                    // Queue is bounded to 9600 frames (200ms) — drop oldest if overflowing.
+                    mon_active_cb.store(matrix_proc.solo_active, AOrdering::Release);
+                    if matrix_proc.solo_active {
+                        let nf = block.min(patchbox_core::matrix::MAX_FRAMES);
+                        if let Ok(mut q) = mon_audio_queue.try_lock() {
+                            for &s in &matrix_proc.monitor_buf[..nf] {
+                                q.push_back(s);
+                            }
+                            while q.len() > 9600 {
+                                q.pop_front();
                             }
                         }
-                        write_pos_cb.store(target, AOrdering::Release);
                     }
-                }
-                return;
-            }
-            let write_pos = if block > lead_samples * 2
-                && tx_guard != 0
-                && tx_guard != usize::MAX
-            {
-                let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
-                let snapped = tx_off.wrapping_add(lead_samples);
-                write_pos_cb.store(snapped, AOrdering::Release);
-                resyncs_cb.fetch_add(1, AOrdering::Relaxed);
-                snapped
-            } else {
-                write_pos
-            };
-            // ──────────────────────────────────────────────────────────────
 
-            for (o, ch) in tx_f32.iter().enumerate() {
-                if o >= tx_bufs_cb.len() { break; }
-                let buf = &tx_bufs_cb[o];
-                for (i, &s) in ch[..block].iter().enumerate() {
-                    let idx = (write_pos.wrapping_add(i)) % RING_SIZE;
-                    buf[idx].store(f32_to_i32(s), AOrdering::Relaxed);
-                }
-            }
-            write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
-            audio_callbacks_cb.fetch_add(1, AOrdering::Relaxed);
+                    // Update meters with linear RMS, true peak, clip counts, and limiter GR (best-effort, non-blocking)
+                    if let Ok(mut m) = meters.try_write() {
+                        // Resize all vectors if channel count changed
+                        if m.rx_peak.len() != n_rx {
+                            m.rx_peak.resize(n_rx, 0.0);
+                        }
+                        if m.tx_peak.len() != n_tx {
+                            m.tx_peak.resize(n_tx, 0.0);
+                        }
+                        if m.rx_clip_count.len() != n_rx {
+                            m.rx_clip_count.resize(n_rx, 0);
+                        }
+                        if m.tx_clip_count.len() != n_tx {
+                            m.tx_clip_count.resize(n_tx, 0);
+                        }
 
-            // Diagnostic: log ring alignment every ~2500 callbacks (≈5 s at 2ms READ_INTERVAL).
-            {
-                use std::sync::atomic::AtomicUsize;
-                static CB_COUNT: AtomicUsize = AtomicUsize::new(0);
-                let n = CB_COUNT.fetch_add(1, AOrdering::Relaxed);
-                if n % 2500 == 0 {
-                    let tx_ptp = current_ts_cb.load(AOrdering::Acquire);
-                    if tx_ptp != 0 && tx_ptp != usize::MAX {
-                        let lead = write_pos.wrapping_sub(
-                            tx_ptp.wrapping_sub(ptp_at_poll as usize)
+                        for (i, ch) in rx_f32.iter().enumerate() {
+                            if i < m.rx_rms.len() {
+                                m.rx_rms[i] = rms_linear(ch);
+                            }
+                            if i < m.rx_peak.len() {
+                                let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+                                m.rx_peak[i] = peak;
+                                if peak > 0.999 {
+                                    m.rx_clip_count[i] = m.rx_clip_count[i].saturating_add(1);
+                                }
+                            }
+                        }
+                        for (i, ch) in tx_f32.iter().enumerate() {
+                            if i < m.tx_rms.len() {
+                                m.tx_rms[i] = rms_linear(ch);
+                            }
+                            if i < m.tx_peak.len() {
+                                let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+                                m.tx_peak[i] = peak;
+                                if peak > 0.999 {
+                                    m.tx_clip_count[i] = m.tx_clip_count[i].saturating_add(1);
+                                }
+                            }
+                        }
+                        if m.tx_gr_db.len() != n_tx {
+                            m.tx_gr_db.resize(n_tx, 0.0);
+                        }
+                        for (i, d) in matrix_proc.output_dsp.iter().enumerate() {
+                            if i < m.tx_gr_db.len() {
+                                m.tx_gr_db[i] = d.last_gr_db;
+                            }
+                        }
+
+                        // Bus metering
+                        let n_buses = cfg
+                            .internal_buses
+                            .len()
+                            .min(patchbox_core::matrix::MAX_BUSES);
+                        if m.bus_rms.len() != n_buses {
+                            m.bus_rms.resize(n_buses, 0.0);
+                        }
+                        for (b, bp) in matrix_proc.bus_processors.iter().enumerate().take(n_buses) {
+                            if b < m.bus_rms.len() {
+                                m.bus_rms[b] =
+                                    rms_linear(&bp.sum_buf[..block.min(bp.sum_buf.len())]);
+                            }
+                        }
+                    }
+
+                    // Write processed samples into TX ring buffers.
+                    //
+                    // Linear write position: advance by `block` (= PTP-derived sample count from
+                    // inferno's jitter buffer) each callback.  Since `block` tracks the PTP clock
+                    // at exactly the same rate as the TX transmitter, write_pos stays exactly
+                    // lead_samples ahead of TX with no drift and no gaps between consecutive writes.
+                    //
+                    // Self-correcting from tx_ptp was removed: Tokio's 50 ms interval fires with
+                    // ±jitter, so recomputing write_pos = tx_ptp + lead_samples each callback creates
+                    // micro-gaps between writes whenever the interval fires late — those gaps hit
+                    // TX as silent zeros → pops.  Pure linear advance eliminates the gaps.
+                    //
+                    // On first block: init write_pos = elapsed + lead_samples and send start_time = ptp_at_poll.
+                    if let Some(tx) = start_tx_opt.take() {
+                        let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
+                        let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
+                        write_pos_cb.store(
+                            elapsed_samples.wrapping_add(lead_samples),
+                            AOrdering::Release,
                         );
-                        tracing::debug!(write_pos, tx_ptp, lead, block, "ring alignment");
+                        if let Err(e) = tx.send(ptp_at_poll) {
+                            tracing::warn!("Failed to send TX start time: {e}");
+                        } else {
+                            tracing::info!(
+                                ptp_at_poll,
+                                write_pos = elapsed_samples + lead_samples,
+                                "TX ring armed — write leads TX by {} samples",
+                                lead_samples
+                            );
+                        }
                     }
-                }
-            }
-            })); // end catch_unwind
 
-            if let Err(payload) = result {
-                let msg = payload.downcast_ref::<&str>().copied()
-                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-                    .unwrap_or("unknown");
-                tracing::error!(panic = msg, "RT audio callback panicked — zeroing TX");
+                    let write_pos = write_pos_cb.load(AOrdering::Acquire);
 
-                // Zero TX ring to silence outputs
-                for buf in &tx_bufs_cb {
-                    for s in buf.iter() { s.store(0, std::sync::atomic::Ordering::Relaxed); }
-                }
+                    // ── Silence guard & gap-resumption resync ──────────────────────
+                    // ExternalBuffer uses unconditional_read=true: TX reads ring
+                    // positions even before write_pos reaches them.  After the first
+                    // ring revolution (~682 ms at 48 kHz) those positions hold old
+                    // audio → pop whenever write_pos stalls during silence.
+                    //
+                    //  block==0 (silence): zero-fill ring from write_pos up to
+                    //    tx_current_pos + lead_samples so TX always reads silence.
+                    //  block > 2×lead_samples (gap resumption): snap write_pos to tx+lead_samples
+                    //    to prevent latency runaway from buffered silence samples.
+                    // ──────────────────────────────────────────────────────────────
+                    let tx_guard = current_ts_cb.load(AOrdering::Acquire);
+                    if block == 0 {
+                        if tx_guard != 0 && tx_guard != usize::MAX {
+                            let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
+                            let target = tx_off.wrapping_add(lead_samples);
+                            let needed = target.wrapping_sub(write_pos) as isize;
+                            if needed > 0 && needed < RING_SIZE as isize {
+                                for buf in &tx_bufs_cb {
+                                    for i in 0..needed as usize {
+                                        buf[write_pos.wrapping_add(i) % RING_SIZE]
+                                            .store(0, AOrdering::Relaxed);
+                                    }
+                                }
+                                write_pos_cb.store(target, AOrdering::Release);
+                            }
+                        }
+                        return;
+                    }
+                    let write_pos =
+                        if block > lead_samples * 2 && tx_guard != 0 && tx_guard != usize::MAX {
+                            let tx_off = tx_guard.wrapping_sub(ptp_at_poll as usize);
+                            let snapped = tx_off.wrapping_add(lead_samples);
+                            write_pos_cb.store(snapped, AOrdering::Release);
+                            resyncs_cb.fetch_add(1, AOrdering::Relaxed);
+                            snapped
+                        } else {
+                            write_pos
+                        };
+                    // ──────────────────────────────────────────────────────────────
 
-                // Circuit breaker: >3 panics in 60s → drop SCHED_FIFO
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default().as_secs();
-                let reset_ts = panic_reset_ts_inner.load(std::sync::atomic::Ordering::Relaxed);
-                if now.saturating_sub(reset_ts) > 60 {
-                    panic_count_inner.store(1, std::sync::atomic::Ordering::Relaxed);
-                    panic_reset_ts_inner.store(now, std::sync::atomic::Ordering::Relaxed);
-                } else {
-                    let n = panic_count_inner.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                    if n > 3 {
-                        tracing::error!("RT panic circuit breaker: dropping SCHED_FIFO");
-                        #[cfg(all(feature = "inferno", target_os = "linux"))]
-                        unsafe {
-                            let param = libc::sched_param { sched_priority: 0 };
-                            libc::sched_setscheduler(0, libc::SCHED_OTHER, &param);
+                    for (o, ch) in tx_f32.iter().enumerate() {
+                        if o >= tx_bufs_cb.len() {
+                            break;
+                        }
+                        let buf = &tx_bufs_cb[o];
+                        for (i, &s) in ch[..block].iter().enumerate() {
+                            let idx = (write_pos.wrapping_add(i)) % RING_SIZE;
+                            buf[idx].store(f32_to_i32(s), AOrdering::Relaxed);
+                        }
+                    }
+                    write_pos_cb.store(write_pos.wrapping_add(block), AOrdering::Release);
+                    audio_callbacks_cb.fetch_add(1, AOrdering::Relaxed);
+
+                    // Diagnostic: log ring alignment every ~2500 callbacks (≈5 s at 2ms READ_INTERVAL).
+                    {
+                        use std::sync::atomic::AtomicUsize;
+                        static CB_COUNT: AtomicUsize = AtomicUsize::new(0);
+                        let n = CB_COUNT.fetch_add(1, AOrdering::Relaxed);
+                        if n % 2500 == 0 {
+                            let tx_ptp = current_ts_cb.load(AOrdering::Acquire);
+                            if tx_ptp != 0 && tx_ptp != usize::MAX {
+                                let lead = write_pos
+                                    .wrapping_sub(tx_ptp.wrapping_sub(ptp_at_poll as usize));
+                                tracing::debug!(write_pos, tx_ptp, lead, block, "ring alignment");
+                            }
+                        }
+                    }
+                })); // end catch_unwind
+
+                if let Err(payload) = result {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .copied()
+                        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                        .unwrap_or("unknown");
+                    tracing::error!(panic = msg, "RT audio callback panicked — zeroing TX");
+
+                    // Zero TX ring to silence outputs
+                    for buf in &tx_bufs_cb {
+                        for s in buf.iter() {
+                            s.store(0, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+
+                    // Circuit breaker: >3 panics in 60s → drop SCHED_FIFO
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let reset_ts = panic_reset_ts_inner.load(std::sync::atomic::Ordering::Relaxed);
+                    if now.saturating_sub(reset_ts) > 60 {
+                        panic_count_inner.store(1, std::sync::atomic::Ordering::Relaxed);
+                        panic_reset_ts_inner.store(now, std::sync::atomic::Ordering::Relaxed);
+                    } else {
+                        let n = panic_count_inner
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                            + 1;
+                        if n > 3 {
+                            tracing::error!("RT panic circuit breaker: dropping SCHED_FIFO");
+                            #[cfg(all(feature = "inferno", target_os = "linux"))]
+                            unsafe {
+                                let param = libc::sched_param { sched_priority: 0 };
+                                libc::sched_setscheduler(0, libc::SCHED_OTHER, &param);
+                            }
                         }
                     }
                 }
-            }
-        })).await;
+            }))
+            .await;
 
         // Keep server alive — dropping it destroys DeviceMDNSResponder → BroadcasterHandle,
         // which kills the mDNS broadcaster and removes the device from Dante Controller.
@@ -572,7 +603,9 @@ fn try_set_rt_priority_once() {
         static TRIED: Cell<bool> = const { Cell::new(false) };
     }
     TRIED.with(|tried| {
-        if tried.get() { return; }
+        if tried.get() {
+            return;
+        }
         tried.set(true);
         let ret = unsafe {
             let param = libc::sched_param { sched_priority: 90 };

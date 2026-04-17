@@ -14,11 +14,11 @@
 //   system   — /system, /health, /info
 //   dsp      — shared DSP GET/PUT helpers used by inputs & outputs
 
+pub mod buses;
+pub mod dsp;
 pub mod inputs;
 pub mod outputs;
-pub mod buses;
-pub mod zones;
-pub mod scenes;
 pub mod routing;
+pub mod scenes;
 pub mod system;
-pub mod dsp;
+pub mod zones;

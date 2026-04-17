@@ -116,8 +116,8 @@ impl AecProcessor {
 
                 // Once a full AEC frame is accumulated, run AEC3
                 if self.capture_acc_pos % AEC_FRAME_SAMPLES == 0 {
-                    let frame_start = (self.capture_acc_pos - AEC_FRAME_SAMPLES)
-                        % self.capture_acc.len();
+                    let frame_start =
+                        (self.capture_acc_pos - AEC_FRAME_SAMPLES) % self.capture_acc.len();
 
                     // Build contiguous capture frame (handle wrap-around)
                     let mut cap_frame = [0.0f32; AEC_FRAME_SAMPLES];
@@ -128,8 +128,8 @@ impl AecProcessor {
                     // Build render frame from accumulator if available
                     let has_render = self.render_acc_pos >= AEC_FRAME_SAMPLES;
                     let render_frame: Option<[f32; AEC_FRAME_SAMPLES]> = if has_render {
-                        let rstart = (self.render_acc_pos - AEC_FRAME_SAMPLES)
-                            % self.render_acc.len();
+                        let rstart =
+                            (self.render_acc_pos - AEC_FRAME_SAMPLES) % self.render_acc.len();
                         let mut rf = [0.0f32; AEC_FRAME_SAMPLES];
                         for i in 0..AEC_FRAME_SAMPLES {
                             rf[i] = self.render_acc[(rstart + i) % self.render_acc.len()];

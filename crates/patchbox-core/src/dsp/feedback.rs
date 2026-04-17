@@ -52,7 +52,17 @@ struct NotchFilter {
 
 impl NotchFilter {
     const fn inactive() -> Self {
-        Self { freq_hz: 0.0, b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0, s1: 0.0, s2: 0.0, active: false }
+        Self {
+            freq_hz: 0.0,
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+            s1: 0.0,
+            s2: 0.0,
+            active: false,
+        }
     }
 
     fn configure(&mut self, freq_hz: f32, bandwidth_hz: f32, sample_rate: f32) {
@@ -69,9 +79,13 @@ impl NotchFilter {
         let a1 = -2.0 * r * cos_w;
         let a2 = r2;
         self.freq_hz = freq_hz;
-        self.b0 = b0; self.b1 = b1; self.b2 = b2;
-        self.a1 = a1; self.a2 = a2;
-        self.s1 = 0.0; self.s2 = 0.0;
+        self.b0 = b0;
+        self.b1 = b1;
+        self.b2 = b2;
+        self.a1 = a1;
+        self.a2 = a2;
+        self.s1 = 0.0;
+        self.s2 = 0.0;
         self.active = true;
     }
 
@@ -83,7 +97,9 @@ impl NotchFilter {
 
     #[inline(always)]
     fn process_sample(&mut self, x: f32) -> f32 {
-        if !self.active { return x; }
+        if !self.active {
+            return x;
+        }
         let y = self.b0 * x + self.s1;
         self.s1 = self.b1 * x - self.a1 * y + self.s2;
         self.s2 = self.b2 * x - self.a2 * y;
@@ -92,7 +108,9 @@ impl NotchFilter {
 
     #[inline]
     fn process_block(&mut self, buf: &mut [f32]) {
-        if !self.active { return; }
+        if !self.active {
+            return;
+        }
         for s in buf.iter_mut() {
             *s = self.process_sample(*s);
         }
@@ -172,14 +190,14 @@ impl FeedbackSuppressor {
     /// Sync from config. RT-safe: no allocation (just field updates).
     pub fn sync(&mut self, cfg: &FeedbackSuppressorConfig, sample_rate: f32) {
         let was_enabled = self.enabled;
-        self.enabled        = cfg.enabled;
-        self.threshold_db   = cfg.threshold_db.clamp(-60.0, 0.0);
-        self.hysteresis_db  = cfg.hysteresis_db.clamp(0.0, 30.0);
-        self.bandwidth_hz   = cfg.bandwidth_hz.clamp(1.0, 100.0);
-        self.auto_reset     = cfg.auto_reset;
-        self.quiet_hold_ms  = cfg.quiet_hold_ms.clamp(100.0, 30_000.0);
-        self.max_notches    = cfg.max_notches.clamp(1, MAX_NOTCHES);
-        self.sample_rate    = sample_rate;
+        self.enabled = cfg.enabled;
+        self.threshold_db = cfg.threshold_db.clamp(-60.0, 0.0);
+        self.hysteresis_db = cfg.hysteresis_db.clamp(0.0, 30.0);
+        self.bandwidth_hz = cfg.bandwidth_hz.clamp(1.0, 100.0);
+        self.auto_reset = cfg.auto_reset;
+        self.quiet_hold_ms = cfg.quiet_hold_ms.clamp(100.0, 30_000.0);
+        self.max_notches = cfg.max_notches.clamp(1, MAX_NOTCHES);
+        self.sample_rate = sample_rate;
         self.quiet_threshold = 10.0f32.powf(cfg.quiet_threshold_db / 20.0);
 
         // If just disabled, deactivate all notches
@@ -189,7 +207,9 @@ impl FeedbackSuppressor {
     }
 
     fn _reset_notches(&mut self) {
-        for n in self.notches.iter_mut() { n.deactivate(); }
+        for n in self.notches.iter_mut() {
+            n.deactivate();
+        }
         self.notch_freqs = [0.0f32; MAX_NOTCHES];
         self.n_active = 0;
     }
@@ -197,7 +217,9 @@ impl FeedbackSuppressor {
     /// Main audio processing — applies active notch filters and accumulates
     /// the analysis window. Detection runs once per full window.
     pub fn process_block(&mut self, buf: &mut [f32]) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
 
         // Apply active notches first
         for n in self.notches.iter_mut() {
@@ -233,12 +255,16 @@ impl FeedbackSuppressor {
     /// Run Goertzel analysis and potentially place a new notch filter.
     /// Called once per DETECT_SIZE samples (~43 ms @ 48 kHz).
     fn _run_detection(&mut self) {
-        if self.n_active >= self.max_notches { return; }
+        if self.n_active >= self.max_notches {
+            return;
+        }
 
         // Compute power at each bin
         for i in 0..N_BINS {
             let f = bin_freq(i, N_BINS);
-            if f >= self.sample_rate / 2.0 { continue; }
+            if f >= self.sample_rate / 2.0 {
+                continue;
+            }
             self.bin_powers[i] = goertzel_power(self.window.as_ref(), f, self.sample_rate);
         }
 
@@ -253,10 +279,14 @@ impl FeedbackSuppressor {
         }
 
         // Convert to dBFS (roughly)
-        if peak_power <= 0.0 { return; }
+        if peak_power <= 0.0 {
+            return;
+        }
         let peak_db = 10.0 * peak_power.log10();
 
-        if peak_db < self.threshold_db { return; }
+        if peak_db < self.threshold_db {
+            return;
+        }
 
         // Hysteresis: peak must be significantly above neighbours
         let left_db = if peak_idx > 0 && self.bin_powers[peak_idx - 1] > 0.0 {
@@ -270,13 +300,17 @@ impl FeedbackSuppressor {
             -120.0
         };
         let neighbour_max = left_db.max(right_db);
-        if peak_db - neighbour_max < self.hysteresis_db { return; }
+        if peak_db - neighbour_max < self.hysteresis_db {
+            return;
+        }
 
         let peak_freq = bin_freq(peak_idx, N_BINS);
 
         // Don't place a duplicate notch within 20 Hz of an existing one
         for &nf in self.notch_freqs[..self.n_active].iter() {
-            if (nf - peak_freq).abs() < 20.0 { return; }
+            if (nf - peak_freq).abs() < 20.0 {
+                return;
+            }
         }
 
         // Place notch at the next available slot
@@ -284,7 +318,9 @@ impl FeedbackSuppressor {
             if !self.notches[i].active {
                 self.notches[i].configure(peak_freq, self.bandwidth_hz, self.sample_rate);
                 self.notch_freqs[i] = peak_freq;
-                if i >= self.n_active { self.n_active = i + 1; }
+                if i >= self.n_active {
+                    self.n_active = i + 1;
+                }
                 break;
             }
         }

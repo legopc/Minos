@@ -3,7 +3,7 @@
 //! A random 256-bit secret is generated at startup and stored in AppState.
 //! All tokens are 8-hour expiry with role + optional zone claims.
 
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,16 +12,16 @@ pub const TOKEN_EXPIRY_SECS: u64 = 8 * 3600; // 8 hours
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     /// Subject (username)
-    pub sub:  String,
+    pub sub: String,
     /// Role: "admin" | "operator" | "bar_staff" | "readonly"
     pub role: String,
     /// Zone ID for bar_staff role (e.g. "bar-1")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone: Option<String>,
     /// Expiry unix timestamp
-    pub exp:  u64,
+    pub exp: u64,
     /// Issued-at unix timestamp
-    pub iat:  u64,
+    pub iat: u64,
 }
 
 impl Claims {
@@ -31,18 +31,22 @@ impl Claims {
             .unwrap_or_default()
             .as_secs();
         Self {
-            sub:  username.to_owned(),
+            sub: username.to_owned(),
             role: role.to_owned(),
             zone,
-            exp:  now + TOKEN_EXPIRY_SECS,
-            iat:  now,
+            exp: now + TOKEN_EXPIRY_SECS,
+            iat: now,
         }
     }
 }
 
 /// Generate a signed JWT.
 pub fn generate(claims: &Claims, secret: &[u8]) -> Result<String, jsonwebtoken::errors::Error> {
-    encode(&Header::new(Algorithm::HS256), claims, &EncodingKey::from_secret(secret))
+    encode(
+        &Header::new(Algorithm::HS256),
+        claims,
+        &EncodingKey::from_secret(secret),
+    )
 }
 
 /// Validate and decode a JWT. Returns the claims if valid.
@@ -64,7 +68,10 @@ pub fn load_or_generate_secret() -> Vec<u8> {
             tracing::info!("JWT secret loaded from {KEY_PATH}");
             return bytes;
         }
-        tracing::warn!("JWT key at {KEY_PATH} invalid ({} bytes) — regenerating", bytes.len());
+        tracing::warn!(
+            "JWT key at {KEY_PATH} invalid ({} bytes) — regenerating",
+            bytes.len()
+        );
     }
     let secret = generate_secret();
     match save_secret(&secret) {

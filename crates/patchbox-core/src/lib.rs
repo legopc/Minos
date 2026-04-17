@@ -5,6 +5,6 @@
 
 pub mod config;
 pub mod dsp;
-pub mod matrix;
 pub mod gain;
+pub mod matrix;
 pub mod meters;

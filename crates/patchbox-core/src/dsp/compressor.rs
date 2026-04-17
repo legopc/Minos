@@ -200,10 +200,24 @@ impl Default for Compressor {
 mod tests {
     use super::*;
 
-    fn cfg(threshold_db: f32, ratio: f32, knee_db: f32, attack_ms: f32, release_ms: f32,
-           makeup_db: f32, enabled: bool) -> CompressorConfig {
-        CompressorConfig { enabled, threshold_db, ratio, knee_db, attack_ms,
-                           release_ms, makeup_db }
+    fn cfg(
+        threshold_db: f32,
+        ratio: f32,
+        knee_db: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_db: f32,
+        enabled: bool,
+    ) -> CompressorConfig {
+        CompressorConfig {
+            enabled,
+            threshold_db,
+            ratio,
+            knee_db,
+            attack_ms,
+            release_ms,
+            makeup_db,
+        }
     }
 
     #[test]
@@ -214,7 +228,10 @@ mod tests {
         let mut buf = input.clone();
         comp.process_block(&mut buf);
         for (a, b) in input.iter().zip(buf.iter()) {
-            assert!((a - b).abs() < 1e-6, "disabled compressor must pass unchanged");
+            assert!(
+                (a - b).abs() < 1e-6,
+                "disabled compressor must pass unchanged"
+            );
         }
     }
 
@@ -228,7 +245,10 @@ mod tests {
         comp.process_block(&mut buf);
         // After envelope settles, signal below threshold should pass with minimal change
         for s in &buf[200..] {
-            assert!((*s - 0.05).abs() < 0.01, "signal below threshold should pass: {s}");
+            assert!(
+                (*s - 0.05).abs() < 0.01,
+                "signal below threshold should pass: {s}"
+            );
         }
     }
 
@@ -262,8 +282,10 @@ mod tests {
         let expected_gain_linear = 10.0_f32.powf(6.0 / 20.0);
         for s in &buf[200..] {
             let expected = input[0] * expected_gain_linear;
-            assert!((s - expected).abs() < 0.01,
-                    "makeup gain should boost output: {s} vs {expected}");
+            assert!(
+                (s - expected).abs() < 0.01,
+                "makeup gain should boost output: {s} vs {expected}"
+            );
         }
     }
 
@@ -276,8 +298,14 @@ mod tests {
         let mut buf = vec![1.0f32; 512];
         comp.process_block(&mut buf);
         let gr_db = comp.gain_reduction_db();
-        assert!(gr_db <= 0.0, "GR must be <= 0dB when compressing, got {gr_db}");
-        assert!(gr_db > -120.0, "GR should not be at floor for visible compression");
+        assert!(
+            gr_db <= 0.0,
+            "GR must be <= 0dB when compressing, got {gr_db}"
+        );
+        assert!(
+            gr_db > -120.0,
+            "GR should not be at floor for visible compression"
+        );
     }
 
     #[test]
@@ -288,11 +316,17 @@ mod tests {
 
         // Test input just below knee: should have minimal compression
         let gain_below = comp.compute_gain_db(-24.0); // 4dB below threshold
-        assert!(gain_below > -0.5, "gain just below knee should be small: {gain_below}");
+        assert!(
+            gain_below > -0.5,
+            "gain just below knee should be small: {gain_below}"
+        );
 
         // Test input in knee: should have partial compression
         let gain_knee = comp.compute_gain_db(-20.0); // at threshold
-        assert!(gain_knee < -0.1 && gain_knee > -1.0, "gain in knee should be partial: {gain_knee}");
+        assert!(
+            gain_knee < -0.1 && gain_knee > -1.0,
+            "gain in knee should be partial: {gain_knee}"
+        );
 
         // Test input above knee: should have full 4:1 compression
         // -12dB input, -20dB threshold, 4:1 ratio: output = -20 + (-12 - (-20))/4 = -20 + 8/4 = -18

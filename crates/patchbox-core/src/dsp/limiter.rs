@@ -115,7 +115,9 @@ impl BrickWallLimiter {
 }
 
 impl Default for BrickWallLimiter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -124,7 +126,12 @@ mod tests {
     use crate::config::LimiterConfig;
 
     fn cfg(threshold_db: f32, enabled: bool) -> LimiterConfig {
-        LimiterConfig { threshold_db, attack_ms: 0.1, release_ms: 50.0, enabled }
+        LimiterConfig {
+            threshold_db,
+            attack_ms: 0.1,
+            release_ms: 50.0,
+            enabled,
+        }
     }
 
     #[test]
@@ -177,6 +184,9 @@ mod tests {
         lim.sync(&cfg(-6.0, true), 48_000.0);
         let mut buf = vec![1.0f32; 512];
         lim.process_block(&mut buf);
-        assert!(lim.gain_reduction_db() <= 0.0, "GR must be <= 0dB when limiting");
+        assert!(
+            lim.gain_reduction_db() <= 0.0,
+            "GR must be <= 0dB when limiting"
+        );
     }
 }

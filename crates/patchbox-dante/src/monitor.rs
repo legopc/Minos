@@ -1,14 +1,14 @@
 //! ALSA monitor output writer — PFL solo to local soundcard.
 #![cfg(feature = "inferno")]
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u32 = 2; // stereo: L=R (mono PFL duplicated to both ears)
 const PERIOD_FRAMES: i64 = 128;
-const NUM_PERIODS: i64 = 8;      // 8 × 128 = 1024 frames = 21.3 ms headroom
+const NUM_PERIODS: i64 = 8; // 8 × 128 = 1024 frames = 21.3 ms headroom
 const BUFFER_FRAMES: i64 = PERIOD_FRAMES * NUM_PERIODS;
 
 pub struct MonitorWriter {
@@ -88,7 +88,9 @@ impl MonitorWriter {
             let actual_period = hwp.get_period_size().unwrap_or(0);
             let actual_buffer = hwp.get_buffer_size().unwrap_or(0);
             tracing::info!(
-                rate = actual_rate, period = actual_period, buffer = actual_buffer,
+                rate = actual_rate,
+                period = actual_period,
+                buffer = actual_buffer,
                 "monitor ALSA hw_params applied"
             );
         }
@@ -109,7 +111,7 @@ impl MonitorWriter {
 
         let period = PERIOD_FRAMES as usize;
         let mut write_buf = vec![0i32; period * CHANNELS as usize];
-        let silence_buf   = vec![0i32; period * CHANNELS as usize];
+        let silence_buf = vec![0i32; period * CHANNELS as usize];
         // Local accumulator: drains from the shared queue each ALSA period.
         let mut accum: VecDeque<f32> = VecDeque::with_capacity(period * 8);
 
@@ -126,7 +128,7 @@ impl MonitorWriter {
                 // Fill exactly one ALSA period from the accumulator; pad with silence if needed
                 for i in 0..period {
                     let s = accum.pop_front().map_or(0, f32_to_i32_alsa);
-                    write_buf[i * 2]     = s;
+                    write_buf[i * 2] = s;
                     write_buf[i * 2 + 1] = s;
                 }
 
@@ -156,7 +158,11 @@ impl MonitorWriter {
         Ok(())
     }
 
-    fn write_frames(&self, pcm: &alsa::pcm::PCM, buf: &[i32]) -> Result<(), Box<dyn std::error::Error>> {
+    fn write_frames(
+        &self,
+        pcm: &alsa::pcm::PCM,
+        buf: &[i32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let io = pcm.io_i32()?;
         if let Err(e) = io.writei(buf) {
             let errno = e.errno() as i32;
@@ -195,30 +201,45 @@ fn set_hardware_volume(card_idx: i32) {
     match Mixer::new(&card_name, false) {
         Ok(mixer) => {
             for elem in mixer.iter() {
-                let selem = match Selem::new(elem) { Some(s) => s, None => continue };
+                let selem = match Selem::new(elem) {
+                    Some(s) => s,
+                    None => continue,
+                };
                 let sid = selem.get_id();
-                let name = match sid.get_name() { Ok(n) => n, Err(_) => continue };
+                let name = match sid.get_name() {
+                    Ok(n) => n,
+                    Err(_) => continue,
+                };
                 // Mute internal speakers; unmute headphone/line output only.
                 let is_speaker = name.contains("Speaker");
-                let is_headphone = name.contains("Headphone")
-                    || name.contains("Master")
-                    || name.contains("PCM");
-                if !is_speaker && !is_headphone { continue; }
+                let is_headphone =
+                    name.contains("Headphone") || name.contains("Master") || name.contains("PCM");
+                if !is_speaker && !is_headphone {
+                    continue;
+                }
                 if is_speaker {
-                    if selem.has_playback_switch() { let _ = selem.set_playback_switch_all(0); }
-                    if selem.has_playback_volume() { let _ = selem.set_playback_volume_all(0); }
+                    if selem.has_playback_switch() {
+                        let _ = selem.set_playback_switch_all(0);
+                    }
+                    if selem.has_playback_volume() {
+                        let _ = selem.set_playback_volume_all(0);
+                    }
                 } else {
                     if selem.has_playback_volume() {
                         let (_, max) = selem.get_playback_volume_range();
                         let _ = selem.set_playback_volume_all(max);
                     }
-                    if selem.has_playback_switch() { let _ = selem.set_playback_switch_all(1); }
+                    if selem.has_playback_switch() {
+                        let _ = selem.set_playback_switch_all(1);
+                    }
                 }
                 tracing::debug!(name, "hardware volume set to max");
             }
             tracing::info!(card = card_idx, "monitor hardware volume initialised");
         }
-        Err(e) => tracing::warn!(err = %e, card = card_idx, "could not open mixer for hardware volume init"),
+        Err(e) => {
+            tracing::warn!(err = %e, card = card_idx, "could not open mixer for hardware volume init")
+        }
     }
 }
 
@@ -233,7 +254,10 @@ pub fn auto_detect_monitor_device() -> Option<String> {
             if c.is_ascii_digit() {
                 let card_num: u32 = c.to_digit(10)?;
                 // Skip HDMI, DisplayPort, and Loopback cards (same exclusions as Virgil)
-                if trimmed.contains("HDMI") || trimmed.contains("DisplayPort") || trimmed.contains("Loopback") {
+                if trimmed.contains("HDMI")
+                    || trimmed.contains("DisplayPort")
+                    || trimmed.contains("Loopback")
+                {
                     continue;
                 }
                 let device = format!("plughw:{},0", card_num);

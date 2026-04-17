@@ -5,6 +5,6 @@
 //! Without the feature, a stub is provided for testing.
 
 pub mod device;
+pub mod monitor;
 pub mod sample_conv;
 pub mod stub;
-pub mod monitor;

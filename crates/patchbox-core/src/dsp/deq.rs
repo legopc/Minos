@@ -10,13 +10,22 @@ const SAMPLE_RATE: f32 = 48_000.0;
 
 #[derive(Clone, Copy)]
 struct Coeffs {
-    b0: f32, b1: f32, b2: f32,
-    a1: f32, a2: f32,
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
 }
 
 impl Coeffs {
     fn identity() -> Self {
-        Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 }
+        Self {
+            b0: 1.0,
+            b1: 0.0,
+            b2: 0.0,
+            a1: 0.0,
+            a2: 0.0,
+        }
     }
 
     fn peaking(freq_hz: f32, gain_db: f32, q: f32) -> Self {
@@ -37,42 +46,52 @@ impl Coeffs {
     }
 
     fn low_shelf(freq_hz: f32, gain_db: f32, q: f32) -> Self {
-        let a  = 10.0_f32.powf(gain_db / 40.0);
+        let a = 10.0_f32.powf(gain_db / 40.0);
         let w0 = 2.0 * std::f32::consts::PI * freq_hz.clamp(20.0, 20_000.0) / SAMPLE_RATE;
         let (sin_w0, cos_w0) = w0.sin_cos();
         let alpha = sin_w0 / (2.0 * q.clamp(0.1, 10.0));
         let t = 2.0 * a.sqrt() * alpha;
         let a0 = (a + 1.0) + (a - 1.0) * cos_w0 + t;
         Self {
-            b0:  a * ((a + 1.0) - (a - 1.0) * cos_w0 + t) / a0,
-            b1:  2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0) / a0,
-            b2:  a * ((a + 1.0) - (a - 1.0) * cos_w0 - t) / a0,
+            b0: a * ((a + 1.0) - (a - 1.0) * cos_w0 + t) / a0,
+            b1: 2.0 * a * ((a - 1.0) - (a + 1.0) * cos_w0) / a0,
+            b2: a * ((a + 1.0) - (a - 1.0) * cos_w0 - t) / a0,
             a1: -2.0 * ((a - 1.0) + (a + 1.0) * cos_w0) / a0,
-            a2:       ((a + 1.0) + (a - 1.0) * cos_w0 - t) / a0,
+            a2: ((a + 1.0) + (a - 1.0) * cos_w0 - t) / a0,
         }
     }
 
     fn high_shelf(freq_hz: f32, gain_db: f32, q: f32) -> Self {
-        let a  = 10.0_f32.powf(gain_db / 40.0);
+        let a = 10.0_f32.powf(gain_db / 40.0);
         let w0 = 2.0 * std::f32::consts::PI * freq_hz.clamp(20.0, 20_000.0) / SAMPLE_RATE;
         let (sin_w0, cos_w0) = w0.sin_cos();
         let alpha = sin_w0 / (2.0 * q.clamp(0.1, 10.0));
         let t = 2.0 * a.sqrt() * alpha;
         let a0 = (a + 1.0) - (a - 1.0) * cos_w0 + t;
         Self {
-            b0:  a * ((a + 1.0) + (a - 1.0) * cos_w0 + t) / a0,
+            b0: a * ((a + 1.0) + (a - 1.0) * cos_w0 + t) / a0,
             b1: -2.0 * a * ((a - 1.0) + (a + 1.0) * cos_w0) / a0,
-            b2:  a * ((a + 1.0) + (a - 1.0) * cos_w0 - t) / a0,
-            a1:  2.0 * ((a - 1.0) - (a + 1.0) * cos_w0) / a0,
-            a2:       ((a + 1.0) - (a - 1.0) * cos_w0 - t) / a0,
+            b2: a * ((a + 1.0) + (a - 1.0) * cos_w0 - t) / a0,
+            a1: 2.0 * ((a - 1.0) - (a + 1.0) * cos_w0) / a0,
+            a2: ((a + 1.0) - (a - 1.0) * cos_w0 - t) / a0,
         }
     }
 }
 
 #[derive(Clone, Copy)]
-struct BiquadFilter { coeffs: Coeffs, s1: f32, s2: f32 }
+struct BiquadFilter {
+    coeffs: Coeffs,
+    s1: f32,
+    s2: f32,
+}
 impl BiquadFilter {
-    fn identity() -> Self { Self { coeffs: Coeffs::identity(), s1: 0.0, s2: 0.0 } }
+    fn identity() -> Self {
+        Self {
+            coeffs: Coeffs::identity(),
+            s1: 0.0,
+            s2: 0.0,
+        }
+    }
     #[inline]
     fn process(&mut self, x: f32) -> f32 {
         let c = &self.coeffs;
@@ -81,7 +100,10 @@ impl BiquadFilter {
         self.s2 = c.b2 * x - c.a2 * y;
         y
     }
-    fn reset(&mut self) { self.s1 = 0.0; self.s2 = 0.0; }
+    fn reset(&mut self) {
+        self.s1 = 0.0;
+        self.s2 = 0.0;
+    }
 }
 
 // ── Per-band state ────────────────────────────────────────────────────────────
@@ -116,15 +138,24 @@ impl Band {
             current_gain_db: 0.0,
             attack_coeff: 0.0,
             release_coeff: 0.0,
-            last_freq: f32::NAN, last_q: f32::NAN, last_range: f32::NAN,
-            last_thresh: f32::NAN, last_ratio: f32::NAN,
-            last_attack: f32::NAN, last_release: f32::NAN,
-            last_type: 255, last_enabled: false,
+            last_freq: f32::NAN,
+            last_q: f32::NAN,
+            last_range: f32::NAN,
+            last_thresh: f32::NAN,
+            last_ratio: f32::NAN,
+            last_attack: f32::NAN,
+            last_release: f32::NAN,
+            last_type: 255,
+            last_enabled: false,
         }
     }
 
     fn sync(&mut self, cfg: &DynamicEqBandConfig, sample_rate: f32) {
-        let type_tag: u8 = match cfg.band_type { DynamicEqBandType::Peaking => 0, DynamicEqBandType::LowShelf => 1, DynamicEqBandType::HighShelf => 2 };
+        let type_tag: u8 = match cfg.band_type {
+            DynamicEqBandType::Peaking => 0,
+            DynamicEqBandType::LowShelf => 1,
+            DynamicEqBandType::HighShelf => 2,
+        };
         let changed = cfg.enabled != self.last_enabled
             || type_tag != self.last_type
             || (cfg.freq_hz - self.last_freq).abs() > 0.1
@@ -135,11 +166,13 @@ impl Band {
             || (cfg.attack_ms - self.last_attack).abs() > 0.1
             || (cfg.release_ms - self.last_release).abs() > 0.1;
 
-        if !changed { return; }
+        if !changed {
+            return;
+        }
 
-        let attack_s  = (cfg.attack_ms  * 0.001).max(1e-6);
+        let attack_s = (cfg.attack_ms * 0.001).max(1e-6);
         let release_s = (cfg.release_ms * 0.001).max(1e-6);
-        self.attack_coeff  = (-1.0 / (attack_s  * sample_rate)).exp();
+        self.attack_coeff = (-1.0 / (attack_s * sample_rate)).exp();
         self.release_coeff = (-1.0 / (release_s * sample_rate)).exp();
         self.rms_coeff = (-1.0 / (0.01 * sample_rate)).exp();
 
@@ -149,14 +182,14 @@ impl Band {
             self.current_gain_db = 0.0;
         }
 
-        self.last_freq    = cfg.freq_hz;
-        self.last_q       = cfg.q;
-        self.last_range   = cfg.range_db;
-        self.last_thresh  = cfg.threshold_db;
-        self.last_ratio   = cfg.ratio;
-        self.last_attack  = cfg.attack_ms;
+        self.last_freq = cfg.freq_hz;
+        self.last_q = cfg.q;
+        self.last_range = cfg.range_db;
+        self.last_thresh = cfg.threshold_db;
+        self.last_ratio = cfg.ratio;
+        self.last_attack = cfg.attack_ms;
         self.last_release = cfg.release_ms;
-        self.last_type    = type_tag;
+        self.last_type = type_tag;
         self.last_enabled = cfg.enabled;
     }
 
@@ -164,14 +197,16 @@ impl Band {
     /// Uses cached values from last sync() — no config reference needed.
     #[inline]
     fn process_block(&mut self, buf: &mut [f32]) {
-        if !self.last_enabled { return; }
+        if !self.last_enabled {
+            return;
+        }
 
         let thresh = self.last_thresh;
-        let ratio  = self.last_ratio.max(1.001);
-        let range  = self.last_range;
+        let ratio = self.last_ratio.max(1.001);
+        let range = self.last_range;
         let (min_g, max_g) = (range.min(0.0), range.max(0.0));
         let freq = self.last_freq;
-        let q    = self.last_q;
+        let q = self.last_q;
         let band_type = self.last_type;
 
         for s in buf.iter_mut() {
@@ -188,7 +223,7 @@ impl Band {
             let target_db = raw.clamp(min_g, max_g);
 
             self.current_gain_db = if target_db < self.current_gain_db {
-                self.attack_coeff  * self.current_gain_db + (1.0 - self.attack_coeff)  * target_db
+                self.attack_coeff * self.current_gain_db + (1.0 - self.attack_coeff) * target_db
             } else {
                 self.release_coeff * self.current_gain_db + (1.0 - self.release_coeff) * target_db
             };
@@ -226,10 +261,16 @@ impl DynamicEq {
     pub fn sync(&mut self, cfg: &DynamicEqConfig, sample_rate: f32) {
         self.enabled = cfg.enabled && !cfg.bypassed;
         if self.enabled != self.last_enabled && !self.enabled {
-            for b in &mut self.bands { b.filter = BiquadFilter::identity(); b.filter.reset(); b.current_gain_db = 0.0; }
+            for b in &mut self.bands {
+                b.filter = BiquadFilter::identity();
+                b.filter.reset();
+                b.current_gain_db = 0.0;
+            }
         }
         self.last_enabled = self.enabled;
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         for (i, band) in self.bands.iter_mut().enumerate() {
             if let Some(bc) = cfg.bands.get(i) {
                 band.sync(bc, sample_rate);
@@ -238,7 +279,9 @@ impl DynamicEq {
     }
 
     pub fn process_block(&mut self, buf: &mut [f32]) {
-        if !self.enabled { return; }
+        if !self.enabled {
+            return;
+        }
         for band in &mut self.bands {
             band.process_block(buf);
         }
@@ -247,11 +290,15 @@ impl DynamicEq {
     /// Return current gain_db for each active band (for metering/display).
     pub fn band_gains(&self) -> [f32; MAX_BANDS] {
         let mut out = [0.0f32; MAX_BANDS];
-        for (i, b) in self.bands.iter().enumerate() { out[i] = b.current_gain_db; }
+        for (i, b) in self.bands.iter().enumerate() {
+            out[i] = b.current_gain_db;
+        }
         out
     }
 }
 
 impl Default for DynamicEq {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

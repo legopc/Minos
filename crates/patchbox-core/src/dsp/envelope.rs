@@ -23,7 +23,12 @@ pub struct DspBlock<P> {
 
 impl<P: Default> Default for DspBlock<P> {
     fn default() -> Self {
-        Self { kind: String::new(), enabled: true, version: 1, params: P::default() }
+        Self {
+            kind: String::new(),
+            enabled: true,
+            version: 1,
+            params: P::default(),
+        }
     }
 }
 
@@ -34,16 +39,30 @@ impl<'de, P: Deserialize<'de>> Deserialize<'de> for DspBlock<P> {
 
         if v.get("params").is_some() {
             // New envelope format
-            let kind = v.get("kind").and_then(|k| k.as_str()).unwrap_or("").to_owned();
+            let kind = v
+                .get("kind")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_owned();
             let enabled = v.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
             let version = v.get("version").and_then(|ver| ver.as_u64()).unwrap_or(1) as u32;
             let params = P::deserialize(v["params"].clone()).map_err(D::Error::custom)?;
-            Ok(Self { kind, enabled, version, params })
+            Ok(Self {
+                kind,
+                enabled,
+                version,
+                params,
+            })
         } else {
             // Old flat format
             let enabled = v.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
             let params = P::deserialize(v).map_err(D::Error::custom)?;
-            Ok(Self { kind: String::new(), enabled, version: 1, params })
+            Ok(Self {
+                kind: String::new(),
+                enabled,
+                version: 1,
+                params,
+            })
         }
     }
 }
@@ -61,7 +80,8 @@ mod tests {
 
     #[test]
     fn round_trip_new_envelope() {
-        let json = r#"{"kind":"fake","enabled":true,"version":1,"params":{"enabled":true,"value":3.14}}"#;
+        let json =
+            r#"{"kind":"fake","enabled":true,"version":1,"params":{"enabled":true,"value":3.14}}"#;
         let block: DspBlock<FakeParams> = serde_json::from_str(json).unwrap();
         assert_eq!(block.kind, "fake");
         assert!(block.enabled);
@@ -92,8 +112,13 @@ mod tests {
     #[test]
     fn serialize_emits_all_fields() {
         let block = DspBlock {
-            kind: "gate".to_owned(), enabled: false, version: 1,
-            params: FakeParams { enabled: false, value: 2.0 },
+            kind: "gate".to_owned(),
+            enabled: false,
+            version: 1,
+            params: FakeParams {
+                enabled: false,
+                value: 2.0,
+            },
         };
         let s = serde_json::to_string(&block).unwrap();
         assert!(s.contains(r#""kind":"gate""#));

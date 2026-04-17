@@ -8,6 +8,9 @@ pub struct DanteStub {
 
 impl DanteStub {
     pub fn new(rx: usize, tx: usize) -> Self {
-        Self { rx_channels: rx, tx_channels: tx }
+        Self {
+            rx_channels: rx,
+            tx_channels: tx,
+        }
     }
 }

@@ -1,8 +1,8 @@
 // S7 s7-arch-dsp-envelope — DspBlock envelope round-trip tests.
-use patchbox_core::dsp::DspBlock;
 use patchbox_core::config::{
-    FilterConfig, EqConfig, GateConfig, CompressorConfig, LimiterConfig, DelayConfig,
+    CompressorConfig, DelayConfig, EqConfig, FilterConfig, GateConfig, LimiterConfig,
 };
+use patchbox_core::dsp::DspBlock;
 
 fn roundtrip<T: serde::Serialize + serde::de::DeserializeOwned>(flat_json: &str) {
     let block: DspBlock<T> = serde_json::from_str(flat_json).expect("flat deserialise");

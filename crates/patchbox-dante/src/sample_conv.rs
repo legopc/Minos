@@ -33,7 +33,10 @@ mod tests {
     fn round_trip() {
         for val in [-1.0f32, -0.5, 0.0, 0.5, 1.0 - f32::EPSILON] {
             let rt = i32_to_f32(f32_to_i32(val));
-            assert!((rt - val).abs() < 1e-4, "round-trip failed for {val}: got {rt}");
+            assert!(
+                (rt - val).abs() < 1e-4,
+                "round-trip failed for {val}: got {rt}"
+            );
         }
     }
 
@@ -41,9 +44,17 @@ mod tests {
     fn upper_24_bits_encoding() {
         // 0.5 → 0x40000000; upper 3 bytes = [0x40, 0x00, 0x00]
         let enc = f32_to_i32(0.5_f32);
-        assert_eq!(enc.to_be_bytes()[0..3], [0x40, 0x00, 0x00], "0.5 not in upper 24 bits");
+        assert_eq!(
+            enc.to_be_bytes()[0..3],
+            [0x40, 0x00, 0x00],
+            "0.5 not in upper 24 bits"
+        );
         // -1.0 → i32::MIN = 0x80000000; upper 3 bytes = [0x80, 0x00, 0x00]
         let enc_neg = f32_to_i32(-1.0_f32);
-        assert_eq!(enc_neg.to_be_bytes()[0..3], [0x80, 0x00, 0x00], "-1.0 not in upper 24 bits");
+        assert_eq!(
+            enc_neg.to_be_bytes()[0..3],
+            [0x80, 0x00, 0x00],
+            "-1.0 not in upper 24 bits"
+        );
     }
 }

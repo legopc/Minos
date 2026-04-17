@@ -1,12 +1,14 @@
 //! Routing matrix — routes N inputs to M outputs with gain staging
 
-use crate::config::{EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig, VcaGroupType};
+use crate::config::{
+    EqConfig, InputChannelDsp, LimiterConfig, OutputChannelDsp, PatchboxConfig, VcaGroupType,
+};
 use crate::dsp::aec::AecProcessor;
 use crate::dsp::automixer::AutomixerProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
-use crate::dsp::eq::ParametricEq;
 use crate::dsp::deq::DynamicEq;
+use crate::dsp::eq::ParametricEq;
 use crate::dsp::feedback::FeedbackSuppressor;
 use crate::dsp::filters::{ButterworthFilter, FilterMode};
 use crate::dsp::gate::GateExpander;
@@ -22,7 +24,9 @@ pub fn db_to_linear(db: f32) -> f32 {
 /// `ramp_ms` — 63% settling time in milliseconds; `sample_rate` in Hz.
 /// Returns the fraction of (target - current) to add each sample.
 pub fn compute_ramp_alpha(ramp_ms: f32, sample_rate: f32) -> f32 {
-    if ramp_ms <= 0.0 { return 0.0; }
+    if ramp_ms <= 0.0 {
+        return 0.0;
+    }
     let tau_samples = ramp_ms * 0.001 * sample_rate;
     1.0 - (-1.0_f32 / tau_samples).exp()
 }
@@ -40,7 +44,11 @@ pub struct RampState {
 
 impl RampState {
     pub fn new(initial: f32) -> Self {
-        Self { target_linear: initial, current_linear: initial, alpha: 0.002 }
+        Self {
+            target_linear: initial,
+            current_linear: initial,
+            alpha: 0.002,
+        }
     }
 
     pub fn set_target(&mut self, target_linear: f32) {
@@ -128,17 +136,23 @@ impl PerOutputDsp {
     #[inline]
     pub fn process_block(&mut self, buf: &mut [f32], muted: bool) {
         if muted {
-            for s in buf.iter_mut() { *s = 0.0; }
+            for s in buf.iter_mut() {
+                *s = 0.0;
+            }
             return;
         }
         if self.gain_ramp.is_settled() {
             // Fast path: constant gain, no per-sample ramp overhead
             if (self.gain_ramp.current_linear - 1.0).abs() > 1e-6 {
-                for s in buf.iter_mut() { *s *= self.gain_ramp.current_linear; }
+                for s in buf.iter_mut() {
+                    *s *= self.gain_ramp.current_linear;
+                }
             }
         } else {
             // Ramp path: smoothly interpolate gain per-sample to eliminate zipper noise
-            for s in buf.iter_mut() { *s *= self.gain_ramp.tick(); }
+            for s in buf.iter_mut() {
+                *s *= self.gain_ramp.tick();
+            }
         }
         self.hpf.process_block(buf);
         self.lpf.process_block(buf);
@@ -146,7 +160,11 @@ impl PerOutputDsp {
         self.deq.process_block(buf);
         self.compressor.process_block(buf);
         let min_gr = self.limiter.process_block(buf);
-        self.last_gr_db = if min_gr <= 0.0 { -120.0 } else { 20.0 * min_gr.log10() };
+        self.last_gr_db = if min_gr <= 0.0 {
+            -120.0
+        } else {
+            20.0 * min_gr.log10()
+        };
         self.delay.process_block(buf);
 
         // TPDF dither: two independent white noise sources minus each other = triangular PDF
@@ -169,7 +187,9 @@ impl PerOutputDsp {
 }
 
 impl Default for PerOutputDsp {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Per-input DSP chain: polarity → gain → HPF → LPF → EQ → gate → compressor → AEC → AFS.
@@ -249,7 +269,9 @@ impl PerInputDsp {
     #[inline]
     pub fn process_block(&mut self, buf: &mut [f32]) {
         if !self.enabled {
-            for s in buf.iter_mut() { *s = 0.0; }
+            for s in buf.iter_mut() {
+                *s = 0.0;
+            }
             return;
         }
         // DC blocker (always on): y[n] = x[n] - x[n-1] + R*y[n-1], R ≈ 0.9999 (~2 Hz)
@@ -261,14 +283,20 @@ impl PerInputDsp {
             *s = y;
         }
         if self.invert_polarity {
-            for s in buf.iter_mut() { *s = -*s; }
+            for s in buf.iter_mut() {
+                *s = -*s;
+            }
         }
         if self.gain_ramp.is_settled() {
             if (self.gain_ramp.current_linear - 1.0).abs() > 1e-6 {
-                for s in buf.iter_mut() { *s *= self.gain_ramp.current_linear; }
+                for s in buf.iter_mut() {
+                    *s *= self.gain_ramp.current_linear;
+                }
             }
         } else {
-            for s in buf.iter_mut() { *s *= self.gain_ramp.tick(); }
+            for s in buf.iter_mut() {
+                *s *= self.gain_ramp.tick();
+            }
         }
         self.hpf.process_block(buf);
         self.lpf.process_block(buf);
@@ -284,7 +312,9 @@ impl PerInputDsp {
 }
 
 impl Default for PerInputDsp {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub const MAX_FRAMES: usize = 1024;
@@ -292,7 +322,6 @@ pub const MAX_INPUT_CHANNELS: usize = 64;
 pub const MAX_BUSES: usize = 8;
 pub const MAX_VCA_GROUPS: usize = 16;
 pub const MAX_GENERATORS: usize = 8;
-
 
 /// Per-bus DSP and summation buffer. Stack-allocated, zero heap use in RT path.
 pub struct BusProcessor {
@@ -323,7 +352,9 @@ impl BusProcessor {
         n_inputs: usize,
     ) {
         let nf = nframes.min(MAX_FRAMES);
-        for s in self.sum_buf[..nf].iter_mut() { *s = 0.0; }
+        for s in self.sum_buf[..nf].iter_mut() {
+            *s = 0.0;
+        }
         for (rx_idx, &is_routed) in routed.iter().enumerate().take(n_inputs) {
             if is_routed {
                 let gain = db_to_linear(*routing_gain.get(rx_idx).unwrap_or(&0.0));
@@ -339,7 +370,9 @@ impl BusProcessor {
     pub fn process(&mut self, nframes: usize, muted: bool) {
         let nf = nframes.min(MAX_FRAMES);
         if muted {
-            for s in self.sum_buf[..nf].iter_mut() { *s = 0.0; }
+            for s in self.sum_buf[..nf].iter_mut() {
+                *s = 0.0;
+            }
             return;
         }
         self.dsp.process_block(&mut self.sum_buf[..nf]);
@@ -347,14 +380,16 @@ impl BusProcessor {
 }
 
 impl Default for BusProcessor {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Per-generator oscillator/noise state (stack-allocated)
 pub struct GeneratorState {
-    pub phase: f32,     // sine oscillator phase
-    pub rng: u64,       // xorshift64 state for white/pink noise
-    pub b: [f32; 7],    // pink noise IIR state (Paul Kellet filter)
+    pub phase: f32,  // sine oscillator phase
+    pub rng: u64,    // xorshift64 state for white/pink noise
+    pub b: [f32; 7], // pink noise IIR state (Paul Kellet filter)
     pub gen_type: crate::config::SignalGenType,
     pub freq_hz: f32,
     pub enabled: bool,
@@ -412,7 +447,7 @@ pub struct MatrixProcessor {
 impl MatrixProcessor {
     pub fn new(n_inputs: usize, n_outputs: usize, sample_rate: f32) -> Self {
         Self {
-            input_dsp:  (0..n_inputs).map(|_| PerInputDsp::new()).collect(),
+            input_dsp: (0..n_inputs).map(|_| PerInputDsp::new()).collect(),
             output_dsp: (0..n_outputs).map(|_| PerOutputDsp::new()).collect(),
             sample_rate,
             scratch: Box::new([[0f32; MAX_FRAMES]; MAX_INPUT_CHANNELS]),
@@ -485,8 +520,18 @@ impl MatrixProcessor {
         };
         for tx_idx in 0..cfg.tx_channels.min(MAX_INPUT_CHANNELS) {
             for rx_idx in 0..cfg.rx_channels.min(MAX_INPUT_CHANNELS) {
-                let enabled = cfg.matrix.get(tx_idx).and_then(|r| r.get(rx_idx)).copied().unwrap_or(false);
-                let gain_db = cfg.matrix_gain_db.get(tx_idx).and_then(|r| r.get(rx_idx)).copied().unwrap_or(0.0);
+                let enabled = cfg
+                    .matrix
+                    .get(tx_idx)
+                    .and_then(|r| r.get(rx_idx))
+                    .copied()
+                    .unwrap_or(false);
+                let gain_db = cfg
+                    .matrix_gain_db
+                    .get(tx_idx)
+                    .and_then(|r| r.get(rx_idx))
+                    .copied()
+                    .unwrap_or(0.0);
                 let target_linear = if enabled { db_to_linear(gain_db) } else { 0.0 };
                 self.xp_ramps[tx_idx][rx_idx].set_target(target_linear);
                 self.xp_ramps[tx_idx][rx_idx].alpha = xp_alpha;
@@ -497,14 +542,26 @@ impl MatrixProcessor {
         self.vca_input_map = [None; MAX_INPUT_CHANNELS];
         self.vca_output_map = [None; MAX_INPUT_CHANNELS];
         for (vca_idx, vca) in cfg.vca_groups.iter().enumerate().take(MAX_VCA_GROUPS) {
-            let target = if vca.muted { 0.0 } else { db_to_linear(vca.gain_db) };
+            let target = if vca.muted {
+                0.0
+            } else {
+                db_to_linear(vca.gain_db)
+            };
             self.vca_ramps[vca_idx].set_target(target);
             self.vca_ramps[vca_idx].alpha = compute_ramp_alpha(cfg.gain_ramp_ms, self.sample_rate);
             for member_id in &vca.members {
                 if let Some(idx) = parse_channel_id(member_id) {
                     match vca.group_type {
-                        VcaGroupType::Input  => { if idx < MAX_INPUT_CHANNELS { self.vca_input_map[idx]  = Some(vca_idx); } }
-                        VcaGroupType::Output => { if idx < MAX_INPUT_CHANNELS { self.vca_output_map[idx] = Some(vca_idx); } }
+                        VcaGroupType::Input => {
+                            if idx < MAX_INPUT_CHANNELS {
+                                self.vca_input_map[idx] = Some(vca_idx);
+                            }
+                        }
+                        VcaGroupType::Output => {
+                            if idx < MAX_INPUT_CHANNELS {
+                                self.vca_output_map[idx] = Some(vca_idx);
+                            }
+                        }
                     }
                 }
             }
@@ -530,11 +587,17 @@ impl MatrixProcessor {
             let n_tx = cfg.tx_channels;
             gains.resize(n_tx.max(gains.len()), 0.0);
             for tx_idx in 0..n_tx {
-                let db = cfg.generator_bus_matrix.get(i)
+                let db = cfg
+                    .generator_bus_matrix
+                    .get(i)
                     .and_then(|row| row.get(tx_idx))
                     .copied()
                     .unwrap_or(f32::NEG_INFINITY);
-                gains[tx_idx] = if db.is_finite() { db_to_linear(db) } else { 0.0 };
+                gains[tx_idx] = if db.is_finite() {
+                    db_to_linear(db)
+                } else {
+                    0.0
+                };
             }
         }
 
@@ -566,10 +629,13 @@ impl MatrixProcessor {
         // Outputs are post-DSP (trim applied) and protected by the output limiter;
         // the monitor path has no limiter, so a pre-DSP tap is the safe choice.
         if self.solo_active {
-            for s in self.monitor_buf[..nf].iter_mut() { *s = 0.0; }
+            for s in self.monitor_buf[..nf].iter_mut() {
+                *s = 0.0;
+            }
             for rx_idx in 0..max_inputs {
                 if self.solo_mask[rx_idx] {
-                    for (s_out, &s_in) in self.monitor_buf[..nf].iter_mut()
+                    for (s_out, &s_in) in self.monitor_buf[..nf]
+                        .iter_mut()
                         .zip(inputs[rx_idx][..nf].iter())
                     {
                         *s_out += s_in;
@@ -578,7 +644,9 @@ impl MatrixProcessor {
             }
             let mon_gain = db_to_linear(config.monitor_volume_db);
             if (mon_gain - 1.0).abs() > 1e-6 {
-                for s in self.monitor_buf[..nf].iter_mut() { *s *= mon_gain; }
+                for s in self.monitor_buf[..nf].iter_mut() {
+                    *s *= mon_gain;
+                }
             }
         }
 
@@ -605,24 +673,35 @@ impl MatrixProcessor {
             if let Some(vca_idx) = self.vca_input_map[i] {
                 let vca_gain = vca_gains[vca_idx];
                 if (vca_gain - 1.0).abs() > 1e-6 {
-                    for s in self.scratch[i][..nf].iter_mut() { *s *= vca_gain; }
+                    for s in self.scratch[i][..nf].iter_mut() {
+                        *s *= vca_gain;
+                    }
                 }
             }
         }
 
         // --- Automixer: apply Dugan gain-sharing (and optional NOM gating) ---
-        self.automixer.process_block(&mut self.scratch[..max_inputs.max(1)], nf);
+        self.automixer
+            .process_block(&mut self.scratch[..max_inputs.max(1)], nf);
 
         // --- Bus stage: sum inputs into each bus, apply bus-to-bus feeds, then bus DSP ---
         let n_buses = config.internal_buses.len().min(MAX_BUSES);
         for b in 0..n_buses {
-            let routed = config.internal_buses.get(b)
+            let routed = config
+                .internal_buses
+                .get(b)
                 .map(|bc| bc.routing.as_slice())
                 .unwrap_or(&[]);
-            let routing_gain = config.internal_buses.get(b)
+            let routing_gain = config
+                .internal_buses
+                .get(b)
                 .map(|bc| bc.routing_gain.as_slice())
                 .unwrap_or(&[]);
-            let muted = config.internal_buses.get(b).map(|bc| bc.muted).unwrap_or(false);
+            let muted = config
+                .internal_buses
+                .get(b)
+                .map(|bc| bc.muted)
+                .unwrap_or(false);
 
             // Sum RX inputs into bus b
             let (left, right) = self.bus_processors[..n_buses].split_at_mut(b);
@@ -647,17 +726,25 @@ impl MatrixProcessor {
         }
 
         // --- Generate signal generator buffers (once, before output mix loop) ---
-        let n_gens = config.signal_generators.len().min(self.gen_states.len()).min(MAX_GENERATORS);
+        let n_gens = config
+            .signal_generators
+            .len()
+            .min(self.gen_states.len())
+            .min(MAX_GENERATORS);
         for gen_idx in 0..n_gens {
             let gstate = &mut self.gen_states[gen_idx];
             let buf = &mut self.gen_scratch[gen_idx];
             if !gstate.enabled {
-                for s in buf[..nf].iter_mut() { *s = 0.0; }
+                for s in buf[..nf].iter_mut() {
+                    *s = 0.0;
+                }
                 continue;
             }
             let level_db = config.signal_generators[gen_idx].level_db;
             if !level_db.is_finite() {
-                for s in buf[..nf].iter_mut() { *s = 0.0; }
+                for s in buf[..nf].iter_mut() {
+                    *s = 0.0;
+                }
                 continue;
             }
             let level = db_to_linear(level_db);
@@ -696,8 +783,8 @@ impl MatrixProcessor {
                         b[2] = 0.96900 * b[2] + white * 0.1538520;
                         b[3] = 0.86650 * b[3] + white * 0.3104856;
                         b[4] = 0.55000 * b[4] + white * 0.5329522;
-                        b[5] = -0.7616  * b[5] - white * 0.0168980;
-                        let pink = b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+white*0.5362;
+                        b[5] = -0.7616 * b[5] - white * 0.0168980;
+                        let pink = b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + white * 0.5362;
                         b[6] = white * 0.115926;
                         *s = pink * 0.11 * level;
                     }
@@ -728,14 +815,18 @@ impl MatrixProcessor {
         }
 
         for (tx_idx, output) in outputs.iter_mut().enumerate() {
-            let out_gain = db_to_linear(
-                config.output_gain_db.get(tx_idx).copied().unwrap_or(0.0)
-            );
+            let out_gain = db_to_linear(config.output_gain_db.get(tx_idx).copied().unwrap_or(0.0));
 
-            for s in output.iter_mut() { *s = 0.0; }
+            for s in output.iter_mut() {
+                *s = 0.0;
+            }
 
             let out_muted = config.output_muted.get(tx_idx).copied().unwrap_or(false)
-                || config.output_dsp.get(tx_idx).map(|c| c.muted).unwrap_or(false);
+                || config
+                    .output_dsp
+                    .get(tx_idx)
+                    .map(|c| c.muted)
+                    .unwrap_or(false);
             if out_muted {
                 continue;
             }
@@ -747,11 +838,13 @@ impl MatrixProcessor {
                 } else {
                     0.0
                 };
-                if xp_linear < 1e-6 { continue; }
+                if xp_linear < 1e-6 {
+                    continue;
+                }
 
-                let in_gain = db_to_linear(
-                    config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
-                ) * xp_linear;
+                let in_gain =
+                    db_to_linear(config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0))
+                        * xp_linear;
                 let src = if rx_idx < max_inputs {
                     &self.scratch[rx_idx][..nf]
                 } else {
@@ -762,10 +855,10 @@ impl MatrixProcessor {
                 }
             }
 
-
             // Sum bus outputs into this TX output
             for b in 0..n_buses {
-                let bus_routed = config.bus_matrix
+                let bus_routed = config
+                    .bus_matrix
                     .as_ref()
                     .and_then(|bm| bm.get(tx_idx))
                     .and_then(|row| row.get(b))
@@ -773,8 +866,7 @@ impl MatrixProcessor {
                     .unwrap_or(false);
                 if bus_routed {
                     if let Some(bp) = self.bus_processors.get(b) {
-                        for (s_out, &s_bus) in output[..nf].iter_mut()
-                            .zip(bp.sum_buf[..nf].iter())
+                        for (s_out, &s_bus) in output[..nf].iter_mut().zip(bp.sum_buf[..nf].iter())
                         {
                             *s_out += s_bus;
                         }
@@ -784,24 +876,32 @@ impl MatrixProcessor {
 
             // Mix generator signals into this TX output
             for gen_idx in 0..n_gens {
-                let g = self.gen_gains_linear.get(gen_idx)
+                let g = self
+                    .gen_gains_linear
+                    .get(gen_idx)
                     .and_then(|row| row.get(tx_idx))
                     .copied()
                     .unwrap_or(0.0);
-                if g < 1e-6 { continue; }
+                if g < 1e-6 {
+                    continue;
+                }
                 let gen_buf = &self.gen_scratch[gen_idx];
                 for (s_out, &s_gen) in output[..nf].iter_mut().zip(gen_buf[..nf].iter()) {
                     *s_out += s_gen * g;
                 }
             }
 
-            for s in output[..nf].iter_mut() { *s *= out_gain; }
+            for s in output[..nf].iter_mut() {
+                *s *= out_gain;
+            }
 
             // Apply output VCA multiplier before output DSP
             if let Some(vca_idx) = self.vca_output_map[tx_idx] {
                 let vca_gain = vca_gains[vca_idx];
                 if (vca_gain - 1.0).abs() > 1e-6 {
-                    for s in output[..nf].iter_mut() { *s *= vca_gain; }
+                    for s in output[..nf].iter_mut() {
+                        *s *= vca_gain;
+                    }
                 }
             }
 
@@ -841,7 +941,11 @@ pub fn process(
 
         // Honour both legacy output_muted and per-channel muted flag
         let out_muted = config.output_muted.get(tx_idx).copied().unwrap_or(false)
-            || config.output_dsp.get(tx_idx).map(|c| c.muted).unwrap_or(false);
+            || config
+                .output_dsp
+                .get(tx_idx)
+                .map(|c| c.muted)
+                .unwrap_or(false);
         if out_muted {
             continue;
         }
@@ -856,9 +960,8 @@ pub fn process(
                 .unwrap_or(false);
 
             if routed {
-                let in_gain = db_to_linear(
-                    config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0)
-                );
+                let in_gain =
+                    db_to_linear(config.input_gain_db.get(rx_idx).copied().unwrap_or(0.0));
                 for (s_out, s_in) in output[..nframes].iter_mut().zip(input[..nframes].iter()) {
                     *s_out += s_in * in_gain;
                 }
@@ -875,6 +978,7 @@ pub fn process(
 
 /// Parse "rx_3" → Some(3), "tx_7" → Some(7), anything else → None
 fn parse_channel_id(id: &str) -> Option<usize> {
-    id.strip_prefix("rx_").or_else(|| id.strip_prefix("tx_"))
-       .and_then(|n| n.parse().ok())
+    id.strip_prefix("rx_")
+        .or_else(|| id.strip_prefix("tx_"))
+        .and_then(|n| n.parse().ok())
 }

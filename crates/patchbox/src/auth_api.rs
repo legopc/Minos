@@ -1,5 +1,6 @@
 //! Login endpoint + JWT middleware extractor
 
+use crate::{jwt, pam_auth, state::AppState};
 use axum::{
     extract::{Request, State},
     http::{header, StatusCode},
@@ -8,7 +9,6 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use crate::{jwt, pam_auth, state::AppState};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -33,7 +33,11 @@ pub async fn login(
     let pam_result = pam_auth::authenticate("patchbox", &req.username, &req.password).await;
     if let Err(e) = pam_result {
         tracing::warn!("login failed for {}: {}", req.username, e);
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "invalid credentials"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "invalid credentials"})),
+        )
+            .into_response();
     }
 
     // Determine role from Linux groups
@@ -49,7 +53,11 @@ pub async fn login(
         Ok(t) => t,
         Err(e) => {
             tracing::error!("jwt generation failed: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "token error"}))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "token error"})),
+            )
+                .into_response();
         }
     };
 
@@ -60,7 +68,8 @@ pub async fn login(
         role: role.to_owned(),
         zone,
         expires_in: jwt::TOKEN_EXPIRY_SECS,
-    }).into_response()
+    })
+    .into_response()
 }
 
 /// POST /api/v1/auth/refresh
@@ -77,8 +86,11 @@ pub async fn refresh_token(
         .and_then(|v| v.strip_prefix("Bearer "));
 
     let Some(tok) = token_str else {
-        return (StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": "missing token"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "missing token"})),
+        )
+            .into_response();
     };
 
     let secret = state.jwt_secret.read().await;
@@ -90,24 +102,25 @@ pub async fn refresh_token(
                     "token": token,
                     "expires_in": jwt::TOKEN_EXPIRY_SECS,
                     "role": new_claims.role,
-                })).into_response(),
+                }))
+                .into_response(),
                 Err(e) => {
                     tracing::error!("jwt refresh generation failed: {e}");
                     StatusCode::INTERNAL_SERVER_ERROR.into_response()
                 }
             }
         }
-        Err(_) => (StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": "invalid or expired token"}))).into_response(),
+        Err(_) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "invalid or expired token"})),
+        )
+            .into_response(),
     }
 }
 
-pub async fn require_auth(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let token = req.headers()
+pub async fn require_auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
+    let token = req
+        .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
@@ -119,8 +132,6 @@ pub async fn require_auth(
             req.extensions_mut().insert(claims);
             next.run(req).await
         }
-        None => {
-            (StatusCode::UNAUTHORIZED, "invalid or missing token").into_response()
-        }
+        None => (StatusCode::UNAUTHORIZED, "invalid or missing token").into_response(),
     }
 }
