@@ -920,6 +920,14 @@
   transition: opacity 0.15s;
 }
 
+/* ── Reorder group container (VCA / AXM / GEN / BUS groups in masters) ──────── */
+.mixer-reorder-group {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-width: 0;
+}
+
 /* ── VCA Groups ─────────────────────────────────────────────────────────────── */
 .mixer-vca-separator {
   writing-mode: vertical-lr;
