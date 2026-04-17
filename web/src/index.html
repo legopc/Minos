@@ -15,6 +15,13 @@
   <link rel="stylesheet" href="/css/system.css">
 </head>
 <body>
+<!-- Skip to content link (hidden until focused) -->
+<a href="#main-content" id="skip-link" class="skip-link">Skip to main content</a>
+
+<!-- Live regions for screen reader announcements -->
+<div id="sr-live-polite" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+<div id="sr-live-assertive" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
+
 <div id="offline-banner" hidden aria-live="assertive" role="alert" style="display:none">
   ⚠ OFFLINE — reconnecting…
 </div>
@@ -48,7 +55,7 @@
   </div>
 
   <!-- Main content area -->
-  <div id="app">
+  <div id="app" id="main-content">
     <div id="tab-matrix"  class="tab-content active"></div>
     <div id="tab-mixer"   class="tab-content"></div>
     <div id="tab-scenes"  class="tab-content"></div>

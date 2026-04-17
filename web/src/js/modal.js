@@ -21,7 +21,16 @@ export function confirmModal({ title, body, confirmLabel = 'Confirm', cancelLabe
   `;
   document.body.appendChild(overlay);
 
-  const cleanup = () => overlay.remove();
+  // Store previous focus to restore after modal closes
+  const previouslyFocused = document.activeElement;
+
+  const cleanup = () => {
+    overlay.remove();
+    if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      previouslyFocused.focus();
+    }
+  };
+
   overlay.querySelector('.modal-cancel').addEventListener('click', cleanup);
   overlay.querySelector('.modal-confirm').addEventListener('click', () => { cleanup(); onConfirm(); });
 
@@ -30,18 +39,35 @@ export function confirmModal({ title, body, confirmLabel = 'Confirm', cancelLabe
     if (e.target === overlay) cleanup();
   });
 
+  // Focus trap and keyboard handling
   overlay.addEventListener('keydown', e => {
-    if (e.key === 'Escape') cleanup();
+    if (e.key === 'Escape') {
+      cleanup();
+      return;
+    }
     if (e.key === 'Tab') {
-      const focusable = overlay.querySelectorAll('button');
+      const focusable = Array.from(overlay.querySelectorAll('button'));
+      if (focusable.length === 0) return;
       const first = focusable[0], last = focusable[focusable.length - 1];
-      if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
-      else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   });
 
-  // Focus confirm button (danger) or cancel by default
-  setTimeout(() => overlay.querySelector(danger ? '.modal-confirm' : '.modal-cancel').focus(), 0);
+  // Focus first button (cancel for safety, confirm for danger)
+  setTimeout(() => {
+    const targetBtn = overlay.querySelector(danger ? '.modal-confirm' : '.modal-cancel');
+    if (targetBtn) targetBtn.focus();
+  }, 0);
 }
 
 /** Modal with a text input. onConfirm(value) called with non-empty trimmed value. */
@@ -67,7 +93,15 @@ export function inputModal({ title, placeholder = '', defaultValue = '', confirm
   document.body.appendChild(overlay);
 
   const input = overlay.querySelector('.modal-input');
-  const cleanup = () => overlay.remove();
+  const previouslyFocused = document.activeElement;
+
+  const cleanup = () => {
+    overlay.remove();
+    if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      previouslyFocused.focus();
+    }
+  };
+
   const confirm = () => {
     const v = input.value.trim();
     if (!v) { input.focus(); return; }
@@ -78,8 +112,35 @@ export function inputModal({ title, placeholder = '', defaultValue = '', confirm
   overlay.querySelector('.modal-cancel').addEventListener('click', cleanup);
   overlay.querySelector('.modal-confirm').addEventListener('click', confirm);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') confirm();
-    if (e.key === 'Escape') cleanup();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirm();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cleanup();
+    }
+  });
+
+  // Focus trap for input modal
+  const buttons = Array.from(overlay.querySelectorAll('button'));
+  overlay.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      if (buttons.length === 0) return;
+      const focusable = [input, ...buttons];
+      const currentIdx = focusable.indexOf(document.activeElement);
+      if (e.shiftKey) {
+        if (currentIdx <= 0) {
+          e.preventDefault();
+          focusable[focusable.length - 1].focus();
+        }
+      } else {
+        if (currentIdx >= focusable.length - 1) {
+          e.preventDefault();
+          focusable[0].focus();
+        }
+      }
+    }
   });
 
   overlay.addEventListener('pointerdown', e => {

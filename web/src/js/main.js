@@ -33,7 +33,10 @@ async function loadTabModule(tab) {
 
 async function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tab);
+    const isActive = b.dataset.tab === tab;
+    b.classList.toggle('active', isActive);
+    b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    b.setAttribute('tabindex', isActive ? '0' : '-1');
   });
   document.querySelectorAll('.tab-content').forEach(el => {
     el.classList.toggle('active', el.id === `tab-${tab}`);
@@ -263,9 +266,27 @@ window.addEventListener('pb:metering', e => {
 document.addEventListener('DOMContentLoaded', async () => {
   setupLogin();
 
-  // Wire tab buttons
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  // Wire tab buttons with ARIA and roving tabindex
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  tabButtons.forEach((btn, idx) => {
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
+    btn.setAttribute('tabindex', btn.classList.contains('active') ? '0' : '-1');
+    
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    
+    // Arrow key navigation for tabs
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const nextBtn = tabButtons[(idx + 1) % tabButtons.length];
+        nextBtn.focus();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prevBtn = tabButtons[(idx - 1 + tabButtons.length) % tabButtons.length];
+        prevBtn.focus();
+      }
+    });
   });
 
   // Auth check — try a lightweight call; if 401, go to login
