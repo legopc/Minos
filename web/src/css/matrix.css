@@ -677,6 +677,7 @@
 
 .xp-cell.bus .xp-dot {
   background: var(--bus-route-color);
+  box-shadow: 0 0 8px 2px var(--bus-route-color);
 }
 
 
@@ -716,6 +717,7 @@
 .xp-cell.bus-src.active .xp-dot {
   background: var(--bus-route-color);
   border-color: var(--bus-route-color);
+  box-shadow: 0 0 8px 2px var(--bus-route-color);
 }
 
 .corner-dot-bus {
