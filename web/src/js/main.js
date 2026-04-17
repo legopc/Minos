@@ -3,6 +3,7 @@
 import * as api      from './api.js';
 import * as st       from './state.js';
 import * as shortcuts from './shortcuts.js';
+import { undo }      from './undo.js';
 import { initWs }    from './ws.js';
 import { toast as _toast } from './toast.js';
 
@@ -263,6 +264,48 @@ window.addEventListener('pb:metering', e => {
   import('./mixer.js').then(m => m.updateMetering?.(e.detail.rx, e.detail.tx, e.detail.bus)).catch(() => {});
 });
 
+function _announce(msg) {
+  const live = document.getElementById('sr-live-polite');
+  if (live) live.textContent = msg;
+}
+
+async function _doUndoRedo(dir) {
+  try {
+    const ok = dir === 'undo' ? await undo.undo() : await undo.redo();
+    if (!ok) return;
+  } catch (e) {
+    toast((dir === 'undo' ? 'Undo' : 'Redo') + ' failed: ' + (e && e.message ? e.message : String(e)), true);
+  }
+}
+
+function _setupUndoUi() {
+  const bUndo = document.getElementById('tb-undo');
+  const bRedo = document.getElementById('tb-redo');
+  if (!bUndo || !bRedo) return;
+
+  const applyState = (st) => {
+    bUndo.disabled = !st || !st.canUndo;
+    bRedo.disabled = !st || !st.canRedo;
+    bUndo.title = st && st.undoLabel ? ('Undo: ' + st.undoLabel) : 'Undo (Ctrl/Cmd+Z)';
+    bRedo.title = st && st.redoLabel ? ('Redo: ' + st.redoLabel) : 'Redo (Ctrl/Cmd+Shift+Z)';
+  };
+
+  window.addEventListener('undo:change', e => applyState(e.detail));
+  window.addEventListener('undo:applied', async (e) => {
+    toast((e.detail.direction === 'undo' ? 'Undid' : 'Redid') + ': ' + e.detail.label);
+    _announce(e.detail.direction + ': ' + e.detail.label);
+    const tab = st.state.activeTab;
+    const mod = _tabModules[tab] || await loadTabModule(tab);
+    const el = document.getElementById('tab-' + tab);
+    try { if (mod && mod.render) mod.render(el); } catch (_) {}
+  });
+
+  bUndo.addEventListener('click', () => _doUndoRedo('undo'));
+  bRedo.addEventListener('click', () => _doUndoRedo('redo'));
+
+  applyState({ canUndo: undo.canUndo(), canRedo: undo.canRedo(), undoLabel: undo.undoLabel(), redoLabel: undo.redoLabel() });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   setupLogin();
 
@@ -303,10 +346,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     hideLogin();
     await loadAll();
     shortcuts.setupShortcuts();
+    _setupUndoUi();
 
     window.addEventListener('shortcut:close-panels', () => {
       import('./panels.js').then(m => m.closeAllPanels?.());
     });
+
+    window.addEventListener('shortcut:undo', () => _doUndoRedo('undo'));
+    window.addEventListener('shortcut:redo', () => _doUndoRedo('redo'));
 
     window.addEventListener('shortcut:load-scene', (e) => {
       const favs = (st.state.scenes ?? []).filter(s => s.is_favourite);
@@ -321,6 +368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       hideLogin();
       await loadAll();
       shortcuts.setupShortcuts();
+      _setupUndoUi();
 
       window.addEventListener('shortcut:close-panels', () => {
         import('./panels.js').then(m => m.closeAllPanels?.());

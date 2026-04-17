@@ -3,6 +3,8 @@ import * as st  from './state.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
 import { buildOutputMaster } from './mixer.js';
+import { makeReorderable, applyOrder, saveOrder } from './reorder.js';
+import { undo } from './undo.js';
 
 let _container = null;
 
@@ -119,18 +121,25 @@ function _showZonePanel(zone) {
 
 function _renderCards(grid) {
   grid.innerHTML = '';
-  const zones = st.zoneList();
-  if (!zones.length) {
+  const zonesRaw = st.zoneList();
+  if (!zonesRaw.length) {
     grid.innerHTML = '<div style="padding:24px;color:var(--text-muted);font-size:10px;">No zones configured.</div>';
     return;
   }
-  zones.forEach(zone => grid.appendChild(_buildCard(zone)));
+  applyOrder('zones', zonesRaw, z => z.id).forEach(zone => grid.appendChild(_buildCard(zone)));
+  makeReorderable(grid, {
+    itemSelector: '.zone-card',
+    orientation:  'vertical',
+    getId:        el => el.dataset.zoneId,
+    onReorder:    ids => saveOrder('zones', ids),
+  });
 }
 
 function _buildCard(zone) {
   const colour = st.getZoneColour(zone.colour_index ?? 0);
   const card = document.createElement('div');
   card.className = 'zone-card';
+  card.dataset.zoneId = zone.id;
   card.style.setProperty('--zone-card-color', colour);
 
   const hdr = document.createElement('div');

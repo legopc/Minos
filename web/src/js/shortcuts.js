@@ -1,20 +1,42 @@
 // shortcuts.js — global keyboard shortcut handler
 
+function _isTypingTarget(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  const t = el.tagName;
+  return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT';
+}
+
 export function setupShortcuts() {
   document.addEventListener('keydown', e => {
-    // Skip if user is typing in an input/textarea
-    if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (_isTypingTarget(e.target)) return;
 
-    // Ctrl+S: Save scene
-    if (e.ctrlKey && e.key === 's') {
+    const key = (e.key || '').toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+
+    // Cmd/Ctrl+S: Save scene
+    if (mod && key === 's') {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent('shortcut:save-scene'));
       return;
     }
 
+    // Cmd/Ctrl+Z: Undo
+    if (mod && !e.shiftKey && key === 'z') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('shortcut:undo'));
+      return;
+    }
+
+    // Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y: Redo
+    if (mod && ((key === 'z' && e.shiftKey) || key === 'y')) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('shortcut:redo'));
+      return;
+    }
+
     // ESC: Clear solo + close DSP panels
     if (e.key === 'Escape') {
-      // Don't preventDefault — let modals handle ESC first via their own listeners
       window.dispatchEvent(new CustomEvent('shortcut:clear-solo'));
       window.dispatchEvent(new CustomEvent('shortcut:close-panels'));
       return;
@@ -27,16 +49,9 @@ export function setupShortcuts() {
       return;
     }
 
-    // Ctrl+Z: Undo last route
-    if (e.ctrlKey && e.key === 'z') {
-      e.preventDefault();
-      window.dispatchEvent(new CustomEvent('shortcut:undo-route'));
-      return;
-    }
-
     // 1–8: Quick load favourite scene by index
-    if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key >= '1' && e.key <= '8') {
-      const idx = parseInt(e.key) - 1;
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && key >= '1' && key <= '8') {
+      const idx = parseInt(key, 10) - 1;
       window.dispatchEvent(new CustomEvent('shortcut:load-scene', { detail: { index: idx } }));
       return;
     }
@@ -58,10 +73,12 @@ function _showHelp() {
       <button class="shortcuts-close" aria-label="Close">✕</button>
     </div>
     <table class="shortcuts-table">
-      <tr><td class="shortcut-key">Ctrl+S</td><td>Save scene snapshot</td></tr>
+      <tr><td class="shortcut-key">Ctrl/Cmd+S</td><td>Save scene snapshot</td></tr>
+      <tr><td class="shortcut-key">Ctrl/Cmd+Z</td><td>Undo</td></tr>
+      <tr><td class="shortcut-key">Ctrl/Cmd+Shift+Z</td><td>Redo</td></tr>
+      <tr><td class="shortcut-key">Ctrl/Cmd+Y</td><td>Redo</td></tr>
       <tr><td class="shortcut-key">Esc</td><td>Clear solo / close panels</td></tr>
       <tr><td class="shortcut-key">?</td><td>Show this help</td></tr>
-      <tr><td class="shortcut-key">Ctrl+Z</td><td>Undo last route change</td></tr>
       <tr><td class="shortcut-key">1 – 8</td><td>Quick-load favourite scene</td></tr>
     </table>
   `;
