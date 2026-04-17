@@ -1,0 +1,1 @@
+{ "rx_channels": "two", "tx_channels": [1,2,3], "matrix": [ [ true, ] ] }

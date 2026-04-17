@@ -1,0 +1,6 @@
+target/
+artifacts/
+coverage/
+Cargo.lock
+
+# corpora are intentionally versioned (seed inputs)

@@ -1,0 +1,13 @@
+{
+  "rx_channels": 2,
+  "tx_channels": 2,
+  "zones": ["A", "B"],
+  "sources": ["S1", "S2"],
+  "input_gain_db": [0.0, 0.0],
+  "output_gain_db": [0.0, 0.0],
+  "matrix": [[true, false], [false, true]],
+  "matrix_gain_db": [[0.0, -6.0], [3.0, 0.0]],
+  "dante_name": "patchbox",
+  "dante_nic": "eth0",
+  "port": 9191
+}
