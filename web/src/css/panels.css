@@ -188,8 +188,8 @@
 .dsp-gr-bar {
   height: 100%;
   width: 0%;
-  background: var(--vu-amber, #f5a623);
-  border-radius: 3px;
+  background: var(--meter-saturation);
+  border-radius: var(--r-2);
   transition: width 0.1s linear;
 }
 

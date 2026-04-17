@@ -1,20 +1,20 @@
 /* Matrix Tab Routing Grid CSS */
 
 /* ── Generator rows ─────────────────────────────────────────────────────── */
-.gen-separator-row .gen-sep-label { color: #0891b2; font-size: 10px; letter-spacing: 0.1em; font-weight: 700; }
-.gen-row .ch-label { border-left: 2px solid #0891b2; }
+.gen-separator-row .gen-sep-label { color: var(--gen-sine); font-size: 10px; letter-spacing: 0.1em; font-weight: 700; }
+.gen-row .ch-label { border-left: 2px solid var(--gen-sine); }
 .gen-row .xp-cell.disabled-cell { opacity: 0.15; pointer-events: none; }
-.xp-cell.gen-bus-active .xp-dot { background: #0891b2; border-color: #0891b2; box-shadow: 0 0 8px 2px #0891b2; }
-.gen-type-badge { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #0891b2; color: #fff; margin-left: 4px; flex-shrink: 0; }
+.xp-cell.gen-bus-active .xp-dot { background: var(--gen-sine); border-color: var(--gen-sine); box-shadow: 0 0 8px 2px var(--gen-sine); }
+.gen-type-badge { font-size: 9px; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-2); background: var(--gen-sine); color: #fff; margin-left: var(--sp-2); flex-shrink: 0; }
 
 /* ── Stereo link tags ────────────────────────────────────────────────────── */
 .ch-stereo-tag {
   font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: #58a6ff;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-2);
+  background: var(--xp-local);
   color: #0d1117;
-  margin-left: 4px;
+  margin-left: var(--sp-2);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -104,13 +104,13 @@
 .corner-filter-input {
   flex: 1;
   min-width: 0;
-  background: var(--bg-surface, #1a1a1a);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  background: var(--bg-surface);
+  border: var(--sp-1) solid var(--border-primary);
+  border-radius: var(--r-3);
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
-  padding: 7px 10px;
+  padding: var(--sp-3) var(--sp-4);
   outline: none;
   height: 34px;
   box-sizing: border-box;
@@ -133,25 +133,25 @@
 .corner-btn {
   font-size: 12px;
   font-family: inherit;
-  padding: 0 8px;
+  padding: 0 var(--sp-4);
   height: 36px;
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  background: var(--bg-surface, #222);
-  color: var(--text-secondary, #aaa);
+  border: var(--sp-1) solid var(--border-primary);
+  border-radius: var(--r-3);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--sp-2);
   transition: background 0.12s, color 0.12s, border-color 0.12s;
   touch-action: manipulation;
   position: relative;
 }
 .corner-btn:hover {
-  background: var(--bg-row-hover, #2a2a2a);
+  background: var(--bg-hover);
   color: var(--text-primary);
   border-color: var(--color-accent);
 }
@@ -164,13 +164,13 @@
   color: var(--color-accent);
 }
 .corner-btn.pending {
-  border-color: #f59e0b;
-  color: #f59e0b;
+  border-color: var(--vu-amber);
+  color: var(--vu-amber);
   animation: corner-pulse 1s ease-in-out infinite alternate;
 }
 @keyframes corner-pulse {
-  from { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
-  to   { box-shadow: 0 0 8px 2px rgba(245,158,11,0.45); }
+  from { box-shadow: 0 0 0 0 rgba(210,153,34,0); }
+  to   { box-shadow: 0 0 8px 2px rgba(210,153,34,0.45); }
 }
 
 .corner-lock-btn {
@@ -193,26 +193,26 @@
   cursor: default;
 }
 .corner-stat.danger {
-  color: var(--vu-red, #ef4444);
+  color: var(--vu-red);
   font-weight: 600;
 }
 
 /* ── Pick mode — highlight channel labels as tap targets ─────────────────── */
 .matrix-grid.pick-mode .ch-label {
-  outline: 2px solid var(--color-accent, #4da6ff);
-  background: color-mix(in srgb, var(--color-accent, #4da6ff) 12%, var(--bg-dark));
+  outline: 2px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--bg-dark));
   cursor: crosshair !important;
 }
 .matrix-grid.pick-mode .ch-label:hover {
-  background: color-mix(in srgb, var(--color-accent, #4da6ff) 28%, var(--bg-dark));
+  background: color-mix(in srgb, var(--color-accent) 28%, var(--bg-dark));
 }
 
 /* ── Unrouted row highlight ─────────────────────────────────────────────── */
 .xp-row.unrouted-highlight .ch-label {
-  background: color-mix(in srgb, #ef444412 80%, var(--bg-dark));
+  background: color-mix(in srgb, var(--color-error) 12%, var(--bg-dark));
 }
 .xp-row.unrouted-highlight {
-  background: #ef444408;
+  background: color-mix(in srgb, var(--color-error) 3%, transparent);
 }
 
 .corner-dims {
@@ -641,8 +641,11 @@
 
 /* ── Internal Buses ─────────────────────────────────────── */
 :root {
-  --accent-gold: #e3b341;
-  --bus-route-color: #e3b341;
+  --accent-gold: var(--accent-gold);
+  --bus-route-color: var(--accent-gold);
+  --surface-0: var(--bg-dark);
+  --surface-1: var(--bg-surface);
+  --border: var(--border-primary);
 }
 
 .bus-separator-row {

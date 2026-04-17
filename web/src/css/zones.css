@@ -208,7 +208,7 @@
   flex: 1;
   text-decoration: underline dotted;
 }
-.zone-card-name-btn:hover { color: var(--accent-primary); }
+.zone-card-name-btn:hover { color: var(--color-accent); }
 
 /* s7-ui-touch-targets: expand tap target for zone mute button on touch devices */
 @media (pointer: coarse) {

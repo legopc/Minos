@@ -194,7 +194,7 @@
 
 .scenes-xf-select:focus {
   outline: none;
-  border-color: var(--accent-blue);
+  border-color: var(--color-accent);
 }
 
 

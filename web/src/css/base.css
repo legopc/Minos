@@ -1,31 +1,45 @@
 :root {
+  /* ── Colors: Backgrounds ───────────────────────────────────────────────── */
   --bg-workspace:   #1a1d24;
   --bg-surface:     #1e2230;
   --bg-dark:        #13151c;
   --bg-row-hover:   #1f2330;
   --bg-row-sel:     #1e2740;
   --bg-input:       #0f1117;
+  --bg-hover:       #2a2a2a;
+
+  /* ── Colors: Borders ───────────────────────────────────────────────────── */
   --border-primary: #2d3140;
   --border-subtle:  #1a1d2a;
+
+  /* ── Colors: Text ─────────────────────────────────────────────────────── */
   --text-primary:   #e6edf3;
   --text-secondary: #c9d1d9;
   --text-muted:     #8b949e;
   --text-dim:       #484f58;
   --text-accent:    #58a6ff;
+
+  /* ── Colors: Status indicators ─────────────────────────────────────────── */
   --vu-green:       #3fb950;
   --vu-amber:       #d29922;
   --vu-red:         #f85149;
   --dot-live:       #3fb950;
   --dot-offline:    #484f58;
   --dot-error:      #f85149;
+
+  /* ── Colors: Crosspoint routing ────────────────────────────────────────── */
   --xp-local:       #58a6ff;
   --xp-dante:       #d29922;
+
+  /* ── Colors: Controls ─────────────────────────────────────────────────── */
   --fader-track:    #2d3140;
   --fader-thumb:    #8b949e;
   --fader-thumb-sel:#58a6ff;
   --meter-bg:       #0f1117;
   --mute-active:    #f85149;
   --solo-active:    #d29922;
+
+  /* ── Colors: Zone palette ──────────────────────────────────────────────── */
   --zone-color-0:   #58a6ff;
   --zone-color-1:   #3fb950;
   --zone-color-2:   #d29922;
@@ -36,15 +50,68 @@
   --zone-color-7:   #79c0ff;
   --zone-color-8:   #56d364;
   --zone-color-9:   #e3b341;
-  --color-accent:  #58a6ff;
-  --color-danger:  #f85149;
-  --color-ok:      #3fb950;
-  --color-warn:    #d29922;
-  --color-text-dim:#484f58;
-  --row-h:   64px;
-  --col-w:   44px;
-  --ch-w:    240px;
-  --ch-w-out:120px;
+
+  /* ── Colors: Semantic ──────────────────────────────────────────────────– */
+  --color-accent:   #58a6ff;
+  --color-danger:   #f85149;
+  --color-ok:       #3fb950;
+  --color-warn:     #d29922;
+  --color-text-dim: #484f58;
+
+  /* ── Colors: Matrix UI ─────────────────────────────────────────────────── */
+  --matrix-gen-color: #0891b2;
+  --color-error:    #ef4444;
+  --accent-gold:    #e3b341;
+
+  /* ── Colors: DSP & Generators ──────────────────────────────────────────── */
+  --gen-sine:       #0891b2;
+  --gen-white-noise:#94a3b8;
+  --gen-pink-noise: #f472b6;
+  --gen-freq-sweep: #f59e0b;
+  --accent-primary: #a371f7;
+  --accent-secondary: #e3b341;
+  --vca-color:      #a855f7;
+  --danger-soft:    #e05050;
+  --accent-blue-alt:#1a73e8;
+  --danger-critical:#c0392b;
+
+  /* ── Colors: Mixer visuals ─────────────────────────────────────────────── */
+  --color-level-white: #e8e8e8;
+  --color-level-dark: #d0d0d0;
+  --color-level-mid: #c0c0c0;
+  --color-level-shadow: #a0a0a0;
+  --color-level-lowlight: #b0b0b0;
+  --color-level-highlight: #94a3b8;
+  --accent-gold-muted: #c99500;
+  --accent-gold-bright: #e8b500;
+  --meter-saturation: #f5a623;
+
+  /* ── Colors: Extended palette ──────────────────────────────────────────── */
+  --color-level-1: #1a1f2e;
+  --color-level-2: #2d3348;
+  --color-level-3: #30363d;
+  --color-level-4: #3d4451;
+  --color-level-5: #6e7681;
+
+  /* ── Spacing (px) ──────────────────────────────────────────────────────– */
+  --sp-1:    2px;
+  --sp-2:    4px;
+  --sp-3:    6px;
+  --sp-4:    8px;
+  --sp-5:   12px;
+  --sp-6:   16px;
+
+  /* ── Radius ────────────────────────────────────────────────────────────– */
+  --r-1:     2px;
+  --r-2:     3px;
+  --r-3:     4px;
+  --r-full:  50%;
+
+  /* ── Layout dimensions ─────────────────────────────────────────────────── */
+  --row-h:        64px;
+  --col-w:        44px;
+  --ch-w:         240px;
+  --ch-w-out:     120px;
 }
 
 @font-face {

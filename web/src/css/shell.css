@@ -288,9 +288,9 @@
   position: fixed;
   inset: 0 0 auto 0;
   z-index: 9000;
-  background: #c0392b;
+  background: var(--danger-critical);
   color: #fff;
-  padding: 8px 16px;
+  padding: var(--sp-4) var(--sp-6);
   text-align: center;
   font-weight: 700;
   font-size: 14px;
@@ -352,24 +352,24 @@ body.offline .xp-cell {
   touch-action: manipulation;
 }
 .modal-confirm.btn-danger {
-  background: #c0392b;
-  border-color: #c0392b;
+  background: var(--danger-critical);
+  border-color: var(--danger-critical);
   color: #fff;
 }
 .modal-input {
   display: block;
   width: 100%;
-  margin: 0 0 16px 0;
-  padding: 8px 10px;
+  margin: 0 0 var(--sp-6) 0;
+  padding: var(--sp-4) var(--sp-3);
   background: var(--bg-dark);
-  border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border: var(--sp-1) solid var(--border-primary);
+  border-radius: var(--r-2);
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   box-sizing: border-box;
 }
-.modal-input:focus { outline: none; border-color: var(--color-accent, #1a73e8); }
+.modal-input:focus { outline: none; border-color: var(--color-accent); }
 
 /* ── Keyboard shortcuts overlay ─────────────────── */
 .shortcuts-overlay {
