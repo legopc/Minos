@@ -668,11 +668,11 @@
 }
 
 .bus-row {
-  background: color-mix(in srgb, var(--surface-1) 90%, var(--accent-gold) 10%);
+  background: var(--surface-1);
 }
 
 .bus-label {
-  border-left: 3px solid var(--accent-gold) !important;
+  border-left: 3px solid var(--border-primary) !important;
 }
 
 .xp-cell.bus .xp-dot {
