@@ -638,6 +638,36 @@ export const getConfigBackup    = (name) => fetch(BASE + `/system/config/backups
 export const restoreConfigBackup = (name) => post(`/system/config/backups/${encodeURIComponent(name)}/restore`, {});
 
 /**
+ * Download the current live config as a dated TOML file.
+ * @returns {Promise<Response>} Raw file response
+ */
+export const getConfigBackupDownload = () => fetch(BASE + '/system/config/backup', {
+  headers: _token ? { 'Authorization': `Bearer ${_token}` } : {},
+});
+
+/**
+ * Restore config from a raw TOML string (replaces live config atomically).
+ * @param {string} tomlStr - TOML configuration content
+ * @returns {Promise<{status:string, message:string}>}
+ */
+export const postConfigRestore = (tomlStr) => {
+  return fetch(BASE + '/system/config/restore', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/toml',
+      ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}),
+    },
+    body: tomlStr,
+  }).then(async r => {
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(text || `HTTP ${r.status}`);
+    }
+    return r.json();
+  });
+};
+
+/**
  * Reconfigure channel counts (admin operation).
  * @param {number} rx - Desired RX channel count
  * @param {number} tx - Desired TX channel count

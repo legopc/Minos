@@ -104,6 +104,23 @@ export async function render(container) {
         <div class="sys-row"><span class="sys-lbl">Meter Style</span><div id="meter-ballistics-group"></div></div>
       </div>
 
+      <!-- Config Backup & Restore card -->
+      <div class="sys-card">
+        <div class="sys-card-title">Config Backup &amp; Restore</div>
+        <div class="sys-row">
+          <button class="sys-btn" id="sys-config-backup-btn">Download backup</button>
+        </div>
+        <div class="sys-row" style="gap:8px;flex-wrap:wrap;align-items:center;">
+          <input type="file" id="sys-config-restore-file" accept=".toml" style="display:none">
+          <button class="sys-btn" id="sys-config-restore-pick-btn">Choose .toml file…</button>
+          <span id="sys-config-restore-filename" class="sys-val" style="color:var(--text-muted);font-size:10px"></span>
+        </div>
+        <div class="sys-row">
+          <button class="sys-btn sys-btn-warn" id="sys-config-restore-btn" disabled>Upload &amp; Restore</button>
+          <span id="sys-config-restore-spinner" class="sys-restore-spinner" style="display:none"></span>
+        </div>
+      </div>
+
       <!-- Actions card -->
       <div class="sys-card">
         <div class="sys-card-title">Actions</div>
@@ -219,6 +236,9 @@ export async function render(container) {
 
   // Wire ballistics preference (meter style)
   _setupMeterBallisticsPreference();
+
+  // Wire Config Backup & Restore section
+  _setupBackupRestore();
 
   // Load and render backups
   _loadBackups();
@@ -401,6 +421,73 @@ async function _loadBackups() {
     listEl.innerHTML = '<div class="sys-backups-empty">Failed to load backups</div>';
     console.error('Failed to load backups', e);
   }
+}
+
+function _setupBackupRestore() {
+  const backupBtn    = document.getElementById('sys-config-backup-btn');
+  const pickBtn      = document.getElementById('sys-config-restore-pick-btn');
+  const fileInput    = document.getElementById('sys-config-restore-file');
+  const filenameEl   = document.getElementById('sys-config-restore-filename');
+  const restoreBtn   = document.getElementById('sys-config-restore-btn');
+  const spinnerEl    = document.getElementById('sys-config-restore-spinner');
+
+  if (!backupBtn) return;
+
+  // Download backup
+  backupBtn.addEventListener('click', async () => {
+    try {
+      const r = await api.getConfigBackupDownload();
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const disposition = r.headers.get('Content-Disposition') ?? '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? 'patchbox-config.toml';
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    } catch (e) {
+      toast('Backup download failed: ' + e.message, true);
+    }
+  });
+
+  // Choose file
+  pickBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) {
+      filenameEl.textContent = file.name;
+      restoreBtn.disabled = false;
+    } else {
+      filenameEl.textContent = '';
+      restoreBtn.disabled = true;
+    }
+  });
+
+  // Upload & restore
+  restoreBtn.addEventListener('click', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!confirm('This will overwrite your current config. Continue?')) return;
+
+    restoreBtn.disabled = true;
+    spinnerEl.style.display = 'inline-block';
+    try {
+      const text = await file.text();
+      const result = await api.postConfigRestore(text);
+      toast(result?.message ?? 'Config restored. Restart recommended.');
+      _showRestartOverlay();
+    } catch (e) {
+      let msg = e.message;
+      try { msg = JSON.parse(msg)?.error ?? msg; } catch (_) {}
+      toast('Restore failed: ' + msg, true);
+      restoreBtn.disabled = false;
+    } finally {
+      spinnerEl.style.display = 'none';
+      fileInput.value = '';
+      filenameEl.textContent = '';
+    }
+  });
 }
 
 function _esc(str) {
