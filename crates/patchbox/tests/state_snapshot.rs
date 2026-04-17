@@ -31,6 +31,24 @@ fn make_request(uri: &str) -> Request<Body> {
     request
 }
 
+fn redact_health_json(mut json: serde_json::Value) -> serde_json::Value {
+    // Redact dynamic fields: uptime_secs, timestamps, client counts
+    if let Some(obj) = json.as_object_mut() {
+        obj.insert("uptime_secs".to_string(), serde_json::json!(0));
+
+        // Redact config.last_modified
+        if let Some(config) = obj.get_mut("config") {
+            if let Some(config_obj) = config.as_object_mut() {
+                config_obj.insert("last_modified".to_string(), serde_json::json!(null));
+            }
+        }
+
+        // Redact clients_connected
+        obj.insert("clients_connected".to_string(), serde_json::json!(0));
+    }
+    json
+}
+
 #[tokio::test]
 async fn snapshot_health() {
     let config = PatchboxConfig::default();
@@ -49,7 +67,9 @@ async fn snapshot_health() {
     let json: serde_json::Value =
         serde_json::from_slice(&body).expect("response should be valid JSON");
 
-    insta::assert_snapshot!("health", json.to_string());
+    let redacted = redact_health_json(json);
+
+    insta::assert_snapshot!("health", redacted.to_string());
 }
 
 #[tokio::test]

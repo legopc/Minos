@@ -17,6 +17,8 @@ pub(crate) struct HealthDante {
     pub name: String,
     pub nic: String,
     pub connected: bool,
+    pub rx_channels: usize,
+    pub tx_channels: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -24,6 +26,7 @@ pub(crate) struct HealthPtp {
     pub synced: bool,
     pub socket_path: String,
     pub offset_ns: Option<i64>,
+    pub state: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -49,6 +52,25 @@ pub(crate) struct HealthZone {
 }
 
 #[derive(serde::Serialize)]
+pub(crate) struct HealthConfig {
+    pub loaded: bool,
+    pub path: String,
+    pub last_modified: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthDsp {
+    pub cpu_load_percent: Option<f32>,
+    pub processing: bool,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct HealthStorage {
+    pub free_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(serde::Serialize)]
 pub(crate) struct HealthResponse {
     pub status: &'static str,
     pub version: &'static str,
@@ -57,6 +79,10 @@ pub(crate) struct HealthResponse {
     pub ptp: HealthPtp,
     pub audio: HealthAudio,
     pub zones: Vec<HealthZone>,
+    pub config: HealthConfig,
+    pub dsp: HealthDsp,
+    pub storage: HealthStorage,
+    pub clients_connected: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -154,6 +180,29 @@ async fn query_ptp_offset(socket_path: &str) -> Option<i64> {
     None
 }
 
+async fn query_ptp_state(socket_path: &str) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let connect = tokio::net::UnixStream::connect(socket_path);
+    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect)
+        .await
+        .ok()?
+        .ok()?;
+    let mut buf = String::new();
+    let read =
+        tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
+    if read.is_err() {
+        return None;
+    }
+    for line in buf.lines() {
+        if line.starts_with("state") && !line.starts_with('#') {
+            if let Some(val_str) = line.split_whitespace().last() {
+                return Some(val_str.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn get_hostname() -> String {
     std::fs::read_to_string("/etc/hostname")
         .unwrap_or_else(|_| "unknown".to_string())
@@ -211,6 +260,8 @@ async fn _create_backup(s: &AppState) -> Result<String, String> {
 pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let meters = s.meters.read().await;
+
+    // PTP checks
     let ptp_socket_path = cfg.dante_clock_path.clone();
     let ptp_synced = std::fs::metadata(&ptp_socket_path)
         .map(|m| m.file_type().is_socket())
@@ -220,9 +271,58 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     } else {
         None
     };
+    let ptp_state = if let Some(obs_path) = &cfg.statime_observation_path {
+        query_ptp_state(obs_path).await
+    } else {
+        None
+    };
+
+    // Config checks
+    let config_loaded = true;
+    let config_path_str = s.config_path.to_string_lossy().to_string();
+    let config_last_modified = std::fs::metadata(&s.config_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| {
+            use std::time::SystemTime;
+            let duration = t.duration_since(SystemTime::UNIX_EPOCH).ok()?;
+            let datetime = chrono::DateTime::from_timestamp(
+                duration.as_secs() as i64,
+                duration.subsec_nanos(),
+            )?;
+            Some(datetime.to_rfc3339())
+        });
+
+    // Storage checks (/opt/patchbox)
+    let storage_path = "/opt/patchbox";
+    let (storage_free_bytes, storage_total_bytes) =
+        if let Ok(stat) = nix::sys::statvfs::statvfs(storage_path) {
+            let block_size = stat.block_size() as u64;
+            let free_bytes = stat.blocks_available() * block_size;
+            let total_bytes = stat.blocks() * block_size;
+            (free_bytes, total_bytes)
+        } else {
+            (0, 0)
+        };
+
+    // DSP stub (cpu_load and processing not available from AppState)
+    let dsp_cpu_load_percent = None;
+    let dsp_processing = cfg.rx_channels > 0 && cfg.tx_channels > 0;
+
+    // WS clients count - count active broadcast subscribers
+    let clients_connected = s.ws_tx.receiver_count();
+
+    // Dante info
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+    let dante_rx_channels = cfg.rx_channels;
+    let dante_tx_channels = cfg.tx_channels;
+
+    // Audio info
     let active_routes = cfg.matrix.iter().flatten().filter(|&&v| v).count();
     let rx_levels_rms_db = meters.rx_rms.iter().map(|&v| linear_to_db(v)).collect();
     let tx_levels_rms_db = meters.tx_rms.iter().map(|&v| linear_to_db(v)).collect();
+
+    // Zones
     let zones = (0..cfg.tx_channels)
         .map(|tx| {
             let active_sources = (0..cfg.rx_channels)
@@ -263,19 +363,37 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             }
         })
         .collect();
+
+    // Determine health status
+    let is_ptp_locked =
+        ptp_state.as_deref() == Some("SLAVE") || ptp_state.as_deref() == Some("MASTER");
+    let cpu_load_ok = dsp_cpu_load_percent.map_or(true, |cpu| cpu <= 80.0);
+    let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024; // 50 MiB
+
+    let status = if !dante_connected || !config_loaded || !storage_free_ok {
+        "unhealthy"
+    } else if !is_ptp_locked || !cpu_load_ok {
+        "degraded"
+    } else {
+        "healthy"
+    };
+
     Json(HealthResponse {
-        status: "ok",
+        status,
         version: env!("CARGO_PKG_VERSION"),
         uptime_secs: s.started_at.elapsed().as_secs(),
         dante: HealthDante {
             name: cfg.dante_name.clone(),
             nic: cfg.dante_nic.clone(),
-            connected: s.dante_connected.load(AOrdering::Relaxed),
+            connected: dante_connected,
+            rx_channels: dante_rx_channels,
+            tx_channels: dante_tx_channels,
         },
         ptp: HealthPtp {
             synced: ptp_synced,
             socket_path: cfg.dante_clock_path.clone(),
             offset_ns: ptp_offset_ns,
+            state: ptp_state,
         },
         audio: HealthAudio {
             rx_channels: cfg.rx_channels,
@@ -287,6 +405,20 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             tx_levels_rms_db,
         },
         zones,
+        config: HealthConfig {
+            loaded: config_loaded,
+            path: config_path_str,
+            last_modified: config_last_modified,
+        },
+        dsp: HealthDsp {
+            cpu_load_percent: dsp_cpu_load_percent,
+            processing: dsp_processing,
+        },
+        storage: HealthStorage {
+            free_bytes: storage_free_bytes,
+            total_bytes: storage_total_bytes,
+        },
+        clients_connected,
     })
 }
 
