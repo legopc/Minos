@@ -5,6 +5,8 @@ import { openPanel } from './panels.js';
 import { toast } from './toast.js';
 import { buildBusRoutingContent } from './dsp/bus-routing.js';
 import { createStrip } from './components/strip.js';
+import { undo } from './undo.js';
+import { makeReorderable, applyOrder, saveOrder } from './reorder.js';
 
 let _animFrame = null;
 let _soloSet = new Set();
@@ -146,39 +148,63 @@ function _renderStrips(strips, masters) {
   });
 
   // Bus strips (in masters, before output strips — buses are outputs not inputs)
-  const buses = st.busList();
-  if (st.state.system?.show_buses_in_mixer !== false && buses.length > 0) {
+  const busesRaw = st.busList();
+  if (st.state.system?.show_buses_in_mixer !== false && busesRaw.length > 0) {
     const sep = document.createElement('div');
     sep.className = 'mixer-bus-separator';
     sep.textContent = 'BUSES';
     masters.appendChild(sep);
-    buses.forEach(bus => masters.appendChild(_buildBusStrip(bus)));
+    const busGroup = document.createElement('div');
+    busGroup.className = 'mixer-reorder-group';
+    applyOrder('buses', busesRaw, b => b.id).forEach(bus => busGroup.appendChild(_buildBusStrip(bus)));
+    masters.appendChild(busGroup);
+    makeReorderable(busGroup, {
+      itemSelector: '.mixer-strip',
+      orientation:  'horizontal',
+      getId:        el => el.dataset.busId,
+      onReorder:    ids => saveOrder('buses', ids),
+    });
   }
 
   // VCA Groups section
-  const vcas = st.state.vcaGroups ?? [];
-  if (vcas.length > 0 || true /* always show VCA section with add button */) {
-    const vcaSep = document.createElement('div');
-    vcaSep.className = 'mixer-vca-separator';
-    vcaSep.textContent = 'VCA';
-    masters.appendChild(vcaSep);
-    vcas.forEach(vca => masters.appendChild(_buildVcaStrip(vca)));
-    // Add VCA button
-    const addBtn = document.createElement('button');
-    addBtn.className = 'mixer-add-vca-btn';
-    addBtn.textContent = '+';
-    addBtn.title = 'Add VCA group';
-    addBtn.onclick = () => _showAddVcaDialog();
-    masters.appendChild(addBtn);
-  }
+  const vcasRaw = st.state.vcaGroups ?? [];
+  const vcaSep = document.createElement('div');
+  vcaSep.className = 'mixer-vca-separator';
+  vcaSep.textContent = 'VCA';
+  masters.appendChild(vcaSep);
+  const vcaGroup = document.createElement('div');
+  vcaGroup.className = 'mixer-reorder-group';
+  applyOrder('vcaGroups', vcasRaw, v => v.id).forEach(vca => vcaGroup.appendChild(_buildVcaStrip(vca)));
+  masters.appendChild(vcaGroup);
+  makeReorderable(vcaGroup, {
+    itemSelector: '[id^="vca-strip-"]',
+    orientation:  'horizontal',
+    getId:        el => el.id.replace('vca-strip-', ''),
+    onReorder:    ids => saveOrder('vcaGroups', ids),
+  });
+  const addVcaBtn = document.createElement('button');
+  addVcaBtn.className = 'mixer-add-vca-btn';
+  addVcaBtn.textContent = '+';
+  addVcaBtn.title = 'Add VCA group';
+  addVcaBtn.onclick = () => _showAddVcaDialog();
+  masters.appendChild(addVcaBtn);
 
   // Automixer Groups section
-  const amGroups = st.state.automixerGroups ?? [];
+  const amGroupsRaw = st.state.automixerGroups ?? [];
   const amSep = document.createElement('div');
   amSep.className = 'mixer-vca-separator';
   amSep.textContent = 'AXM';
   masters.appendChild(amSep);
-  amGroups.forEach(g => masters.appendChild(_buildAmGroupStrip(g)));
+  const amReorderGroup = document.createElement('div');
+  amReorderGroup.className = 'mixer-reorder-group';
+  applyOrder('automixerGroups', amGroupsRaw, g => g.id).forEach(g => amReorderGroup.appendChild(_buildAmGroupStrip(g)));
+  masters.appendChild(amReorderGroup);
+  makeReorderable(amReorderGroup, {
+    itemSelector: '[id^="am-strip-"]',
+    orientation:  'horizontal',
+    getId:        el => el.id.replace('am-strip-', ''),
+    onReorder:    ids => saveOrder('automixerGroups', ids),
+  });
   const addAmBtn = document.createElement('button');
   addAmBtn.className = 'mixer-add-vca-btn';
   addAmBtn.textContent = '+';
@@ -187,12 +213,21 @@ function _renderStrips(strips, masters) {
   masters.appendChild(addAmBtn);
 
   // Signal Generators section
-  const gens = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
+  const gensRaw = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
   const genSep = document.createElement('div');
   genSep.className = 'mixer-gen-separator';
   genSep.textContent = 'GEN';
   masters.appendChild(genSep);
-  gens.forEach(gen => masters.appendChild(_buildGenStrip(gen)));
+  const genGroup = document.createElement('div');
+  genGroup.className = 'mixer-reorder-group';
+  applyOrder('generators', gensRaw, g => g.id).forEach(gen => genGroup.appendChild(_buildGenStrip(gen)));
+  masters.appendChild(genGroup);
+  makeReorderable(genGroup, {
+    itemSelector: '[id^="gen-strip-"]',
+    orientation:  'horizontal',
+    getId:        el => el.id.replace('gen-strip-', ''),
+    onReorder:    ids => saveOrder('generators', ids),
+  });
   const addGenBtn = document.createElement('button');
   addGenBtn.className = 'mixer-add-gen-btn';
   addGenBtn.textContent = '+';
@@ -849,20 +884,93 @@ function _buildInputStrip(ch, nextCh) {
       if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
       api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
     },
+    onFaderCommit: (fromDb, toDb) => {
+      (async () => {
+        try {
+          await api.putInputGain(chIdx, toDb);
+          undo.push({
+            label: `Input level: ${ch.name ?? ch.id}`,
+            apply: async () => {
+              const cs = st.state.channels.get(ch.id);
+              if (cs) cs.gain_db = toDb;
+              if (cs?.dsp?.am?.params) cs.dsp.am.params.gain_db = toDb;
+              await api.putInputGain(chIdx, toDb);
+            },
+            revert: async () => {
+              const cs = st.state.channels.get(ch.id);
+              if (cs) cs.gain_db = fromDb;
+              if (cs?.dsp?.am?.params) cs.dsp.am.params.gain_db = fromDb;
+              await api.putInputGain(chIdx, fromDb);
+            },
+          });
+        } catch (e) {
+          toast('Level change failed: ' + (e?.message ?? String(e)), true);
+        }
+      })();
+    },
     onMute: async (nowMuted) => {
-      await api.putInputEnabled(chIdx, nowMuted); // true = currently muted → enable
+      const newMuted = !nowMuted;
+      await api.putInputEnabled(chIdx, !newMuted);
+      const live = st.state.channels.get(ch.id);
+      if (live) st.setChannel({ ...live, enabled: !newMuted });
+    },
+    onMuteCommit: (fromMuted, toMuted) => {
+      undo.push({
+        label: `${toMuted ? 'Mute' : 'Unmute'}: ${ch.name ?? ch.id}`,
+        apply: async () => {
+          const live = st.state.channels.get(ch.id);
+          await api.putInputEnabled(chIdx, !toMuted);
+          if (live) st.setChannel({ ...live, enabled: !toMuted });
+        },
+        revert: async () => {
+          const live = st.state.channels.get(ch.id);
+          await api.putInputEnabled(chIdx, !fromMuted);
+          if (live) st.setChannel({ ...live, enabled: !fromMuted });
+        },
+      });
     },
     onSolo: async (e) => {
       if (!st.state.system.monitor_device) {
         toast('Configure monitor device in System settings', true);
         return;
       }
+
+      const beforeIds = [...st.state.soloSet];
+      const soloOnly = !!(e?.ctrlKey || e?.metaKey);
+      let afterIds;
+      if (soloOnly) {
+        afterIds = [ch.id];
+      } else {
+        const set = new Set(beforeIds);
+        if (set.has(ch.id)) set.delete(ch.id); else set.add(ch.id);
+        afterIds = [...set];
+      }
+
+      const setSoloIds = async (ids) => {
+        const idxs = ids.map(id => parseInt(id.replace('rx_', ''), 10));
+        if (idxs.length === 0) await api.clearSolo();
+        else await api.putSolo(idxs);
+        st.state.soloSet.clear();
+        ids.forEach(id => st.state.soloSet.add(id));
+        window.dispatchEvent(new CustomEvent('pb:solo-update'));
+      };
+
       try {
-        if (e.ctrlKey || e.metaKey) {
+        if (soloOnly) {
           await api.putSolo([chIdx]);
         } else {
           await api.toggleSolo(chIdx);
         }
+
+        st.state.soloSet.clear();
+        afterIds.forEach(id => st.state.soloSet.add(id));
+        window.dispatchEvent(new CustomEvent('pb:solo-update'));
+
+        undo.push({
+          label: `${soloOnly ? 'Solo only' : 'Solo'}: ${ch.name ?? ch.id}`,
+          apply: async () => setSoloIds(afterIds),
+          revert: async () => setSoloIds(beforeIds),
+        });
       } catch(err) {
         console.error('Solo error:', err);
         toast('Solo error: ' + err.message, true);
@@ -1002,8 +1110,48 @@ function _buildBusStrip(bus) {
       if (busState?.dsp?.am?.params) busState.dsp.am.params.gain_db = db;
       api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
     },
+    onFaderCommit: (fromDb, toDb) => {
+      (async () => {
+        try {
+          await api.setBusGain(bus.id, toDb);
+          undo.push({
+            label: `Bus level: ${bus.name ?? bus.id}`,
+            apply: async () => {
+              const bs = st.state.buses.get(bus.id);
+              if (bs?.dsp?.am?.params) bs.dsp.am.params.gain_db = toDb;
+              await api.setBusGain(bus.id, toDb);
+            },
+            revert: async () => {
+              const bs = st.state.buses.get(bus.id);
+              if (bs?.dsp?.am?.params) bs.dsp.am.params.gain_db = fromDb;
+              await api.setBusGain(bus.id, fromDb);
+            },
+          });
+        } catch (e) {
+          toast('Bus level failed: ' + (e?.message ?? String(e)), true);
+        }
+      })();
+    },
     onMute: async (nowMuted) => {
-      await api.setBusMute(bus.id, !nowMuted);
+      const newMuted = !nowMuted;
+      await api.setBusMute(bus.id, newMuted);
+      const live = st.state.buses.get(bus.id);
+      if (live) st.setBus({ ...live, muted: newMuted });
+    },
+    onMuteCommit: (fromMuted, toMuted) => {
+      undo.push({
+        label: `${toMuted ? 'Mute' : 'Unmute'} bus: ${bus.name ?? bus.id}`,
+        apply: async () => {
+          const live = st.state.buses.get(bus.id);
+          await api.setBusMute(bus.id, toMuted);
+          if (live) st.setBus({ ...live, muted: toMuted });
+        },
+        revert: async () => {
+          const live = st.state.buses.get(bus.id);
+          await api.setBusMute(bus.id, fromMuted);
+          if (live) st.setBus({ ...live, muted: fromMuted });
+        },
+      });
     },
     onDspOpen: (blk, btn) => openPanel(blk, bus.id, btn),
   });
@@ -1062,11 +1210,50 @@ function _buildOutputMaster(out) {
         if (liveOut) st.setOutput({ ...liveOut, volume_db: db });
       } catch(e) { toast(e.message, true); }
     },
+    onFaderCommit: (fromDb, toDb) => {
+      (async () => {
+        try {
+          await api.putOutputGain(txIdx, toDb);
+          const liveOut = st.state.outputs.get(out.id);
+          if (liveOut) st.setOutput({ ...liveOut, volume_db: toDb });
+          undo.push({
+            label: `Output level: ${out.name ?? out.id}`,
+            apply: async () => {
+              const o = st.state.outputs.get(out.id);
+              await api.putOutputGain(txIdx, toDb);
+              if (o) st.setOutput({ ...o, volume_db: toDb });
+            },
+            revert: async () => {
+              const o = st.state.outputs.get(out.id);
+              await api.putOutputGain(txIdx, fromDb);
+              if (o) st.setOutput({ ...o, volume_db: fromDb });
+            },
+          });
+        } catch (e) {
+          toast('Output level failed: ' + (e?.message ?? String(e)), true);
+        }
+      })();
+    },
     onMute: async (nowMuted) => {
       const liveOut = st.state.outputs.get(out.id);
       const newMuted = !nowMuted;
       await api.putOutputMute(txIdx, newMuted);
-      st.setOutput({ ...liveOut, muted: newMuted });
+      if (liveOut) st.setOutput({ ...liveOut, muted: newMuted });
+    },
+    onMuteCommit: (fromMuted, toMuted) => {
+      undo.push({
+        label: `${toMuted ? 'Mute' : 'Unmute'} output: ${out.name ?? out.id}`,
+        apply: async () => {
+          const o = st.state.outputs.get(out.id);
+          await api.putOutputMute(txIdx, toMuted);
+          if (o) st.setOutput({ ...o, muted: toMuted });
+        },
+        revert: async () => {
+          const o = st.state.outputs.get(out.id);
+          await api.putOutputMute(txIdx, fromMuted);
+          if (o) st.setOutput({ ...o, muted: fromMuted });
+        },
+      });
     },
     onDspOpen: (blk, btn) => openPanel(blk, out.id, btn),
   });

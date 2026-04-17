@@ -108,15 +108,16 @@ function _buildDspRow(dsp, entityId, onDspOpen) {
 }
 
 // Attaches dblclick + long-press (500 ms) inline-edit to a fader dB label.
+// onCommit(newDb, oldDb)
 function _attachFaderLabelEdit(dbLabel, faderEl, onCommit) {
   let pressTimer = null;
   let pressStartX = 0, pressStartY = 0;
 
   const startEdit = () => {
-    const curDb = st.sliderToDb(+faderEl.value);
+    const oldDb = st.sliderToDb(+faderEl.value);
     const inp = document.createElement('input');
     inp.type = 'number';
-    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
+    inp.value = isFinite(oldDb) ? oldDb.toFixed(1) : '-30';
     inp.min = -30; inp.max = 12; inp.step = 0.1;
     inp.className = 'strip-fader-entry';
     dbLabel.replaceWith(inp);
@@ -127,7 +128,7 @@ function _attachFaderLabelEdit(dbLabel, faderEl, onCommit) {
       faderEl.value = st.dbToSlider(db);
       dbLabel.textContent = _fmt(db);
       inp.replaceWith(dbLabel);
-      onCommit(db);
+      onCommit(db, oldDb);
     };
     inp.onblur = commit;
     inp.onkeydown = e => {
@@ -176,7 +177,9 @@ export function createStrip({
   hasClip    = false,
   dsp,
   onFader,
+  onFaderCommit,
   onMute,
+  onMuteCommit,
   onSolo,
   onDspOpen,
 }) {
@@ -237,6 +240,7 @@ export function createStrip({
         // Announce state change to screen readers
         const liveRegion = document.getElementById('sr-live-polite');
         if (liveRegion) liveRegion.textContent = `${name ?? id} mute ${newMuted ? 'on' : 'off'}`;
+        onMuteCommit?.(nowMuted, newMuted);
       } catch (_) { /* caller uses toast */ }
     };
     strip.appendChild(muteBtn);
@@ -289,13 +293,36 @@ export function createStrip({
   strip.appendChild(dbLabel);
 
   let _ft;
+  let _dragStartDb = null;
+
+  faderEl.addEventListener('pointerdown', () => {
+    _dragStartDb = st.sliderToDb(+faderEl.value);
+  });
+
+  const commitDrag = () => {
+    if (_dragStartDb == null) return;
+    const endDb = st.sliderToDb(+faderEl.value);
+    const startDb = _dragStartDb;
+    _dragStartDb = null;
+    if (onFaderCommit && startDb !== endDb && !Number.isNaN(startDb) && !Number.isNaN(endDb)) {
+      onFaderCommit(startDb, endDb);
+    }
+  };
+  faderEl.addEventListener('pointerup', commitDrag);
+  faderEl.addEventListener('pointercancel', commitDrag);
+
   faderEl.oninput = () => {
     const db = st.sliderToDb(+faderEl.value);
     dbLabel.textContent = _fmt(db);
     clearTimeout(_ft);
     _ft = setTimeout(() => onFader?.(db), 80);
   };
-  _attachFaderLabelEdit(dbLabel, faderEl, db => onFader?.(db));
+  _attachFaderLabelEdit(dbLabel, faderEl, (db, oldDb) => {
+    onFader?.(db);
+    if (onFaderCommit && oldDb !== undefined && oldDb !== db && !Number.isNaN(oldDb) && !Number.isNaN(db)) {
+      onFaderCommit(oldDb, db);
+    }
+  });
 
   // -- meter + fmWrap --------------------------------------------------------
   const meterEl = _buildMeterEl(id, hasClip);
