@@ -10,7 +10,6 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
     pub username: String,
@@ -49,28 +48,58 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> impl IntoResponse {
-    // Authenticate via PAM
-    let pam_result = pam_auth::authenticate("patchbox", &req.username, &req.password).await;
-    if let Err(e) = pam_result {
-        tracing::warn!("login failed for {}: {}", req.username, e);
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "invalid credentials".to_string(),
-                in_memory: None,
-            }),
-        )
-            .into_response();
-    }
+    // Check config-file users first (if any defined)
+    let config_user = {
+        let cfg = state.config.read().await;
+        cfg.users
+            .iter()
+            .find(|u| u.username == req.username)
+            .cloned()
+    };
 
-    // Determine role from Linux groups
-    let username = req.username.clone();
-    let (role, zone) = tokio::task::spawn_blocking(move || pam_auth::role_for_user(&username))
-        .await
-        .unwrap_or(("readonly", None));
+    let (role, zone) = if let Some(user) = config_user {
+        // Config-file user: verify bcrypt password hash
+        let password = req.password.clone();
+        let hash = user.password_hash.clone();
+        let ok = tokio::task::spawn_blocking(move || bcrypt::verify(&password, &hash))
+            .await
+            .unwrap_or(Ok(false))
+            .unwrap_or(false);
+        if !ok {
+            tracing::warn!("login failed for {} (config user)", req.username);
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "invalid credentials".to_string(),
+                    in_memory: None,
+                }),
+            )
+                .into_response();
+        }
+        (user.role.as_str().to_owned(), None::<String>)
+    } else {
+        // Fall back to PAM + Linux group role
+        let pam_result = pam_auth::authenticate("patchbox", &req.username, &req.password).await;
+        if let Err(e) = pam_result {
+            tracing::warn!("login failed for {}: {}", req.username, e);
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "invalid credentials".to_string(),
+                    in_memory: None,
+                }),
+            )
+                .into_response();
+        }
+        let username = req.username.clone();
+        let (r, z) = tokio::task::spawn_blocking(move || pam_auth::role_for_user(&username))
+            .await
+            .unwrap_or(("readonly", None));
+        (r.to_owned(), z)
+    };
 
     // Issue JWT
-    let claims = jwt::Claims::new(&req.username, role, zone.clone());
+    let claims = jwt::Claims::new(&req.username, &role, zone.clone());
     let secret = state.jwt_secret.read().await;
     let token = match jwt::generate(&claims, &secret) {
         Ok(t) => t,
@@ -91,7 +120,7 @@ pub async fn login(
 
     Json(LoginResponse {
         token,
-        role: role.to_owned(),
+        role,
         zone,
         expires_in: jwt::TOKEN_EXPIRY_SECS,
     })

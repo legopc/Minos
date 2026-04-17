@@ -838,6 +838,22 @@ pub struct SignalGeneratorConfig {
     pub sweep_duration_s: f32,
 }
 
+/// A local user account for config-file-based authentication.
+/// password_hash should be a bcrypt hash (e.g. generated with `htpasswd -bnBC 12 '' password`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserConfig {
+    pub username: String,
+    pub password_hash: String,
+    #[serde(default = "UserConfig::default_role")]
+    pub role: String,
+}
+
+impl UserConfig {
+    fn default_role() -> String {
+        "viewer".to_string()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchboxConfig {
     /// Number of Dante RX channels (sources in)
@@ -948,6 +964,10 @@ pub struct PatchboxConfig {
     /// Automixer groups (Dugan gain-sharing). Channels opt in via input_dsp[i].automixer.group_id.
     #[serde(default)]
     pub automixer_groups: Vec<AutomixerGroupConfig>,
+    /// Local user accounts for config-file authentication.
+    /// If non-empty, login checks these before falling back to PAM.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub users: Vec<UserConfig>,
 }
 
 impl Default for PatchboxConfig {
@@ -992,6 +1012,7 @@ impl Default for PatchboxConfig {
             signal_generators: vec![],
             generator_bus_matrix: vec![],
             automixer_groups: vec![],
+            users: vec![],
         }
     }
 }
