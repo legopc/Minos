@@ -653,10 +653,10 @@ pub fn router(state: AppState) -> Router {
             "/api/docs/",
             get(|| async { axum::response::Redirect::permanent("/api/v1/docs/") }),
         )
-        .merge(Router::from(
-            SwaggerUi::new("/api/v1/docs")
-                .url("/api/v1/openapi.json", crate::openapi::ApiDoc::openapi()),
-        ));
+        .merge(Router::from(SwaggerUi::new("/api/v1/docs").url(
+            "/api/v1/openapi.json",
+            crate::openapi::ApiDoc::openapi(),
+        )));
 
     if let Ok(dev_dir) = std::env::var("PATCHBOX_DEV_ASSETS") {
         tracing::warn!("⚡ DEV MODE: serving assets from disk at {dev_dir}");

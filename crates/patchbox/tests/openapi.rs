@@ -101,7 +101,10 @@ async fn legacy_openapi_json_redirects_to_v1() {
     let state = AppState::new(config, PathBuf::from("/nonexistent/openapi-test4.toml"));
     let router = api::router(state);
 
-    let response = router.oneshot(make_request("/api/openapi.json")).await.unwrap();
+    let response = router
+        .oneshot(make_request("/api/openapi.json"))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
     assert_eq!(
         response.headers().get("location").unwrap(),
