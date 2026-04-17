@@ -1,0 +1,58 @@
+name: UI Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  s7-test-ui-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tests/ui/package-lock.json
+
+      - name: Build patchbox (release)
+        run: cargo build -p patchbox --features inferno --release
+
+      - name: Install UI test deps
+        working-directory: tests/ui
+        run: npm ci --silent
+
+      - name: Install Playwright browsers
+        working-directory: tests/ui
+        run: npx playwright install chromium
+
+      - name: Configure PAM + test user
+        run: |
+          sudo tee /etc/pam.d/patchbox >/dev/null <<'EOF'
+          auth required pam_unix.so
+          account required pam_unix.so
+          EOF
+
+          sudo groupadd -f patchbox-admin
+
+          if ! id -u patchbox-test >/dev/null 2>&1; then
+            sudo useradd -m -s /bin/bash patchbox-test
+          fi
+          echo 'patchbox-test:patchbox-test' | sudo chpasswd
+          sudo usermod -a -G patchbox-admin patchbox-test
+
+      - name: Run UI smoke
+        working-directory: tests/ui
+        env:
+          PATCHBOX_BIN: ${{ github.workspace }}/target/release/patchbox
+          PATCHBOX_PORT: '9191'
+          PATCHBOX_TEST_USERNAME: patchbox-test
+          PATCHBOX_TEST_PASSWORD: patchbox-test
+        run: npm test
