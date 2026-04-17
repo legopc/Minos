@@ -556,15 +556,7 @@
   padding: 1px 2px;
 }
 
-/* Zone master strips (right side) */
-.mixer-zone-masters {
-  display: flex;
-  align-items: stretch;
-  gap: 1px;
-  padding: 0 4px;
-  border-left: 2px solid var(--border-primary);
-  height: 100%;
-}
+/* Zone master strips (right side) — canonical rule is at line ~80; remove duplicate */
 
 .mixer-zone-strip,
 .mixer-output-strip {

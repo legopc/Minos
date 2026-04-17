@@ -35,3 +35,10 @@
   gap: 0;
   min-height: 0;
 }
+
+/* In horizontal strip groups, handle is a narrow top bar, not full-height */
+.mixer-reorder-group .reorder-handle {
+  height: 18px;
+  width: 100%;
+  min-width: 0;
+}
