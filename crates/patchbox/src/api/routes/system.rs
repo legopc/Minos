@@ -718,6 +718,71 @@ pub async fn get_config_backup_download(State(s): State<AppState>) -> impl IntoR
         .into_response()
 }
 
+/// Response body for a successful config restore.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct RestoreResponse {
+    pub status: String,
+    pub message: String,
+}
+
+// POST /api/v1/system/config/restore
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/config/restore",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    request_body(content = String, content_type = "application/toml",
+                 description = "Raw TOML configuration file"),
+    responses(
+        (status = 200, description = "Config restored successfully", body = RestoreResponse),
+        (status = 400, description = "Invalid TOML or config parse error",
+         body = crate::api::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 500, description = "Persist error", body = crate::api::ErrorResponse),
+    )
+)]
+pub async fn post_config_restore(
+    State(s): State<AppState>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let toml_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(crate::api::ErrorResponse {
+                    error: "request body is not valid UTF-8".to_string(),
+                    in_memory: None,
+                }),
+            )
+                .into_response();
+        }
+    };
+    let mut new_cfg: PatchboxConfig = match toml::from_str(toml_str) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(crate::api::ErrorResponse {
+                    error: format!("invalid config TOML: {e}"),
+                    in_memory: None,
+                }),
+            )
+                .into_response();
+        }
+    };
+    // Snapshot current config as a timestamped backup before overwriting.
+    let _ = _create_backup(&s).await;
+    new_cfg.normalize();
+    *s.config.write().await = new_cfg;
+    crate::persist_or_500!(s);
+    Json(RestoreResponse {
+        status: "ok".to_string(),
+        message: "Config restored. Restart recommended.".to_string(),
+    })
+    .into_response()
+}
+
 // GET /api/v1/solo
 #[utoipa::path(
     get,
