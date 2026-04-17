@@ -3,13 +3,11 @@ import * as st  from './state.js';
 import * as api from './api.js';
 import { openPanel } from './panels.js';
 import { toast } from './toast.js';
-import { DSP_COLOURS } from './dsp/colours.js';
 import { buildBusRoutingContent } from './dsp/bus-routing.js';
+import { createStrip } from './components/strip.js';
 
 let _animFrame = null;
 let _soloSet = new Set();
-let _pressTimer = null;
-let _pressStartX = 0, _pressStartY = 0;
 
 export function render(container) {
   container.innerHTML = '';
@@ -833,29 +831,62 @@ function _showGenRoutingPopover(gen, genIdx, anchor, evt) {
 }
 
 function _buildInputStrip(ch, nextCh) {
-  const strip = document.createElement('div');
-  strip.className = 'mixer-strip';
-  strip.id = `strip-${ch.id}`;
-
   const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
 
-  // Apply colour accent if set
-  if (ch.colour_index != null) {
-    const colour = `var(--zone-color-${ch.colour_index % 10})`;
-    strip.style.setProperty('--ch-accent', colour);
+  const strip = createStrip({
+    kind:      'input',
+    id:        ch.id,
+    name:      ch.name ?? ch.id,
+    initDb:    st.state.channels.get(ch.id)?.gain_db ?? 0,
+    initMuted: ch.enabled === false,
+    initSolo:  st.state.soloSet.has(ch.id),
+    hasSolo:   true,
+    hasClip:   true,
+    dsp:       ch.dsp ?? {},
+    onFader: (db) => {
+      const chanState = st.state.channels.get(ch.id);
+      if (chanState) chanState.gain_db = db;
+      if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
+      api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
+    },
+    onMute: async (nowMuted) => {
+      await api.putInputEnabled(chIdx, nowMuted); // true = currently muted → enable
+    },
+    onSolo: async (e) => {
+      if (!st.state.system.monitor_device) {
+        toast('Configure monitor device in System settings', true);
+        return;
+      }
+      try {
+        if (e.ctrlKey || e.metaKey) {
+          await api.putSolo([chIdx]);
+        } else {
+          await api.toggleSolo(chIdx);
+        }
+      } catch(err) {
+        console.error('Solo error:', err);
+        toast('Solo error: ' + err.message, true);
+      }
+    },
+    onDspOpen: (blk, btn) => openPanel(blk, ch.id, btn),
+  });
+
+  // Apply colour accent
+  if (ch.colour_index != null)
+    strip.style.setProperty('--ch-accent', `var(--zone-color-${ch.colour_index % 10})`);
+
+  // Disable solo if no monitor device
+  if (!st.state.system.monitor_device) {
+    const soloBtn = strip.querySelector(`#solo-${ch.id}`);
+    if (soloBtn) {
+      soloBtn.disabled = true;
+      soloBtn.title = 'Configure monitor output in System settings';
+    }
   }
 
-  // Name row — may include stereo link badge for even-indexed channels
-  const nameRow = document.createElement('div');
-  nameRow.className = 'strip-name-row';
+  // ── Name row extras (colour cycle + stereo link) ──────────────────────────
+  const nameRow = strip.querySelector('.strip-name-row');
 
-  const nm = document.createElement('div');
-  nm.className = 'strip-name';
-  nm.textContent = ch.name ?? ch.id;
-  nm.title = ch.id;
-  nameRow.appendChild(nm);
-
-  // Colour cycle button
   const colourBtn = document.createElement('button');
   colourBtn.className = 'strip-colour-btn';
   colourBtn.title = 'Cycle channel colour';
@@ -867,13 +898,11 @@ function _buildInputStrip(ch, nextCh) {
       const nextIdx = currentIdx === null ? 0 : (currentIdx + 1) % 10;
       await api.putChannel(chIdx, { colour_index: nextIdx });
       st.setChannel({ ...ch, colour_index: nextIdx });
-      const colour = nextIdx !== null ? `var(--zone-color-${nextIdx % 10})` : null;
-      strip.style.setProperty('--ch-accent', colour ?? 'transparent');
+      strip.style.setProperty('--ch-accent', `var(--zone-color-${nextIdx % 10})`);
     } catch(e) { toast(e.message, true); }
   };
   nameRow.appendChild(colourBtn);
 
-  // Inline stereo link button for even-indexed channels (0, 2, 4…)
   if (nextCh && chIdx % 2 === 0) {
     const nextIdx = parseInt(nextCh.id.replace('rx_', ''), 10);
     const link    = st.getStereoLink(chIdx);
@@ -881,7 +910,9 @@ function _buildInputStrip(ch, nextCh) {
 
     const btn = document.createElement('button');
     btn.className = 'strip-stereo-btn' + (linked ? ' linked' : '');
-    btn.title = linked ? `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}` : `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
+    btn.title = linked
+      ? `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`
+      : `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
     btn.textContent = '⛓';
     btn.onclick = async (e) => {
       e.stopPropagation();
@@ -894,8 +925,7 @@ function _buildInputStrip(ch, nextCh) {
         } else {
           await api.postStereoLink(chIdx, nextIdx);
           const sl = { left_channel: chIdx, right_channel: nextIdx, linked: true, pan: 0.0 };
-          const existing = st.state.stereoLinks.filter(s => s.left_channel !== chIdx);
-          st.setStereoLinks([...existing, sl]);
+          st.setStereoLinks([...st.state.stereoLinks.filter(s => s.left_channel !== chIdx), sl]);
           btn.classList.add('linked');
           btn.title = `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`;
         }
@@ -904,61 +934,7 @@ function _buildInputStrip(ch, nextCh) {
     nameRow.appendChild(btn);
   }
 
-  strip.appendChild(nameRow);
-
-  // Mute button
-  const muteBtn = document.createElement('button');
-  muteBtn.className = 'strip-mute-btn' + (ch.enabled === false ? ' active' : '');
-  muteBtn.textContent = 'MUTE';
-  muteBtn.title = ch.enabled === false ? 'Unmute channel' : 'Mute channel';
-  muteBtn.onclick = async () => {
-    const nowMuted = muteBtn.classList.contains('active');
-    try {
-      await api.putInputEnabled(chIdx, nowMuted); // nowMuted=true means currently muted → enable
-      muteBtn.classList.toggle('active', !nowMuted);
-      muteBtn.title = !nowMuted ? 'Unmute channel' : 'Mute channel';
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(muteBtn);
-
-  // Solo button
-  const soloBtn = document.createElement('button');
-  soloBtn.className = 'mixer-solo-btn';
-  soloBtn.id = `solo-${ch.id}`;
-  soloBtn.textContent = 'S';
-  soloBtn.title = 'Solo (PFL)';
-  soloBtn.setAttribute('aria-label', `Solo ${ch.name ?? ch.id}`);
-
-  // Initial state
-  if (st.state.soloSet.has(ch.id)) soloBtn.classList.add('active');
-
-  // Disable if no monitor device configured
-  if (!st.state.system.monitor_device) {
-    soloBtn.disabled = true;
-    soloBtn.title = 'Configure monitor output in System settings';
-  }
-
-  soloBtn.onclick = async (e) => {
-    if (!st.state.system.monitor_device) {
-      toast('Configure monitor device in System settings', true);
-      return;
-    }
-    try {
-      if (e.ctrlKey || e.metaKey) {
-        // Exclusive solo: solo only this channel
-        await api.putSolo([chIdx]);
-      } else {
-        // Additive toggle
-        await api.toggleSolo(chIdx);
-      }
-    } catch(err) {
-      console.error('Solo error:', err);
-      toast('Solo error: ' + err.message, true);
-    }
-  };
-  strip.appendChild(soloBtn);
-
-  // Polarity invert (Ø) button
+  // ── Polarity invert (Ø) ───────────────────────────────────────────────────
   const initInvert = !!(ch.dsp?.polarity?.invert);
   const polBtn = document.createElement('button');
   polBtn.className = 'mixer-polarity-btn' + (initInvert ? ' active' : '');
@@ -973,133 +949,11 @@ function _buildInputStrip(ch, nextCh) {
       polBtn.classList.toggle('active', newInvert);
     } catch(e) { toast(e.message, true); }
   };
-  strip.appendChild(polBtn);
+  // Insert polarity after the solo button (before dbLabel)
+  const dbLabel = strip.querySelector(`#mix-lbl-${ch.id}`);
+  strip.insertBefore(polBtn, dbLabel);
 
-  // VU meter
-  const meter = document.createElement('div');
-  meter.className = 'strip-meter';
-  const bar = document.createElement('div');
-  bar.className = 'strip-meter-bar';
-  bar.id = `vu-bar-${ch.id}`;
-  const peak = document.createElement('div');
-  peak.className = 'strip-meter-peak';
-  peak.id = `vu-peak-${ch.id}`;
-  const hold = document.createElement('div');
-  hold.className = 'strip-meter-peak-hold';
-  hold.id = `vu-hold-${ch.id}`;
-  const clipBadge = document.createElement('div');
-  clipBadge.className = 'strip-clip-badge';
-  clipBadge.id = `clip-badge-${ch.id}`;
-  clipBadge.textContent = 'CLIP';
-  meter.appendChild(bar);
-  meter.appendChild(peak);
-  meter.appendChild(hold);
-  meter.appendChild(clipBadge);
-
-  // Gain fader label
-  const vol = st.state.channels.get(ch.id)?.gain_db ?? 0;
-  const dbLabel = document.createElement('div');
-  dbLabel.className = 'strip-fader-label strip-fader-label-editable';
-  dbLabel.id = `mix-lbl-${ch.id}`;
-  dbLabel.textContent = _db(vol);
-  strip.appendChild(dbLabel);
-
-  // Fader
-  const fader = document.createElement('input');
-  fader.type = 'range';
-  fader.className = 'strip-fader';
-  fader.min = 0; fader.max = 1000; fader.step = 1;
-  fader.value = st.dbToSlider(vol);
-  let fTimer;
-  fader.oninput = () => {
-    const db = st.sliderToDb(+fader.value);
-    dbLabel.textContent = _db(db);
-    const chanState = st.state.channels.get(ch.id);
-    if (chanState) chanState.gain_db = db;
-    if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
-    clearTimeout(fTimer);
-    fTimer = setTimeout(() => {
-      api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
-    }, 80);
-  };
-
-  // Double-click dB label to type exact value
-  dbLabel.ondblclick = () => {
-    const curDb = st.sliderToDb(+fader.value);
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
-    inp.min = -30; inp.max = 12; inp.step = 0.1;
-    inp.className = 'strip-fader-entry';
-    dbLabel.replaceWith(inp);
-    inp.focus(); inp.select();
-    const commit = () => {
-      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
-      fader.value = st.dbToSlider(db);
-      dbLabel.textContent = _db(db);
-      inp.replaceWith(dbLabel);
-      api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
-    };
-    inp.onblur = commit;
-    inp.onkeydown = e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') inp.replaceWith(dbLabel);
-    };
-  };
-
-  // Long-press (500ms) on label to edit — same logic as dblclick
-  // Only cancel on significant movement (>8px) to avoid touchscreen jitter canceling the timer
-  dbLabel.addEventListener('pointerdown', e => {
-    _pressStartX = e.clientX; _pressStartY = e.clientY;
-    _pressTimer = setTimeout(() => { dbLabel.ondblclick?.call(dbLabel); }, 500);
-  });
-  dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
-  dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
-  dbLabel.addEventListener('contextmenu', e => e.preventDefault());
-  dbLabel.addEventListener('pointermove', e => {
-    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
-  });
-
-  // Fader + meter side by side
-  const fmWrap = document.createElement('div');
-  fmWrap.className = 'mixer-fader-meter-wrap';
-  // Scale labels column (left of meter)
-  const scaleCol = document.createElement('div');
-  scaleCol.className = 'strip-vu-scale';
-  [0, -6, -12, -18, -30].forEach(db => {
-    const lbl = document.createElement('span');
-    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
-    lbl.textContent = db === 0 ? '0' : String(db);
-    scaleCol.appendChild(lbl);
-  });
-  fmWrap.appendChild(scaleCol);
-  fmWrap.appendChild(meter);
-  fmWrap.appendChild(fader);
-  strip.appendChild(fmWrap);
-
-  // DSP badge row — AM hidden when not active; all other blocks always shown
-  const dspRow = document.createElement('div');
-  dspRow.className = 'strip-dsp-row';
-  const dsp = ch.dsp ?? {};
-  Object.keys(dsp).forEach(blk => {
-    const block = dsp[blk];
-
-    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
-    const btn = document.createElement('button');
-    btn.className = 'strip-dsp-btn';
-    if (block.bypassed) btn.classList.add('byp');
-    btn.textContent = colour.label ?? blk.toUpperCase();
-    btn.title = blk.toUpperCase();
-    btn.dataset.block = blk;
-    btn.dataset.ch = ch.id;
-    btn.style.background = colour.bg;
-    btn.style.color = colour.fg;
-    btn.onclick = () => openPanel(blk, ch.id, btn);
-    dspRow.appendChild(btn);
-  });
-  strip.appendChild(dspRow);
-
-  // Zone route buttons
+  // ── Zone route buttons ────────────────────────────────────────────────────
   const zoneRow = document.createElement('div');
   zoneRow.className = 'strip-zone-row';
   st.zoneList().forEach((zone, zi) => {
@@ -1136,150 +990,23 @@ function _buildInputStrip(ch, nextCh) {
 }
 
 function _buildBusStrip(bus) {
-  const strip = document.createElement('div');
-  strip.className = 'mixer-strip bus-strip';
-  strip.id = `strip-${bus.id}`;
-  strip.dataset.busId = bus.id;
-
-  // Name
-  const nm = document.createElement('div');
-  nm.className = 'strip-name';
-  nm.textContent = bus.name ?? bus.id;
-  nm.title = bus.id;
-  strip.appendChild(nm);
-
-  // Mute button
-  const muteBtn = document.createElement('button');
-  const initMuted = bus.muted ?? false;
-  muteBtn.className = 'strip-mute-btn' + (initMuted ? ' active' : '');
-  muteBtn.textContent = 'MUTE';
-  muteBtn.title = initMuted ? 'Unmute bus' : 'Mute bus';
-  muteBtn.onclick = async () => {
-    const nowMuted = muteBtn.classList.contains('active');
-    try {
+  const strip = createStrip({
+    kind:      'bus',
+    id:        bus.id,
+    name:      bus.name ?? bus.id,
+    initDb:    bus.dsp?.am?.params?.gain_db ?? 0,
+    initMuted: bus.muted ?? false,
+    dsp:       bus.dsp ?? {},
+    onFader: (db) => {
+      const busState = st.state.buses.get(bus.id);
+      if (busState?.dsp?.am?.params) busState.dsp.am.params.gain_db = db;
+      api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
+    },
+    onMute: async (nowMuted) => {
       await api.setBusMute(bus.id, !nowMuted);
-      muteBtn.classList.toggle('active', !nowMuted);
-      muteBtn.title = !nowMuted ? 'Unmute bus' : 'Mute bus';
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(muteBtn);
-
-  // VU meter
-  const meter = document.createElement('div');
-  meter.className = 'strip-meter';
-  const bar = document.createElement('div');
-  bar.className = 'strip-meter-bar';
-  bar.id = `vu-bar-${bus.id}`;
-  const peak = document.createElement('div');
-  peak.className = 'strip-meter-peak';
-  peak.id = `vu-peak-${bus.id}`;
-  const hold = document.createElement('div');
-  hold.className = 'strip-meter-peak-hold';
-  hold.id = `vu-hold-${bus.id}`;
-  meter.appendChild(bar);
-  meter.appendChild(peak);
-  meter.appendChild(hold);
-
-  // Gain fader label
-  const vol = bus.dsp?.am?.params?.gain_db ?? 0;
-  const dbLabel = document.createElement('div');
-  dbLabel.className = 'strip-fader-label strip-fader-label-editable';
-  dbLabel.id = `mix-lbl-${bus.id}`;
-  dbLabel.textContent = _db(vol);
-  strip.appendChild(dbLabel);
-
-  // Fader
-  const fader = document.createElement('input');
-  fader.type = 'range';
-  fader.className = 'strip-fader';
-  fader.min = 0; fader.max = 1000; fader.step = 1;
-  fader.value = st.dbToSlider(vol);
-  let fTimer;
-  fader.oninput = () => {
-    const db = st.sliderToDb(+fader.value);
-    dbLabel.textContent = _db(db);
-    const busState = st.state.buses.get(bus.id);
-    if (busState?.dsp?.am?.params) busState.dsp.am.params.gain_db = db;
-    clearTimeout(fTimer);
-    fTimer = setTimeout(() => {
-      api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
-    }, 80);
-  };
-
-  // Double-click dB label to type exact value
-  dbLabel.ondblclick = () => {
-    const curDb = st.sliderToDb(+fader.value);
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
-    inp.min = -30; inp.max = 12; inp.step = 0.1;
-    inp.className = 'strip-fader-entry';
-    dbLabel.replaceWith(inp);
-    inp.focus(); inp.select();
-    const commit = () => {
-      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
-      fader.value = st.dbToSlider(db);
-      dbLabel.textContent = _db(db);
-      inp.replaceWith(dbLabel);
-      api.setBusGain(bus.id, db).catch(e => toast(e.message, true));
-    };
-    inp.onblur = commit;
-    inp.onkeydown = e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') inp.replaceWith(dbLabel);
-    };
-  };
-
-  // Long-press (500ms) on label to edit
-  dbLabel.addEventListener('pointerdown', e => {
-    _pressStartX = e.clientX; _pressStartY = e.clientY;
-    _pressTimer = setTimeout(() => { dbLabel.ondblclick?.call(dbLabel); }, 500);
+    },
+    onDspOpen: (blk, btn) => openPanel(blk, bus.id, btn),
   });
-  dbLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
-  dbLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
-  dbLabel.addEventListener('contextmenu', e => e.preventDefault());
-  dbLabel.addEventListener('pointermove', e => {
-    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
-  });
-
-  // Fader + meter side by side
-  const fmWrap = document.createElement('div');
-  fmWrap.className = 'mixer-fader-meter-wrap';
-  const scaleCol = document.createElement('div');
-  scaleCol.className = 'strip-vu-scale';
-  [0, -6, -12, -18, -30].forEach(db => {
-    const lbl = document.createElement('span');
-    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
-    lbl.textContent = db === 0 ? '0' : String(db);
-    scaleCol.appendChild(lbl);
-  });
-  fmWrap.appendChild(scaleCol);
-  fmWrap.appendChild(meter);
-  fmWrap.appendChild(fader);
-  strip.appendChild(fmWrap);
-
-  // DSP badge row
-  const dspRow = document.createElement('div');
-  dspRow.className = 'strip-dsp-row';
-  const dsp = bus.dsp ?? {};
-  Object.keys(dsp).forEach(blk => {
-    const block = dsp[blk];
-
-    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
-    const btn = document.createElement('button');
-    btn.className = 'strip-dsp-btn';
-    if (block.bypassed) btn.classList.add('byp');
-    btn.textContent = colour.label ?? blk.toUpperCase();
-    btn.title = blk.toUpperCase();
-    btn.dataset.block = blk;
-    btn.dataset.ch = bus.id;
-    btn.style.background = colour.bg;
-    btn.style.color = colour.fg;
-    btn.onclick = () => openPanel(blk, bus.id, btn);
-    dspRow.appendChild(btn);
-  });
-  strip.appendChild(dspRow);
-
   return strip;
 }
 
@@ -1314,161 +1041,37 @@ function _openBusRoutingPanel(bus) {
 }
 
 function _buildOutputMaster(out) {
-  const color = st.getZoneColour(out.zone_colour_index ?? 0);
-
-  const strip = document.createElement('div');
-  strip.className = 'mixer-output-strip';
-  strip.id = `strip-${out.id}`;
-  strip.style.setProperty('--zone-card-color', color);
-
-  // Name
-  const nm = document.createElement('div');
-  nm.className = 'zone-master-name';
-  nm.textContent = out.name ?? out.id;
-  nm.title = out.id + (out.zone_id ? ` (${out.zone_id})` : '');
-  strip.appendChild(nm);
-
-  // Mute button — reads live state from st.state.outputs
-  const muteBtn = document.createElement('button');
+  const txIdx  = parseInt(out.id.replace('tx_', ''), 10);
+  const color  = st.getZoneColour(out.zone_colour_index ?? 0);
   const curOut = st.state.outputs.get(out.id);
-  const initMuted = curOut?.muted ?? false;
-  muteBtn.className = 'strip-mute-btn' + (initMuted ? ' active' : '');
-  muteBtn.textContent = initMuted ? 'MUTE' : 'mute';
-  muteBtn.onclick = async () => {
-    const liveOut = st.state.outputs.get(out.id);
-    const nowMuted = liveOut?.muted ?? false;
-    const newMuted = !nowMuted;
-    try {
-      await api.putOutputMute(txIdx, newMuted);
-      st.setOutput({ ...liveOut, muted: newMuted });
-      muteBtn.classList.toggle('active', newMuted);
-      muteBtn.textContent = newMuted ? 'MUTE' : 'mute';
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(muteBtn);
+  const vol    = curOut?.volume_db ?? out.volume_db ?? 0;
 
-  // Volume label
-  const vol = curOut?.volume_db ?? out.volume_db ?? 0;
-  const volLabel = document.createElement('div');
-  volLabel.className = 'strip-fader-label strip-fader-label-editable';
-  volLabel.id = `mix-lbl-${out.id}`;
-  volLabel.textContent = _db(vol);
-  strip.appendChild(volLabel);
-
-  // VU meter
-  const meter = document.createElement('div');
-  meter.className = 'strip-meter';
-  const bar = document.createElement('div');
-  bar.className = 'strip-meter-bar';
-  bar.id = `vu-bar-${out.id}`;
-  const peak = document.createElement('div');
-  peak.className = 'strip-meter-peak';
-  peak.id = `vu-peak-${out.id}`;
-  const hold = document.createElement('div');
-  hold.className = 'strip-meter-peak-hold';
-  hold.id = `vu-hold-${out.id}`;
-  const clipBadge = document.createElement('div');
-  clipBadge.className = 'strip-clip-badge';
-  clipBadge.id = `clip-badge-${out.id}`;
-  clipBadge.textContent = 'CLIP';
-  meter.appendChild(bar);
-  meter.appendChild(peak);
-  meter.appendChild(hold);
-  meter.appendChild(clipBadge);
-
-  // Fader
-  const fader = document.createElement('input');
-  fader.type = 'range';
-  fader.className = 'strip-fader';
-  fader.min = 0; fader.max = 1000; fader.step = 1;
-  fader.value = st.dbToSlider(vol);
-  let ft;
-  fader.oninput = () => {
-    const db = st.sliderToDb(+fader.value);
-    volLabel.textContent = _db(db);
-    clearTimeout(ft);
-    ft = setTimeout(async () => {
+  const strip = createStrip({
+    kind:       'output',
+    id:         out.id,
+    name:       out.name ?? out.id,
+    nameTitle:  out.id + (out.zone_id ? ` (${out.zone_id})` : ''),
+    initDb:     vol,
+    initMuted:  curOut?.muted ?? false,
+    hasClip:    true,
+    dsp:        out.dsp ?? curOut?.dsp ?? {},
+    onFader: async (db) => {
       try {
         await api.putOutputGain(txIdx, db);
         const liveOut = st.state.outputs.get(out.id);
         if (liveOut) st.setOutput({ ...liveOut, volume_db: db });
       } catch(e) { toast(e.message, true); }
-    }, 80);
-  };
-
-  // Double-click volume label to type exact value
-  volLabel.ondblclick = () => {
-    const curDb = st.sliderToDb(+fader.value);
-    const inp = document.createElement('input');
-    inp.type = 'number';
-    inp.value = isFinite(curDb) ? curDb.toFixed(1) : '-30';
-    inp.min = -30; inp.max = 12; inp.step = 0.1;
-    inp.className = 'strip-fader-entry';
-    volLabel.replaceWith(inp);
-    inp.focus(); inp.select();
-    const commit = () => {
-      const db = Math.max(-30, Math.min(12, parseFloat(inp.value) || 0));
-      fader.value = st.dbToSlider(db);
-      volLabel.textContent = _db(db);
-      inp.replaceWith(volLabel);
-      api.putOutputGain(txIdx, db).catch(e => toast(e.message, true));
-    };
-    inp.onblur = commit;
-    inp.onkeydown = e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') inp.replaceWith(volLabel);
-    };
-  };
-
-  // Long-press (500ms) on label to edit — same logic as dblclick
-  volLabel.addEventListener('pointerdown', e => {
-    _pressStartX = e.clientX; _pressStartY = e.clientY;
-    _pressTimer = setTimeout(() => { volLabel.ondblclick?.call(volLabel); }, 500);
-  });
-  volLabel.addEventListener('pointerup', () => clearTimeout(_pressTimer));
-  volLabel.addEventListener('pointercancel', () => clearTimeout(_pressTimer));
-  volLabel.addEventListener('contextmenu', e => e.preventDefault());
-  volLabel.addEventListener('pointermove', e => {
-    if (Math.hypot(e.clientX - _pressStartX, e.clientY - _pressStartY) > 8) clearTimeout(_pressTimer);
+    },
+    onMute: async (nowMuted) => {
+      const liveOut = st.state.outputs.get(out.id);
+      const newMuted = !nowMuted;
+      await api.putOutputMute(txIdx, newMuted);
+      st.setOutput({ ...liveOut, muted: newMuted });
+    },
+    onDspOpen: (blk, btn) => openPanel(blk, out.id, btn),
   });
 
-  // Fader + meter side by side
-  const fmWrap = document.createElement('div');
-  fmWrap.className = 'mixer-fader-meter-wrap';
-  const scaleColOut = document.createElement('div');
-  scaleColOut.className = 'strip-vu-scale';
-  [0, -6, -12, -18, -30].forEach(db => {
-    const lbl = document.createElement('span');
-    lbl.style.bottom = (db >= 0 ? 100 : Math.round(((db + 60) / 60) * 100)) + '%';
-    lbl.textContent = db === 0 ? '0' : String(db);
-    scaleColOut.appendChild(lbl);
-  });
-  fmWrap.appendChild(scaleColOut);
-  fmWrap.appendChild(meter);
-  fmWrap.appendChild(fader);
-  strip.appendChild(fmWrap);
-
-  // DSP badge row
-  const dspRow = document.createElement('div');
-  dspRow.className = 'strip-dsp-row';
-  const outDsp = out.dsp ?? curOut?.dsp ?? {};
-  Object.keys(outDsp).forEach(blk => {
-    const block = outDsp[blk];
-    const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
-    const btn = document.createElement('button');
-    btn.className = 'strip-dsp-btn';
-    if (!block.enabled || block.bypassed) btn.classList.add('byp');
-    btn.textContent = colour.label ?? blk.toUpperCase();
-    btn.title = blk.toUpperCase();
-    btn.dataset.block = blk;
-    btn.dataset.ch = out.id;
-    btn.style.background = colour.bg;
-    btn.style.color = colour.fg;
-    btn.onclick = () => openPanel(blk, out.id, btn);
-    dspRow.appendChild(btn);
-  });
-  strip.appendChild(dspRow);
-
+  strip.style.setProperty('--zone-card-color', color);
   return strip;
 }
 
