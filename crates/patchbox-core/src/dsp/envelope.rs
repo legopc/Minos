@@ -81,12 +81,12 @@ mod tests {
     #[test]
     fn round_trip_new_envelope() {
         let json =
-            r#"{"kind":"fake","enabled":true,"version":1,"params":{"enabled":true,"value":3.14}}"#;
+            r#"{"kind":"fake","enabled":true,"version":1,"params":{"enabled":true,"value":2.5}}"#;
         let block: DspBlock<FakeParams> = serde_json::from_str(json).unwrap();
         assert_eq!(block.kind, "fake");
         assert!(block.enabled);
         assert_eq!(block.version, 1);
-        assert!((block.params.value - 3.14).abs() < 0.001);
+        assert!((block.params.value - 2.5).abs() < 0.001);
         let out = serde_json::to_string(&block).unwrap();
         assert!(out.contains(r#""kind":"fake""#));
         assert!(out.contains(r#""version":1"#));
