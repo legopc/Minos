@@ -25,6 +25,16 @@ jobs:
       - name: test
         run: cargo test --workspace --features inferno
 
+  codegen-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Regenerate dsp-defaults.json
+        run: cargo run -p patchbox-core --bin gen-dsp-defaults
+      - name: Check dsp-defaults.json is up to date
+        run: git diff --exit-code web/src/generated/dsp-defaults.json
+
   web:
     runs-on: ubuntu-latest
     steps:
