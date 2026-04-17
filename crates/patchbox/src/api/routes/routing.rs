@@ -1,13 +1,14 @@
+use crate::api::{parse_bus_id, parse_rx_id, parse_tx_id, ws_broadcast};
+use crate::state::AppState;
 use axum::{
-    extract::{Path, State, Query},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
+use patchbox_core::config::{SignalGenType, SignalGeneratorConfig};
 use std::collections::HashMap;
-use crate::state::AppState;
-use crate::api::{parse_rx_id, parse_tx_id, parse_bus_id, ws_broadcast};
-use patchbox_core::config::{SignalGeneratorConfig, SignalGenType};
+use tracing;
 
 #[derive(serde::Deserialize)]
 pub struct MatrixUpdate {
@@ -19,7 +20,10 @@ pub struct MatrixUpdate {
 }
 
 #[derive(serde::Deserialize)]
-pub struct GainUpdate { pub channel: usize, pub db: f32 }
+pub struct GainUpdate {
+    pub channel: usize,
+    pub db: f32,
+}
 
 #[derive(serde::Serialize)]
 pub(crate) struct MatrixState {
@@ -68,7 +72,9 @@ pub(crate) struct CreateAutomixerGroupRequest {
     #[serde(default)]
     pub gating_enabled: bool,
 }
-fn default_true_req() -> bool { true }
+fn default_true_req() -> bool {
+    true
+}
 
 #[derive(serde::Deserialize)]
 pub(crate) struct UpdateAutomixerGroupRequest {
@@ -112,11 +118,21 @@ pub(crate) struct CreateGeneratorRequest {
     sweep_duration_s: f32,
 }
 
-fn default_gen_freq_api() -> f32 { 1000.0 }
-fn default_gen_level_api() -> f32 { -20.0 }
-fn default_sweep_start_api() -> f32 { 20.0 }
-fn default_sweep_end_api() -> f32 { 20000.0 }
-fn default_sweep_duration_api() -> f32 { 10.0 }
+fn default_gen_freq_api() -> f32 {
+    1000.0
+}
+fn default_gen_level_api() -> f32 {
+    -20.0
+}
+fn default_sweep_start_api() -> f32 {
+    20.0
+}
+fn default_sweep_end_api() -> f32 {
+    20000.0
+}
+fn default_sweep_duration_api() -> f32 {
+    10.0
+}
 
 #[derive(serde::Deserialize)]
 pub(crate) struct UpdateGeneratorRequest {
@@ -137,7 +153,11 @@ pub(crate) struct UpdateGeneratorMatrixRequest {
 }
 
 // PUT /api/v1/matrix
-pub(crate) async fn put_matrix(State(s): State<AppState>, Json(u): Json<MatrixUpdate>) -> impl IntoResponse {
+#[tracing::instrument(skip_all)]
+pub(crate) async fn put_matrix(
+    State(s): State<AppState>,
+    Json(u): Json<MatrixUpdate>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if u.tx >= cfg.tx_channels || u.rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
@@ -161,7 +181,10 @@ pub(crate) async fn get_matrix(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/gain/input
-pub(crate) async fn put_gain_input(State(s): State<AppState>, Json(u): Json<GainUpdate>) -> impl IntoResponse {
+pub(crate) async fn put_gain_input(
+    State(s): State<AppState>,
+    Json(u): Json<GainUpdate>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if u.channel >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
@@ -173,7 +196,10 @@ pub(crate) async fn put_gain_input(State(s): State<AppState>, Json(u): Json<Gain
 }
 
 // PUT /api/v1/gain/output
-pub(crate) async fn put_gain_output(State(s): State<AppState>, Json(u): Json<GainUpdate>) -> impl IntoResponse {
+pub(crate) async fn put_gain_output(
+    State(s): State<AppState>,
+    Json(u): Json<GainUpdate>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if u.channel >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
@@ -219,7 +245,11 @@ pub(crate) async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // POST /api/v1/routes
-pub(crate) async fn post_route(State(s): State<AppState>, Json(body): Json<CreateRouteRequest>) -> impl IntoResponse {
+#[tracing::instrument(skip_all, fields(rx_id, tx_id))]
+pub(crate) async fn post_route(
+    State(s): State<AppState>,
+    Json(body): Json<CreateRouteRequest>,
+) -> impl IntoResponse {
     // Handle bus→TX route
     if body.rx_id.starts_with("bus_") {
         let Some(b) = parse_bus_id(&body.rx_id) else {
@@ -246,12 +276,16 @@ pub(crate) async fn post_route(State(s): State<AppState>, Json(body): Json<Creat
         crate::persist_or_500!(s);
         ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"bus"}).to_string());
         let route_id = format!("bus_{}|tx_{}", b, tx);
-        return (StatusCode::CREATED, Json(serde_json::json!({
-            "id": route_id,
-            "rx_id": body.rx_id,
-            "tx_id": body.tx_id,
-            "route_type": "bus"
-        }))).into_response();
+        return (
+            StatusCode::CREATED,
+            Json(serde_json::json!({
+                "id": route_id,
+                "rx_id": body.rx_id,
+                "tx_id": body.tx_id,
+                "route_type": "bus"
+            })),
+        )
+            .into_response();
     }
     let Some(rx) = parse_rx_id(&body.rx_id) else {
         return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response();
@@ -268,19 +302,30 @@ pub(crate) async fn post_route(State(s): State<AppState>, Json(body): Json<Creat
     crate::persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"dante"}).to_string());
     let route_id = format!("rx_{}|tx_{}", rx, tx);
-    (StatusCode::CREATED, Json(serde_json::json!({
-        "id": route_id,
-        "rx_id": body.rx_id,
-        "tx_id": body.tx_id,
-        "route_type": "dante"
-    }))).into_response()
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "id": route_id,
+            "rx_id": body.rx_id,
+            "tx_id": body.tx_id,
+            "route_type": "dante"
+        })),
+    )
+        .into_response()
 }
 
 // DELETE /api/v1/routes/:id — id is "rx_N|tx_M" (| may be URL-encoded as %7C)
-pub(crate) async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub(crate) async fn delete_route(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let parts: Vec<&str> = id.splitn(2, '|').collect();
     if parts.len() != 2 {
-        return (StatusCode::BAD_REQUEST, "invalid route id — expected rx_N|tx_M").into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "invalid route id — expected rx_N|tx_M",
+        )
+            .into_response();
     }
     // Handle bus→TX route: "bus_N|tx_M"
     if parts[0].starts_with("bus_") {
@@ -293,7 +338,9 @@ pub(crate) async fn delete_route(State(s): State<AppState>, Path(id): Path<Strin
         let mut cfg = s.config.write().await;
         if let Some(bm) = cfg.bus_matrix.as_mut() {
             if let Some(row) = bm.get_mut(tx) {
-                if b < row.len() { row[b] = false; }
+                if b < row.len() {
+                    row[b] = false;
+                }
             }
         }
         drop(cfg);
@@ -319,30 +366,49 @@ pub(crate) async fn delete_route(State(s): State<AppState>, Path(id): Path<Strin
 }
 
 // DELETE /api/v1/routes?rx_id=...&tx_id=...
-pub(crate) async fn delete_routes_bulk(State(s): State<AppState>, Query(params): Query<HashMap<String, String>>) -> impl IntoResponse {
+pub(crate) async fn delete_routes_bulk(
+    State(s): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     match (params.get("rx_id"), params.get("tx_id")) {
         (Some(rx_id), Some(tx_id)) => {
-            let Some(rx) = parse_rx_id(rx_id) else { return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response(); };
-            let Some(tx) = parse_tx_id(tx_id) else { return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response(); };
+            let Some(rx) = parse_rx_id(rx_id) else {
+                return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response();
+            };
+            let Some(tx) = parse_tx_id(tx_id) else {
+                return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
+            };
             if tx < cfg.tx_channels && rx < cfg.rx_channels {
                 cfg.matrix[tx][rx] = false;
             }
         }
         (Some(rx_id), None) => {
-            let Some(rx) = parse_rx_id(rx_id) else { return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response(); };
+            let Some(rx) = parse_rx_id(rx_id) else {
+                return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response();
+            };
             for row in cfg.matrix.iter_mut() {
-                if rx < row.len() { row[rx] = false; }
+                if rx < row.len() {
+                    row[rx] = false;
+                }
             }
         }
         (None, Some(tx_id)) => {
-            let Some(tx) = parse_tx_id(tx_id) else { return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response(); };
+            let Some(tx) = parse_tx_id(tx_id) else {
+                return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
+            };
             if let Some(row) = cfg.matrix.get_mut(tx) {
-                for cell in row.iter_mut() { *cell = false; }
+                for cell in row.iter_mut() {
+                    *cell = false;
+                }
             }
         }
         (None, None) => {
-            return (StatusCode::BAD_REQUEST, "specify rx_id, tx_id, or both as query params").into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                "specify rx_id, tx_id, or both as query params",
+            )
+                .into_response();
         }
     }
     drop(cfg);
@@ -357,7 +423,10 @@ pub(crate) async fn get_vca_groups(State(s): State<AppState>) -> impl IntoRespon
 }
 
 // POST /api/v1/vca-groups
-pub(crate) async fn post_vca_group(State(s): State<AppState>, Json(body): Json<CreateVcaRequest>) -> impl IntoResponse {
+pub(crate) async fn post_vca_group(
+    State(s): State<AppState>,
+    Json(body): Json<CreateVcaRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let id = format!("vca_{}", cfg.vca_groups.len());
     let vca = patchbox_core::config::VcaGroupConfig {
@@ -372,29 +441,50 @@ pub(crate) async fn post_vca_group(State(s): State<AppState>, Json(body): Json<C
     drop(cfg);
     let vca_groups = s.config.read().await.vca_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string(),
+    );
     (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
 }
 
 // PUT /api/v1/vca-groups/:id
-pub(crate) async fn put_vca_group(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateVcaRequest>) -> impl IntoResponse {
+pub(crate) async fn put_vca_group(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateVcaRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(vca) = cfg.vca_groups.iter_mut().find(|v| v.id == id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(n) = body.name { vca.name = n; }
-    if let Some(g) = body.gain_db { vca.gain_db = g.clamp(-60.0, 24.0); }
-    if let Some(m) = body.muted { vca.muted = m; }
-    if let Some(members) = body.members { vca.members = members; }
+    if let Some(n) = body.name {
+        vca.name = n;
+    }
+    if let Some(g) = body.gain_db {
+        vca.gain_db = g.clamp(-60.0, 24.0);
+    }
+    if let Some(m) = body.muted {
+        vca.muted = m;
+    }
+    if let Some(members) = body.members {
+        vca.members = members;
+    }
     drop(cfg);
     let vca_groups = s.config.read().await.vca_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
 // DELETE /api/v1/vca-groups/:id
-pub(crate) async fn delete_vca_group(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub(crate) async fn delete_vca_group(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let before = cfg.vca_groups.len();
     cfg.vca_groups.retain(|v| v.id != id);
@@ -404,7 +494,10 @@ pub(crate) async fn delete_vca_group(State(s): State<AppState>, Path(id): Path<S
     drop(cfg);
     let vca_groups = s.config.read().await.vca_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"vca_updated","vca_groups":vca_groups}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -415,7 +508,10 @@ pub(crate) async fn get_automixer_groups(State(s): State<AppState>) -> impl Into
 }
 
 // POST /api/v1/automixer-groups
-pub(crate) async fn post_automixer_group(State(s): State<AppState>, Json(body): Json<CreateAutomixerGroupRequest>) -> impl IntoResponse {
+pub(crate) async fn post_automixer_group(
+    State(s): State<AppState>,
+    Json(body): Json<CreateAutomixerGroupRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let id = format!("amg_{}", cfg.automixer_groups.len());
     let group = patchbox_core::config::AutomixerGroupConfig {
@@ -429,32 +525,59 @@ pub(crate) async fn post_automixer_group(State(s): State<AppState>, Json(body): 
     drop(cfg);
     let groups = s.config.read().await.automixer_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string(),
+    );
     (StatusCode::CREATED, Json(serde_json::json!({"id": id}))).into_response()
 }
 
 // PUT /api/v1/automixer-groups/:id
-pub(crate) async fn put_automixer_group(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateAutomixerGroupRequest>) -> impl IntoResponse {
+pub(crate) async fn put_automixer_group(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateAutomixerGroupRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(g) = cfg.automixer_groups.iter_mut().find(|g| g.id == id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(n) = body.name           { g.name = n; }
-    if let Some(v) = body.enabled        { g.enabled = v; }
-    if let Some(v) = body.gate_threshold_db { g.gate_threshold_db = v.clamp(-80.0, 0.0); }
-    if let Some(v) = body.off_attenuation_db { g.off_attenuation_db = v.clamp(-120.0, -1.0); }
-    if let Some(v) = body.hold_ms        { g.hold_ms = v.clamp(0.0, 5000.0); }
-    if let Some(v) = body.last_mic_hold  { g.last_mic_hold = v; }
-    if let Some(v) = body.gating_enabled { g.gating_enabled = v; }
+    if let Some(n) = body.name {
+        g.name = n;
+    }
+    if let Some(v) = body.enabled {
+        g.enabled = v;
+    }
+    if let Some(v) = body.gate_threshold_db {
+        g.gate_threshold_db = v.clamp(-80.0, 0.0);
+    }
+    if let Some(v) = body.off_attenuation_db {
+        g.off_attenuation_db = v.clamp(-120.0, -1.0);
+    }
+    if let Some(v) = body.hold_ms {
+        g.hold_ms = v.clamp(0.0, 5000.0);
+    }
+    if let Some(v) = body.last_mic_hold {
+        g.last_mic_hold = v;
+    }
+    if let Some(v) = body.gating_enabled {
+        g.gating_enabled = v;
+    }
     drop(cfg);
     let groups = s.config.read().await.automixer_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
 // DELETE /api/v1/automixer-groups/:id
-pub(crate) async fn delete_automixer_group(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub(crate) async fn delete_automixer_group(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let before = cfg.automixer_groups.len();
     cfg.automixer_groups.retain(|g| g.id != id);
@@ -470,7 +593,10 @@ pub(crate) async fn delete_automixer_group(State(s): State<AppState>, Path(id): 
     drop(cfg);
     let groups = s.config.read().await.automixer_groups.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"automixer_updated","automixer_groups":groups}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -481,35 +607,56 @@ pub(crate) async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResp
 }
 
 // POST /api/v1/stereo-links
-pub(crate) async fn post_stereo_link(State(s): State<AppState>, Json(body): Json<CreateStereoLinkRequest>) -> impl IntoResponse {
+pub(crate) async fn post_stereo_link(
+    State(s): State<AppState>,
+    Json(body): Json<CreateStereoLinkRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
-    cfg.stereo_links.retain(|sl| sl.left_channel != body.left_channel && sl.right_channel != body.right_channel);
-    cfg.stereo_links.push(patchbox_core::config::StereoLinkConfig {
-        left_channel: body.left_channel,
-        right_channel: body.right_channel,
-        linked: true,
-        pan: 0.0,
+    cfg.stereo_links.retain(|sl| {
+        sl.left_channel != body.left_channel && sl.right_channel != body.right_channel
     });
+    cfg.stereo_links
+        .push(patchbox_core::config::StereoLinkConfig {
+            left_channel: body.left_channel,
+            right_channel: body.right_channel,
+            linked: true,
+            pan: 0.0,
+        });
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::CREATED.into_response()
 }
 
 // PUT /api/v1/stereo-links/:left_ch
-pub(crate) async fn put_stereo_link(State(s): State<AppState>, Path(left_ch): Path<usize>, Json(body): Json<UpdateStereoLinkRequest>) -> impl IntoResponse {
+pub(crate) async fn put_stereo_link(
+    State(s): State<AppState>,
+    Path(left_ch): Path<usize>,
+    Json(body): Json<UpdateStereoLinkRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
-    let Some(sl) = cfg.stereo_links.iter_mut().find(|sl| sl.left_channel == left_ch) else {
+    let Some(sl) = cfg
+        .stereo_links
+        .iter_mut()
+        .find(|sl| sl.left_channel == left_ch)
+    else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(l) = body.linked { sl.linked = l; }
-    if let Some(p) = body.pan { sl.pan = p.clamp(-1.0, 1.0); }
+    if let Some(l) = body.linked {
+        sl.linked = l;
+    }
+    if let Some(p) = body.pan {
+        sl.pan = p.clamp(-1.0, 1.0);
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
 }
 
 // DELETE /api/v1/stereo-links/:left_ch
-pub(crate) async fn delete_stereo_link(State(s): State<AppState>, Path(left_ch): Path<usize>) -> impl IntoResponse {
+pub(crate) async fn delete_stereo_link(
+    State(s): State<AppState>,
+    Path(left_ch): Path<usize>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let before = cfg.stereo_links.len();
     cfg.stereo_links.retain(|sl| sl.left_channel != left_ch);
@@ -527,11 +674,15 @@ pub(crate) async fn get_signal_generators(State(s): State<AppState>) -> impl Int
     Json(serde_json::json!({
         "signal_generators": cfg.signal_generators,
         "generator_bus_matrix": cfg.generator_bus_matrix,
-    })).into_response()
+    }))
+    .into_response()
 }
 
 // POST /api/v1/signal-generators
-pub(crate) async fn post_signal_generator(State(s): State<AppState>, Json(body): Json<CreateGeneratorRequest>) -> impl IntoResponse {
+pub(crate) async fn post_signal_generator(
+    State(s): State<AppState>,
+    Json(body): Json<CreateGeneratorRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let idx = cfg.signal_generators.len();
     let id = format!("gen_{}", idx);
@@ -551,33 +702,62 @@ pub(crate) async fn post_signal_generator(State(s): State<AppState>, Json(body):
     drop(cfg);
     let generators = s.config.read().await.signal_generators.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string(),
+    );
     (StatusCode::CREATED, Json(new_gen)).into_response()
 }
 
 // PUT /api/v1/signal-generators/:id
-pub(crate) async fn put_signal_generator(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateGeneratorRequest>) -> impl IntoResponse {
+pub(crate) async fn put_signal_generator(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateGeneratorRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(gen) = cfg.signal_generators.iter_mut().find(|g| g.id == id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(n) = body.name { gen.name = n; }
-    if let Some(t) = body.gen_type { gen.gen_type = t; }
-    if let Some(f) = body.freq_hz { gen.freq_hz = f.clamp(20.0, 20000.0); }
-    if let Some(l) = body.level_db { gen.level_db = l.clamp(-96.0, 0.0); }
-    if let Some(e) = body.enabled { gen.enabled = e; }
-    if let Some(s) = body.sweep_start_hz { gen.sweep_start_hz = s.clamp(20.0, 20000.0); }
-    if let Some(s) = body.sweep_end_hz { gen.sweep_end_hz = s.clamp(20.0, 20000.0); }
-    if let Some(d) = body.sweep_duration_s { gen.sweep_duration_s = d.clamp(0.1, 300.0); }
+    if let Some(n) = body.name {
+        gen.name = n;
+    }
+    if let Some(t) = body.gen_type {
+        gen.gen_type = t;
+    }
+    if let Some(f) = body.freq_hz {
+        gen.freq_hz = f.clamp(20.0, 20000.0);
+    }
+    if let Some(l) = body.level_db {
+        gen.level_db = l.clamp(-96.0, 0.0);
+    }
+    if let Some(e) = body.enabled {
+        gen.enabled = e;
+    }
+    if let Some(s) = body.sweep_start_hz {
+        gen.sweep_start_hz = s.clamp(20.0, 20000.0);
+    }
+    if let Some(s) = body.sweep_end_hz {
+        gen.sweep_end_hz = s.clamp(20.0, 20000.0);
+    }
+    if let Some(d) = body.sweep_duration_s {
+        gen.sweep_duration_s = d.clamp(0.1, 300.0);
+    }
     drop(cfg);
     let generators = s.config.read().await.signal_generators.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
 // DELETE /api/v1/signal-generators/:id
-pub(crate) async fn delete_signal_generator(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub(crate) async fn delete_signal_generator(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let before = cfg.signal_generators.len();
     cfg.signal_generators.retain(|g| g.id != id);
@@ -588,22 +768,36 @@ pub(crate) async fn delete_signal_generator(State(s): State<AppState>, Path(id):
     drop(cfg);
     let generators = s.config.read().await.signal_generators.clone();
     crate::persist_or_500!(s);
-    ws_broadcast(&s, serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string());
+    ws_broadcast(
+        &s,
+        serde_json::json!({"type":"generators_updated","signal_generators":generators}).to_string(),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 
 // GET /api/v1/signal-generators/:id/routing
-pub(crate) async fn get_generator_routing(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub(crate) async fn get_generator_routing(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let Some(idx) = cfg.signal_generators.iter().position(|g| g.id == id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let gains = cfg.generator_bus_matrix.get(idx).cloned().unwrap_or_default();
+    let gains = cfg
+        .generator_bus_matrix
+        .get(idx)
+        .cloned()
+        .unwrap_or_default();
     Json(serde_json::json!({"id": id, "gains": gains})).into_response()
 }
 
 // PUT /api/v1/signal-generators/:id/routing
-pub(crate) async fn put_generator_routing(State(s): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateGeneratorMatrixRequest>) -> impl IntoResponse {
+pub(crate) async fn put_generator_routing(
+    State(s): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateGeneratorMatrixRequest>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(idx) = cfg.signal_generators.iter().position(|g| g.id == id) else {
         return StatusCode::NOT_FOUND.into_response();

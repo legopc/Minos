@@ -1,9 +1,10 @@
+use crate::api::router;
+use crate::state::AppState;
 use clap::Parser;
 use patchbox_core::config::PatchboxConfig;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use crate::state::AppState;
-use crate::api::router;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod api;
 mod auth_api;
@@ -23,7 +24,27 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let env_filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("info"))
+        .unwrap();
+
+    let log_format = std::env::var("PATCHBOX_LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
+
+    match log_format.as_str() {
+        "json" => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer().json())
+                .init();
+        }
+        _ => {
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(fmt::layer().pretty())
+                .init();
+        }
+    }
+
     let args = Args::parse();
 
     let config: PatchboxConfig = if args.config.exists() {
@@ -34,7 +55,6 @@ async fn main() {
         if let Err(e) = c.validate() {
             tracing::error!(error = %e, path = %args.config.display(),
                 "Config validation failed — falling back to defaults. Check your config.toml.");
-            eprintln!("ERROR: Config validation failed: {e}\nUsing default config.");
             c = PatchboxConfig::default();
             c.normalize();
         }
@@ -48,21 +68,23 @@ async fn main() {
 
     let port = args.port.unwrap_or(config.port);
 
-    // Startup banner
-    tracing::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    tracing::info!("  dante-patchbox v2 starting");
-    tracing::info!("  device:   {}", config.dante_name);
-    tracing::info!("  port:     {}", port);
-    tracing::info!("  rx/tx:    {} RX → {} TX", config.rx_channels, config.tx_channels);
-    tracing::info!("  zones:    {:?}", config.zones);
-    tracing::info!("  sources:  {:?}", config.sources);
-    tracing::info!("  config:   {:?}", args.config);
-    tracing::info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    let bind_addr = SocketAddr::from(([0, 0, 0, 0], port));
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        bind_address = %bind_addr,
+        device = %config.dante_name,
+        rx_channels = config.rx_channels,
+        tx_channels = config.tx_channels,
+        "dante-patchbox starting"
+    );
 
     let state = AppState::new(config.clone(), args.config);
 
     // Startup validation: verify config is writable
-    state.persist().await.expect("startup config write check failed — check permissions on config file");
+    state
+        .persist()
+        .await
+        .expect("startup config write check failed — check permissions on config file");
     tracing::info!("config writability check passed");
 
     // Graceful shutdown: flush config on SIGINT/SIGTERM
@@ -89,7 +111,9 @@ async fn main() {
         )
         .await
         .expect("Dante device init failed");
-    state.dante_connected.store(true, std::sync::atomic::Ordering::Relaxed);
+    state
+        .dante_connected
+        .store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Simulated meter task — only active when inferno feature is disabled
     #[cfg(not(feature = "inferno"))]
@@ -110,7 +134,11 @@ async fn main() {
                 m.tx_rms = (0..cfg.tx_channels)
                     .map(|i| {
                         let routed = cfg.matrix[i].iter().any(|&r| r);
-                        if routed { ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0) } else { 0.0 }
+                        if routed {
+                            ((t + i as f32 * 1.1).sin().abs() * 0.5).max(0.0)
+                        } else {
+                            0.0
+                        }
                     })
                     .collect();
             }
@@ -118,9 +146,13 @@ async fn main() {
     }
 
     let app = router(state);
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("listening on http://{}", addr);
+    tracing::info!("listening on http://{}", bind_addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(bind_addr).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
