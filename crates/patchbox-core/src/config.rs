@@ -691,6 +691,9 @@ pub struct PatchboxConfig {
     /// Per-input DSP chain (len == rx_channels) — supersedes input_gain_db
     #[serde(default)]
     pub input_dsp: Vec<InputChannelDsp>,
+    /// Per-input colour accent (0-9). None = no accent. (len == rx_channels)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_colours: Vec<Option<u8>>,
     /// Per-output DSP chain (len == tx_channels) — supersedes output_gain_db, output_muted, per_output_eq, per_output_limiter
     #[serde(default)]
     pub output_dsp: Vec<OutputChannelDsp>,
@@ -778,6 +781,7 @@ impl Default for PatchboxConfig {
             sources: (1..=rx).map(|i| format!("Source {}", i)).collect(),
             input_gain_db: vec![0.0; rx],
             output_gain_db: vec![0.0; tx],
+            input_colours: vec![None; rx],
             matrix: vec![vec![false; rx]; tx],
             matrix_gain_db: vec![vec![0.0; rx]; tx],
             output_muted: vec![false; tx],
@@ -821,6 +825,7 @@ impl PatchboxConfig {
         self.per_output_limiter.resize_with(self.tx_channels, LimiterConfig::default);
         self.input_gain_db.resize(self.rx_channels, 0.0);
         self.output_gain_db.resize(self.tx_channels, 0.0);
+        self.input_colours.resize(self.rx_channels, None);
         self.matrix.resize(self.tx_channels, vec![false; self.rx_channels]);
         for row in &mut self.matrix {
             row.resize(self.rx_channels, false);

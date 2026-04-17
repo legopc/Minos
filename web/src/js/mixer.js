@@ -839,6 +839,12 @@ function _buildInputStrip(ch, nextCh) {
 
   const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
 
+  // Apply colour accent if set
+  if (ch.colour_index != null) {
+    const colour = `var(--zone-color-${ch.colour_index % 10})`;
+    strip.style.setProperty('--ch-accent', colour);
+  }
+
   // Name row — may include stereo link badge for even-indexed channels
   const nameRow = document.createElement('div');
   nameRow.className = 'strip-name-row';
@@ -848,6 +854,24 @@ function _buildInputStrip(ch, nextCh) {
   nm.textContent = ch.name ?? ch.id;
   nm.title = ch.id;
   nameRow.appendChild(nm);
+
+  // Colour cycle button
+  const colourBtn = document.createElement('button');
+  colourBtn.className = 'strip-colour-btn';
+  colourBtn.title = 'Cycle channel colour';
+  colourBtn.textContent = '◎';
+  colourBtn.onclick = async (e) => {
+    e.stopPropagation();
+    try {
+      const currentIdx = ch.colour_index ?? null;
+      const nextIdx = currentIdx === null ? 0 : (currentIdx + 1) % 10;
+      await api.putChannel(chIdx, { colour_index: nextIdx });
+      st.setChannel({ ...ch, colour_index: nextIdx });
+      const colour = nextIdx !== null ? `var(--zone-color-${nextIdx % 10})` : null;
+      strip.style.setProperty('--ch-accent', colour ?? 'transparent');
+    } catch(e) { toast(e.message, true); }
+  };
+  nameRow.appendChild(colourBtn);
 
   // Inline stereo link button for even-indexed channels (0, 2, 4…)
   if (nextCh && chIdx % 2 === 0) {

@@ -388,6 +388,7 @@
   min-width: var(--label-w);
   flex-shrink: 0;
   background: var(--bg-dark);
+  border-left: 3px solid var(--ch-accent, transparent);
   border-right: 1px solid var(--border-primary);
   display: flex;
   align-items: center;

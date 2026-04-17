@@ -478,6 +478,12 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
   label.className = 'ch-label';
   label.dataset.chId = ch.id;
 
+  // Apply colour accent if set
+  if (ch.colour_index != null) {
+    const colour = `var(--zone-color-${ch.colour_index % 10})`;
+    label.style.setProperty('--ch-accent', colour);
+  }
+
   const num = document.createElement('span');
   num.className = 'ch-num';
   num.textContent = idx + 1;

@@ -109,6 +109,10 @@ export function getZoneColour(colourIndex) {
   return `var(--zone-color-${(colourIndex ?? 0) % 10})`;
 }
 
+export function getChannelColour(colourIndex) {
+  return colourIndex != null ? `var(--zone-color-${colourIndex % 10})` : null;
+}
+
 export function channelList()  { return [..._state.channels.values()]; }
 export function outputList()   { return [..._state.outputs.values()]; }
 export function zoneList()     { return [..._state.zones.values()]; }

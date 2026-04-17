@@ -911,6 +911,7 @@ struct ChannelResponse {
     source_type: &'static str,
     gain_db: f32,
     enabled: bool,
+    colour_index: Option<u8>,
     dsp: serde_json::Value,
 }
 
@@ -976,6 +977,7 @@ struct UpdateChannelRequest {
     name: Option<String>,
     gain_db: Option<f32>,
     enabled: Option<bool>,
+    colour_index: Option<Option<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -1166,12 +1168,14 @@ async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
         .map(|i| {
             let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
             let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
+            let colour_index = cfg.input_colours.get(i).cloned().flatten();
             ChannelResponse {
                 id: format!("rx_{}", i),
                 name,
                 source_type: "dante",
                 gain_db: dsp.gain_db,
                 enabled: dsp.enabled,
+                colour_index,
                 dsp: input_dsp_to_value(&dsp),
             }
         })
@@ -1190,12 +1194,14 @@ async fn get_channel(State(s): State<AppState>, Path(id): Path<String>) -> impl 
     }
     let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
     let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
+    let colour_index = cfg.input_colours.get(i).cloned().flatten();
     Json(ChannelResponse {
         id: format!("rx_{}", i),
         name,
         source_type: "dante",
         gain_db: dsp.gain_db,
         enabled: dsp.enabled,
+        colour_index,
         dsp: input_dsp_to_value(&dsp),
     }).into_response()
 }
@@ -1217,6 +1223,10 @@ async fn put_channel(State(s): State<AppState>, Path(id): Path<String>, Json(bod
     }
     if let Some(enabled) = body.enabled {
         if i < cfg.input_dsp.len() { cfg.input_dsp[i].enabled = enabled; }
+    }
+    if let Some(colour_index) = body.colour_index {
+        if i >= cfg.input_colours.len() { cfg.input_colours.resize(i + 1, None); }
+        cfg.input_colours[i] = colour_index.map(|c| c % 10);
     }
     drop(cfg);
     persist_or_500!(s);
