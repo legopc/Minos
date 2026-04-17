@@ -3,9 +3,15 @@ import { DSP_COLOURS } from './dsp/colours.js';
 import { blockMap as dspBlockMap } from './dsp/registry.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
+import { undo } from './undo.js';
 
 let zTop = 200;
 let paramChangeDebounce = new Map();
+
+function _clone(v) {
+  try { return structuredClone(v); } catch (_) {}
+  return v == null ? v : JSON.parse(JSON.stringify(v));
+}
 
 function injectStyles() {
   if (document.getElementById('dsp-panel-styles')) return;
@@ -232,63 +238,109 @@ async function _loadContent(blockKey, channelId, contentEl) {
 
 function _onParamChange(channelId, block, newParams) {
   const key = `${channelId}_${block}`;
-  if (paramChangeDebounce.has(key)) {
-    clearTimeout(paramChangeDebounce.get(key));
-  }
+  const existing = paramChangeDebounce.get(key);
+  if (existing?.timeoutId) clearTimeout(existing.timeoutId);
 
-  const timeoutId = setTimeout(async () => {
-    try {
-      const isBus = channelId.startsWith('bus_');
-      const isRx = channelId.startsWith('rx_');
-      const idx = parseInt(channelId.split('_')[1], 10);
-      let base;
-      if (isBus) {
-        base = `/buses/${channelId}`;
-      } else {
-        base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
-      }
+  const isBus = channelId.startsWith('bus_');
+  const isRx = channelId.startsWith('rx_');
+  const idx = parseInt(channelId.split('_')[1], 10);
+  const base = isBus ? `/buses/${channelId}` : (isRx ? `/inputs/${idx}` : `/outputs/${idx}`);
 
-      if (block === 'flt') {
-        const promises = [];
-        if (newParams.hpf) promises.push(api.put(`${base}/hpf`, {kind:'flt',enabled:newParams.hpf.enabled??true,version:1,params:newParams.hpf}));
-        if (newParams.lpf) promises.push(api.put(`${base}/lpf`, {kind:'flt',enabled:newParams.lpf.enabled??true,version:1,params:newParams.lpf}));
-        await Promise.all(promises);
-        let ch;
-        if (isBus) {
-          ch = state.buses.get(channelId);
-        } else {
-          ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
+  const getCh = () => isBus
+    ? state.buses.get(channelId)
+    : isRx
+      ? state.channels.get(channelId)
+      : state.outputs.get(channelId);
+
+  const before = existing?.before ?? (() => {
+    const ch = getCh();
+    const bd = ch?.dsp?.[block] ?? {};
+    return {
+      enabled: bd.enabled ?? true,
+      params: _clone(bd.params ?? {}),
+      flt: block === 'flt'
+        ? {
+          hpf: _clone(ch?.dsp?.flt?.params?.hpf ?? null),
+          lpf: _clone(ch?.dsp?.flt?.params?.lpf ?? null),
         }
-        if (ch?.dsp?.flt?.params) {
-          if (newParams.hpf) Object.assign(ch.dsp.flt.params.hpf, newParams.hpf);
-          if (newParams.lpf) Object.assign(ch.dsp.flt.params.lpf, newParams.lpf);
+        : null,
+    };
+  })();
+
+  const entry = {
+    before,
+    after: _clone(newParams),
+    timeoutId: setTimeout(async () => {
+      try {
+        const after = entry.after;
+
+        if (block === 'flt') {
+          const changed = { hpf: !!after?.hpf, lpf: !!after?.lpf };
+
+          const applyFlt = async (params) => {
+            const promises = [];
+            if (changed.hpf && params.hpf) promises.push(api.put(`${base}/hpf`, { kind: 'flt', enabled: params.hpf?.enabled ?? true, version: 1, params: params.hpf }));
+            if (changed.lpf && params.lpf) promises.push(api.put(`${base}/lpf`, { kind: 'flt', enabled: params.lpf?.enabled ?? true, version: 1, params: params.lpf }));
+            await Promise.all(promises);
+
+            const ch = getCh();
+            if (ch?.dsp?.flt?.params) {
+              if (changed.hpf && params.hpf) Object.assign(ch.dsp.flt.params.hpf, params.hpf);
+              if (changed.lpf && params.lpf) Object.assign(ch.dsp.flt.params.lpf, params.lpf);
+            }
+          };
+
+          await applyFlt(after);
+
+          const label = `DSP flt: ${channelId}`;
+          const beforeFlt = {
+            hpf: changed.hpf ? before.flt?.hpf : null,
+            lpf: changed.lpf ? before.flt?.lpf : null,
+          };
+
+          undo.push({
+            label,
+            apply: async () => applyFlt(after),
+            revert: async () => applyFlt(beforeFlt),
+          });
+
+          paramChangeDebounce.delete(key);
+          return;
         }
-        paramChangeDebounce.delete(key);
-        return;
+
+        const mappedBlock = dspBlockMap[block] || block;
+        const endpoint = `${base}/${mappedBlock}`;
+        const afterEnabled = after?.enabled ?? true;
+
+        const applyBlock = async (params, enabled) => {
+          await api.put(endpoint, { kind: block, enabled, version: 1, params });
+          const ch = getCh();
+          if (ch?.dsp?.[block]) {
+            ch.dsp[block] = {
+              ...ch.dsp[block],
+              enabled,
+              params: { ...(ch.dsp[block].params ?? {}), ...(params ?? {}) },
+            };
+          }
+        };
+
+        await applyBlock(after, afterEnabled);
+
+        undo.push({
+          label: `DSP ${block}: ${channelId}`,
+          apply: async () => applyBlock(after, afterEnabled),
+          revert: async () => applyBlock(before.params, before.enabled),
+        });
+
+      } catch (err) {
+        console.error('Parameter change failed:', err);
+        toast('Error updating DSP parameters', 'error');
       }
+      paramChangeDebounce.delete(key);
+    }, 160),
+  };
 
-      const mappedBlock = dspBlockMap[block] || block;
-      const endpoint = `${base}/${mappedBlock}`;
-
-      const enabled = newParams.enabled ?? true;
-      await api.put(endpoint, {kind: block, enabled, version: 1, params: newParams});
-
-      const ch = isBus
-        ? state.buses.get(channelId)
-        : isRx
-          ? state.channels.get(channelId)
-          : state.outputs.get(channelId);
-      if (ch && ch.dsp && ch.dsp[block]) {
-        ch.dsp[block] = { ...ch.dsp[block], params: { ...(ch.dsp[block].params ?? {}), ...newParams } };
-      }
-    } catch (err) {
-      console.error('Parameter change failed:', err);
-      toast('Error updating DSP parameters', 'error');
-    }
-    paramChangeDebounce.delete(key);
-  }, 100);
-
-  paramChangeDebounce.set(key, timeoutId);
+  paramChangeDebounce.set(key, entry);
 }
 
 async function _onBypass(channelId, block, bypassed) {
@@ -296,49 +348,71 @@ async function _onBypass(channelId, block, bypassed) {
     const isBus = channelId.startsWith('bus_');
     const isRx = channelId.startsWith('rx_');
     const idx = parseInt(channelId.split('_')[1], 10);
-    let base;
-    if (isBus) {
-      base = `/buses/${channelId}`;
-    } else {
-      base = isRx ? `/inputs/${idx}` : `/outputs/${idx}`;
-    }
-    let ch;
-    if (isBus) {
-      ch = state.buses.get(channelId);
-    } else {
-      ch = isRx ? state.channels.get(channelId) : state.outputs.get(channelId);
-    }
+    const base = isBus ? `/buses/${channelId}` : (isRx ? `/inputs/${idx}` : `/outputs/${idx}`);
 
-    if (block === 'flt') {
-      const fltParams = ch?.dsp?.flt?.params ?? {};
-      await Promise.all([
-        api.put(`${base}/hpf`, {kind:'flt',enabled:!bypassed,version:1,params:{...(fltParams.hpf??{}),enabled:!bypassed,freq_hz:fltParams.hpf?.freq_hz??80}}),
-        api.put(`${base}/lpf`, {kind:'flt',enabled:!bypassed,version:1,params:{...(fltParams.lpf??{}),enabled:!bypassed,freq_hz:fltParams.lpf?.freq_hz??18000}}),
-      ]);
-      if (ch?.dsp?.flt) ch.dsp.flt.bypassed = bypassed;
-      // Sync badge DOM for flt block
-      const shouldByp = bypassed || !ch.dsp.flt.enabled;
+    const getCh = () => isBus
+      ? state.buses.get(channelId)
+      : isRx
+        ? state.channels.get(channelId)
+        : state.outputs.get(channelId);
+
+    const ch0 = getCh();
+    const beforeByp = !!(ch0?.dsp?.[block]?.bypassed);
+
+    const syncBadges = () => {
+      const ch = getCh();
+      if (!ch?.dsp?.[block]) return;
+      const shouldByp = !!(ch.dsp[block].bypassed) || !ch.dsp[block].enabled;
       document.querySelectorAll(
         '[data-block="' + block + '"][data-ch="' + channelId + '"]'
       ).forEach(function(el) {
         el.classList.toggle('byp', shouldByp);
       });
+    };
+
+    if (block === 'flt') {
+      const applyFltByp = async (byp) => {
+        const ch = getCh();
+        const fltParams = ch?.dsp?.flt?.params ?? {};
+        await Promise.all([
+          api.put(`${base}/hpf`, { kind: 'flt', enabled: !byp, version: 1, params: { ...(fltParams.hpf ?? {}), enabled: !byp, freq_hz: fltParams.hpf?.freq_hz ?? 80 } }),
+          api.put(`${base}/lpf`, { kind: 'flt', enabled: !byp, version: 1, params: { ...(fltParams.lpf ?? {}), enabled: !byp, freq_hz: fltParams.lpf?.freq_hz ?? 18000 } }),
+        ]);
+        if (ch?.dsp?.flt) {
+          ch.dsp.flt.bypassed = byp;
+          ch.dsp.flt.enabled = !byp;
+        }
+        syncBadges();
+      };
+
+      await applyFltByp(bypassed);
+
+      undo.push({
+        label: `${bypassed ? 'Bypass' : 'Enable'} DSP flt: ${channelId}`,
+        apply: async () => applyFltByp(bypassed),
+        revert: async () => applyFltByp(beforeByp),
+      });
       return;
     }
 
     const mappedBlock = dspBlockMap[block] || block;
-    const blockData = ch?.dsp?.[block] ?? {};
-    const fullParams = { ...(blockData.params ?? {}), enabled: !bypassed };
+    const applyByp = async (byp) => {
+      const ch = getCh();
+      const blockData = ch?.dsp?.[block] ?? {};
+      await api.put(`${base}/${mappedBlock}`, { kind: block, enabled: !byp, version: 1, params: blockData.params ?? {} });
+      if (ch?.dsp?.[block]) {
+        ch.dsp[block].bypassed = byp;
+        ch.dsp[block].enabled = !byp;
+      }
+      syncBadges();
+    };
 
-    await api.put(`${base}/${mappedBlock}`, {kind: block, enabled: !bypassed, version: 1, params: blockData.params ?? {}});
+    await applyByp(bypassed);
 
-    if (ch?.dsp?.[block]) ch.dsp[block].bypassed = bypassed;
-    // Sync badge DOM for other blocks
-    const shouldByp = bypassed || !ch.dsp[block].enabled;
-    document.querySelectorAll(
-      '[data-block="' + block + '"][data-ch="' + channelId + '"]'
-    ).forEach(function(el) {
-      el.classList.toggle('byp', shouldByp);
+    undo.push({
+      label: `${bypassed ? 'Bypass' : 'Enable'} DSP ${block}: ${channelId}`,
+      apply: async () => applyByp(bypassed),
+      revert: async () => applyByp(beforeByp),
     });
   } catch (err) {
     console.error('Bypass change failed:', err);

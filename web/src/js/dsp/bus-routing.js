@@ -2,6 +2,7 @@
 import * as st  from '../state.js';
 import * as api from '../api.js';
 import { toast } from '../toast.js';
+import { undo } from '../undo.js';
 
 /**
  * Builds a checklist UI showing all RX channels and whether each feeds this bus.
@@ -31,27 +32,49 @@ export function buildBusRoutingContent(bus) {
     empty.textContent = 'No RX channels available.';
     list.appendChild(empty);
   } else {
-    const currentRouting = Array.isArray(bus.routing) ? bus.routing : [];
+    let currentRouting = Array.isArray(bus.routing) ? [...bus.routing] : [];
 
     channels.forEach(ch => {
+      const rxIdx = parseInt(String(ch.id).replace('rx_', ''), 10);
+      if (!Number.isFinite(rxIdx)) return;
+
       const row = document.createElement('label');
       row.className = 'bus-routing-row';
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
-      cb.checked = currentRouting.includes(ch.id);
-      cb.dataset.chId = ch.id;
+      cb.checked = !!currentRouting[rxIdx];
+      cb.dataset.rxIdx = String(rxIdx);
 
       cb.onchange = async () => {
         const checked = cb.checked;
-        const updated = checked
-          ? [...currentRouting.filter(id => channels.some(c => c.id === id)), ch.id]
-          : currentRouting.filter(id => id !== ch.id);
+        const before = [...currentRouting];
+        const updated = [...currentRouting];
+        while (updated.length <= rxIdx) updated.push(false);
+        updated[rxIdx] = checked;
 
         try {
           await api.setBusRouting(bus.id, updated);
-          if (checked) currentRouting.push(ch.id);
-          else { const i = currentRouting.indexOf(ch.id); if (i >= 0) currentRouting.splice(i, 1); }
+          currentRouting = updated;
+          const cur = st.state.buses.get(bus.id) ?? bus;
+          st.setBus({ ...cur, routing: [...updated] });
+
+          const busName = cur.name ?? cur.id;
+          const rxName = ch.name ?? ch.id;
+          undo.push({
+            label: `${checked ? 'Route' : 'Unroute'} input→bus: ${rxName} → ${busName}`,
+            apply: async () => {
+              await api.setBusRouting(bus.id, updated);
+              const b = st.state.buses.get(bus.id) ?? bus;
+              st.setBus({ ...b, routing: [...updated] });
+            },
+            revert: async () => {
+              await api.setBusRouting(bus.id, before);
+              const b = st.state.buses.get(bus.id) ?? bus;
+              st.setBus({ ...b, routing: [...before] });
+            },
+          });
+
         } catch(e) {
           cb.checked = !checked;
           toast(e.message, true);

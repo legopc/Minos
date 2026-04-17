@@ -1559,6 +1559,22 @@ function _startOutputRename(nameEl, nameWrap, out) {
       await api.putOutput(out.id, { name: next });
       const cur = st.state.outputs.get(out.id);
       if (cur) st.setOutput({ ...cur, name: next });
+
+      const outId = out.id;
+      undo.push({
+        label: `Rename output: ${prev} → ${next}`,
+        apply: async () => {
+          await api.putOutput(outId, { name: next });
+          const o = st.state.outputs.get(outId);
+          if (o) st.setOutput({ ...o, name: next });
+        },
+        revert: async () => {
+          await api.putOutput(outId, { name: prev });
+          const o = st.state.outputs.get(outId);
+          if (o) st.setOutput({ ...o, name: prev });
+        },
+      });
+
       toast(`Renamed to "${next}"`);
     } catch (e) {
       nameEl.textContent = prev;
@@ -1600,6 +1616,22 @@ function _startBusRename(nameEl, bus) {
       await api.updateBus(bus.id, { name: next });
       const cur = st.state.buses.get(bus.id);
       if (cur) st.setBus({ ...cur, name: next });
+
+      const busId = bus.id;
+      undo.push({
+        label: `Rename bus: ${prev} → ${next}`,
+        apply: async () => {
+          await api.updateBus(busId, { name: next });
+          const b = st.state.buses.get(busId);
+          if (b) st.setBus({ ...b, name: next });
+        },
+        revert: async () => {
+          await api.updateBus(busId, { name: prev });
+          const b = st.state.buses.get(busId);
+          if (b) st.setBus({ ...b, name: prev });
+        },
+      });
+
       toast(`Renamed to "${next}"`);
     } catch (e) {
       nameEl.textContent = prev;
@@ -1645,6 +1677,30 @@ function _startRename(nameEl, ch) {
       document.querySelectorAll(`#strip-${ch.id} .strip-name`).forEach(el => {
         el.textContent = next;
       });
+
+      const chId = ch.id;
+      const syncStripName = (nm) => {
+        document.querySelectorAll(`#strip-${chId} .strip-name`).forEach(el => {
+          el.textContent = nm;
+        });
+      };
+
+      undo.push({
+        label: `Rename input: ${prev} → ${next}`,
+        apply: async () => {
+          await api.putChannel(chId, { name: next });
+          const c = st.state.channels.get(chId);
+          if (c) st.setChannel({ ...c, name: next });
+          syncStripName(next);
+        },
+        revert: async () => {
+          await api.putChannel(chId, { name: prev });
+          const c = st.state.channels.get(chId);
+          if (c) st.setChannel({ ...c, name: prev });
+          syncStripName(prev);
+        },
+      });
+
       toast(`Renamed to "${next}"`);
     } catch (e) {
       nameEl.textContent = prev;
