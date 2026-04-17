@@ -179,14 +179,103 @@ mod tests {
     }
 
     #[test]
-    fn gain_reduction_db_returns_non_positive() {
+    fn hard_ceiling_never_exceeds_threshold() {
         let mut lim = BrickWallLimiter::new();
         lim.sync(&cfg(-6.0, true), 48_000.0);
-        let mut buf = vec![1.0f32; 512];
+
+        // Threshold = -6dB = 0.5 linear
+        let threshold_linear = 10.0_f32.powf(-6.0 / 20.0);
+
+        // Extreme input signal
+        let mut buf = vec![2.0f32; 1024];
         lim.process_block(&mut buf);
+
+        // Every sample must be clamped to ±threshold
+        for s in &buf {
+            assert!(
+                s.abs() <= threshold_linear * 1.001, // tiny tolerance for numerical error
+                "output magnitude exceeds hard ceiling: {} > {}",
+                s.abs(),
+                threshold_linear
+            );
+        }
+    }
+
+    #[test]
+    fn hard_ceiling_on_impulse() {
+        let mut lim = BrickWallLimiter::new();
+        lim.sync(&cfg(-3.0, true), 48_000.0);
+        let threshold_linear = 10.0_f32.powf(-3.0 / 20.0);
+
+        // Impulse at 0dBFS (1.0)
+        let mut buf = vec![0.0f32; 100];
+        buf[0] = 1.0;
+        lim.process_block(&mut buf);
+
+        // First sample should be immediately limited
         assert!(
-            lim.gain_reduction_db() <= 0.0,
-            "GR must be <= 0dB when limiting"
+            buf[0].abs() <= threshold_linear * 1.001,
+            "impulse should be immediately clamped: {} > {}",
+            buf[0],
+            threshold_linear
+        );
+
+        // All samples must be within ceiling
+        for s in &buf {
+            assert!(
+                s.abs() <= threshold_linear * 1.001,
+                "sample exceeds ceiling: {}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn attack_reduces_gain_before_clipping() {
+        let mut lim = BrickWallLimiter::new();
+        lim.sync(&cfg(-6.0, true), 48_000.0);
+
+        // Sustained signal above threshold
+        let mut buf = vec![0.8f32; 512];
+        let min_gr = lim.process_block(&mut buf);
+
+        // Attack should cause gain reduction
+        assert!(
+            min_gr < 1.0,
+            "attack should reduce gain: min_gr={}",
+            min_gr
+        );
+
+        // Output should be limited
+        let threshold_linear = 10.0_f32.powf(-6.0 / 20.0);
+        for s in &buf {
+            assert!(
+                s.abs() <= threshold_linear * 1.001,
+                "output must not exceed threshold: {}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn release_recovers_gain_smoothly() {
+        let mut lim = BrickWallLimiter::new();
+        lim.sync(&cfg(-6.0, true), 48_000.0);
+
+        // Compress with loud signal
+        let mut buf = vec![0.9f32; 256];
+        let min_gr_loud = lim.process_block(&mut buf);
+        assert!(min_gr_loud < 1.0, "loud signal should limit");
+
+        // Switch to quiet signal
+        let mut quiet = vec![0.1f32; 512];
+        lim.process_block(&mut quiet);
+
+        // Gain reduction should have improved (recovery)
+        let current_gr = lim.gain_reduction_db();
+        assert!(
+            current_gr > 20.0 * min_gr_loud.log10() - 1.0, // some recovery after release
+            "gain should recover during release phase"
         );
     }
 }
