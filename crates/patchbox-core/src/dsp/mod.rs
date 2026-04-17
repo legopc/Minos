@@ -8,3 +8,5 @@ pub mod feedback;
 pub mod filters;
 pub mod gate;
 pub mod limiter;
+pub mod envelope;
+pub use envelope::DspBlock;
