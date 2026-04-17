@@ -99,6 +99,7 @@ function _buildDspRow(dsp, entityId, onDspOpen) {
     btn.dataset.ch = entityId;
     btn.style.background = colour.bg;
     btn.style.color = colour.fg;
+    btn.setAttribute('aria-label', `Open DSP panel for ${colour.label ?? blk.toUpperCase()} ${block.bypassed ? '(bypassed)' : block.enabled ? '' : '(disabled)'}`);
     btn.onclick = () => onDspOpen(blk, btn);
     row.appendChild(btn);
   });
@@ -220,15 +221,22 @@ export function createStrip({
   if (onMute) {
     const muteBtn = document.createElement('button');
     muteBtn.className = 'strip-mute-btn' + (initMuted ? ' active' : '');
+    muteBtn.id = `mute-${id}`;
     // Outputs use mixed-case to visually signal state; inputs/buses always 'MUTE'
     muteBtn.textContent = kind === 'output' ? (initMuted ? 'MUTE' : 'mute') : 'MUTE';
+    muteBtn.setAttribute('aria-label', `Mute ${name ?? id}`);
+    muteBtn.setAttribute('aria-pressed', initMuted ? 'true' : 'false');
     muteBtn.onclick = async () => {
       const nowMuted = muteBtn.classList.contains('active');
       try {
         await onMute(nowMuted);
         const newMuted = !nowMuted;
         muteBtn.classList.toggle('active', newMuted);
+        muteBtn.setAttribute('aria-pressed', newMuted ? 'true' : 'false');
         if (kind === 'output') muteBtn.textContent = newMuted ? 'MUTE' : 'mute';
+        // Announce state change to screen readers
+        const liveRegion = document.getElementById('sr-live-polite');
+        if (liveRegion) liveRegion.textContent = `${name ?? id} mute ${newMuted ? 'on' : 'off'}`;
       } catch (_) { /* caller uses toast */ }
     };
     strip.appendChild(muteBtn);
@@ -242,8 +250,18 @@ export function createStrip({
     soloBtn.textContent = 'S';
     soloBtn.title = 'Solo (PFL)';
     soloBtn.setAttribute('aria-label', `Solo ${name ?? id}`);
+    soloBtn.setAttribute('aria-pressed', initSolo ? 'true' : 'false');
     if (initSolo) soloBtn.classList.add('active');
-    soloBtn.onclick = async (e) => { try { await onSolo(e); } catch (_) {} };
+    soloBtn.onclick = async (e) => {
+      try {
+        await onSolo(e);
+        const newSolo = soloBtn.classList.contains('active');
+        soloBtn.setAttribute('aria-pressed', newSolo ? 'true' : 'false');
+        // Announce state change to screen readers
+        const liveRegion = document.getElementById('sr-live-polite');
+        if (liveRegion) liveRegion.textContent = `${name ?? id} solo ${newSolo ? 'on' : 'off'}`;
+      } catch (_) {}
+    };
     strip.appendChild(soloBtn);
   }
 
@@ -253,11 +271,21 @@ export function createStrip({
   faderEl.className = 'strip-fader';
   faderEl.min = 0; faderEl.max = 1000; faderEl.step = 1;
   faderEl.value = st.dbToSlider(initDb);
+  faderEl.id = `fader-${id}`;
+  faderEl.setAttribute('aria-label', `${name ?? id} fader, -infinity to +12 dB`);
+  faderEl.setAttribute('aria-valuemin', '-60');
+  faderEl.setAttribute('aria-valuemax', '12');
+  faderEl.setAttribute('aria-valuenow', _fmt(initDb));
+  faderEl.addEventListener('input', () => {
+    const db = st.sliderToDb(+faderEl.value);
+    faderEl.setAttribute('aria-valuenow', _fmt(db));
+  });
 
   const dbLabel = document.createElement('div');
   dbLabel.className = 'strip-fader-label strip-fader-label-editable';
   dbLabel.id = `mix-lbl-${id}`;
   dbLabel.textContent = _fmt(initDb);
+  dbLabel.setAttribute('aria-hidden', 'true');
   strip.appendChild(dbLabel);
 
   let _ft;

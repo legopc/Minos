@@ -13,6 +13,10 @@ function getContainer() {
     c = document.createElement('div');
     c.id = 'toasts';
     c.className = 'toast-stack';
+    c.setAttribute('role', 'region');
+    c.setAttribute('aria-label', 'Notifications');
+    c.setAttribute('aria-live', 'polite');
+    c.setAttribute('aria-atomic', 'false');
     document.body.appendChild(c);
   }
   return c;
@@ -21,6 +25,12 @@ function getContainer() {
 function createToastElement(message, severity) {
   const item = document.createElement('div');
   item.className = `toast-item toast-item--${severity}`;
+  item.setAttribute('role', 'alert');
+  if (severity === 'error' || severity === 'warn') {
+    item.setAttribute('aria-live', 'assertive');
+  } else {
+    item.setAttribute('aria-live', 'polite');
+  }
   item.textContent = message;
   return item;
 }
