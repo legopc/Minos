@@ -396,6 +396,10 @@
   border-bottom: 2px solid currentColor;
 }
 
+.strip-dsp-btn.dsp-active {
+  box-shadow: 0 0 8px 2px currentColor;
+}
+
 .mixer-scene-bar {
   height: var(--row-h);
   background: var(--bg-dark);

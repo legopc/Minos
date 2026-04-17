@@ -1,75 +1,91 @@
-/* panels.css — floating DSP panel styles */
-/* Note: core panel rules are also injected by panels.js at runtime */
+/* panels.css — floating DSP panel styles (v2.0) */
 
 .dsp-panel {
-  position: absolute;
-  min-width: 240px;
-  max-width: 360px;
-  background: var(--bg-surface);
+  position: fixed;
+  width: 320px;
+  background: #1a1f2e;
   border: 1px solid var(--border-primary);
-  border-radius: 3px;
+  border-radius: 6px;
   font-family: 'IBM Plex Mono', 'Consolas', 'SF Mono', monospace;
   font-size: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
   user-select: none;
+}
+
+.dsp-panel.dsp-panel--wide {
+  width: 420px;
 }
 
 .dsp-panel-header {
   display: flex;
   align-items: center;
-  height: 44px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border-primary);
+  height: 40px;
+  padding: 0 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-left: 3px solid transparent;
+  border-radius: 6px 6px 0 0;
   cursor: move;
   gap: 8px;
 }
 
 .dsp-panel-title {
   flex: 1;
-  font-size: 12px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
+  /* colour set inline to match DSP accent */
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dsp-panel-close {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text-dim);
   cursor: pointer;
   line-height: 1;
+  border: none;
+  background: none;
   padding: 0 2px;
+  flex-shrink: 0;
 }
 .dsp-panel-close:hover { color: var(--text-primary); }
 
 .dsp-panel-body {
-  padding: 8px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  max-height: 380px;
+  gap: 6px;
+  max-height: 480px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
+
+/* ── control primitives ──────────────────────────────────────────────────── */
 
 .dsp-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 34px;
 }
 
 .dsp-label {
-  width: 72px;
-  font-size: 11px;
+  width: 76px;
+  font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
 .dsp-value {
-  width: 56px;
-  font-size: 11px;
+  width: 58px;
+  font-size: 10px;
   color: var(--text-accent);
   text-align: right;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .dsp-slider {
@@ -80,15 +96,15 @@
 }
 
 .dsp-byp-btn {
-  padding: 3px 8px;
-  border-radius: 2px;
-  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 10px;
   font-family: inherit;
   border: 1px solid var(--border-primary);
   background: var(--bg-dark);
   color: var(--text-muted);
   cursor: pointer;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   position: relative;
 }
 .dsp-byp-btn.active {
@@ -101,22 +117,24 @@
   background: var(--bg-dark);
   color: var(--text-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 2px;
-  font-size: 11px;
+  border-radius: 3px;
+  font-size: 10px;
   font-family: inherit;
-  padding: 2px 4px;
+  padding: 3px 6px;
   cursor: pointer;
+  flex: 1;
 }
 
 .dsp-toggle-btn {
-  padding: 3px 10px;
-  border-radius: 2px;
-  font-size: 11px;
+  padding: 3px 12px;
+  border-radius: 3px;
+  font-size: 10px;
   font-family: inherit;
   border: 1px solid var(--border-primary);
   background: var(--bg-dark);
   color: var(--text-muted);
   cursor: pointer;
+  letter-spacing: 0.04em;
   position: relative;
 }
 .dsp-toggle-btn.active {
@@ -126,9 +144,9 @@
 }
 
 .dsp-action-btn {
-  padding: 4px 10px;
-  border-radius: 2px;
-  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 3px;
+  font-size: 10px;
   font-family: inherit;
   border: 1px solid var(--border-primary);
   background: var(--bg-dark);
@@ -136,27 +154,30 @@
   cursor: pointer;
   width: 100%;
   position: relative;
+  letter-spacing: 0.03em;
 }
-.dsp-action-btn:hover {
-  background: var(--bg-hover);
-}
+.dsp-action-btn:hover { background: var(--bg-hover); }
+
+/* ── section / band dividers ─────────────────────────────────────────────── */
 
 .dsp-band-header {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  border-top: 1px solid var(--border-subtle);
+  letter-spacing: 0.09em;
+  border-top: 1px solid rgba(255,255,255,0.06);
   padding-top: 6px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .dsp-section-header {
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-dim);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 2px;
+  letter-spacing: 0.09em;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 5px;
+  margin-top: 2px;
 }
 
 .dsp-panel-loading {
@@ -166,21 +187,22 @@
   text-align: center;
 }
 
-/* GR (gain-reduction) meter row — shown at top of dynamics/limiter panels */
+/* ── GR meter ─────────────────────────────────────────────────────────────── */
+
 .dsp-gr-meter {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px 4px 8px;
-  background: rgba(0,0,0,0.2);
-  border-radius: 3px;
-  margin-bottom: 4px;
+  gap: 8px;
+  padding: 5px 8px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 4px;
+  margin-bottom: 2px;
 }
 
 .dsp-gr-track {
   flex: 1;
-  height: 6px;
-  background: var(--meter-bg, #111);
+  height: 5px;
+  background: rgba(0,0,0,0.4);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -188,9 +210,9 @@
 .dsp-gr-bar {
   height: 100%;
   width: 0%;
-  background: var(--meter-saturation);
-  border-radius: var(--r-2);
-  transition: width 0.1s linear;
+  background: var(--meter-saturation, #e05050);
+  border-radius: 3px;
+  transition: width 0.08s linear;
 }
 
 .dsp-gr-label {
@@ -201,40 +223,28 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* PEQ frequency response canvas */
+/* ── PEQ curve canvas ────────────────────────────────────────────────────── */
+
 .peq-curve-canvas {
   display: block;
   width: 100%;
-  height: 80px;
-  border-radius: 3px;
-  background: rgba(0,0,0,0.25);
-  margin-bottom: 6px;
+  height: 90px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.3);
+  margin-bottom: 4px;
 }
 
-/* s7-ui-touch-targets: expand tap target for DSP bypass button on touch devices */
-@media (pointer: coarse) {
-  .dsp-byp-btn::before {
-    content: '';
-    position: absolute;
-    inset: -6px -4px;
-    min-width: 44px;
-    min-height: 44px;
-  }
+/* ── badge active state (used by mixer + matrix) ─────────────────────────── */
+
+.strip-dsp-btn.dsp-active {
+  box-shadow: 0 0 7px 1px currentColor;
 }
 
-/* s7-ui-touch-targets: expand tap target for DSP toggle button on touch devices */
-@media (pointer: coarse) {
-  .dsp-toggle-btn::before {
-    content: '';
-    position: absolute;
-    inset: -6px -4px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
+/* ── touch targets ───────────────────────────────────────────────────────── */
 
-/* s7-ui-touch-targets: expand tap target for DSP action button on touch devices */
 @media (pointer: coarse) {
+  .dsp-byp-btn::before,
+  .dsp-toggle-btn::before,
   .dsp-action-btn::before {
     content: '';
     position: absolute;
@@ -244,41 +254,32 @@
   }
 }
 
-/* ── responsive v2: DSP panels full-viewport on <900px ─────────────────────── */
+/* ── responsive: full-viewport on narrow screens ─────────────────────────── */
 
 @media (max-width: 899px) {
   .dsp-panel {
-    position: fixed !important;
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
-    min-width: 90vw;
-    max-width: 95vw;
+    width: 90vw !important;
     max-height: 85vh;
     z-index: 5000;
     box-shadow: 0 16px 40px rgba(0,0,0,0.8);
   }
 
   .dsp-panel-body {
-    max-height: calc(85vh - 60px);
+    max-height: calc(85vh - 56px);
     overflow-y: auto;
-  }
-
-  @media (max-width: 599px) {
-    .dsp-panel {
-      min-width: 95vw;
-      max-width: 98vw;
-      max-height: 90vh;
-    }
-
-    .dsp-panel-body {
-      max-height: calc(90vh - 60px);
-    }
   }
 }
 
-@media (min-width: 900px) {
+@media (max-width: 599px) {
   .dsp-panel {
-    position: absolute;
+    width: 96vw !important;
+    max-height: 90vh;
+  }
+
+  .dsp-panel-body {
+    max-height: calc(90vh - 56px);
   }
 }

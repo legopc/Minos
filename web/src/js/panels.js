@@ -13,104 +13,11 @@ function _clone(v) {
   return v == null ? v : JSON.parse(JSON.stringify(v));
 }
 
-function injectStyles() {
-  if (document.getElementById('dsp-panel-styles')) return;
-  const style = document.createElement('style');
-  style.id = 'dsp-panel-styles';
-  style.textContent = `
-.dsp-panel {
-  position: absolute;
-  min-width: 240px;
-  max-width: 360px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-primary);
-  border-radius: 3px;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-  user-select: none;
+function _getCh(channelId) {
+  if (channelId.startsWith('bus_')) return state.buses.get(channelId);
+  if (channelId.startsWith('rx_'))  return state.channels.get(channelId);
+  return state.outputs.get(channelId);
 }
-.dsp-panel-header {
-  display: flex;
-  align-items: center;
-  height: var(--row-h);
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border-primary);
-  border-left: 3px solid;
-  cursor: move;
-  gap: 8px;
-}
-.dsp-panel-title {
-  flex: 1;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-.dsp-panel-close {
-  font-size: 14px;
-  color: var(--text-dim);
-  cursor: pointer;
-  line-height: 1;
-  border: none;
-  background: none;
-  padding: 0;
-}
-.dsp-panel-close:hover {
-  color: var(--text-primary);
-}
-.dsp-panel-body {
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-}
-.dsp-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--row-h);
-}
-.dsp-label {
-  width: 72px;
-  font-size: 9px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.dsp-value {
-  width: 52px;
-  font-size: 9px;
-  color: var(--text-accent);
-  text-align: right;
-  flex-shrink: 0;
-}
-.dsp-slider {
-  flex: 1;
-  min-width: 80px;
-}
-.dsp-byp-btn {
-  padding: 2px 6px;
-  border-radius: 2px;
-  font-size: 9px;
-  border: 1px solid var(--border-primary);
-  background: var(--bg-dark);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.dsp-byp-btn.active {
-  background: var(--text-accent);
-  color: var(--bg-dark);
-  border-color: var(--text-accent);
-}
-  `;
-  document.head.appendChild(style);
-}
-
-injectStyles();
 
 /**
  * Open a DSP processor panel for an audio channel.
@@ -125,30 +32,28 @@ export function openPanel(blockKey, channelId, triggerEl) {
     return;
   }
 
-  const app = document.getElementById('app');
-  const ar = app.getBoundingClientRect();
+  const isWide = (blockKey === 'peq' || blockKey === 'deq');
+  const panelWidth  = isWide ? 420 : 320;
+  const panelHeight = 480;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
   const br = (triggerEl && typeof triggerEl.getBoundingClientRect === 'function')
     ? triggerEl.getBoundingClientRect()
-    : triggerEl;  // accept pre-captured DOMRect
-  
-  const panelWidth  = 360;
-  const panelHeight = 420;
-  
-  let x = br.left - ar.left + 8;
-  let y = br.bottom - ar.top + 4;
-  
-  // Clamp right edge
-  if (x + panelWidth > ar.width)  x = Math.max(0, br.left - ar.left - panelWidth - 4);
-  x = Math.max(4, Math.min(x, ar.width - panelWidth - 4));
-  
-  // Clamp bottom edge — flip above trigger
-  if (y + panelHeight > ar.height) y = Math.max(4, br.top - ar.top - panelHeight - 4);
+    : triggerEl;
+
+  let x = (br?.left ?? 100) + 8;
+  let y = (br?.bottom ?? 100) + 4;
+
+  if (x + panelWidth > vw)  x = Math.max(4, (br?.left ?? 100) - panelWidth - 4);
+  x = Math.max(4, Math.min(x, vw - panelWidth - 4));
+  if (y + panelHeight > vh) y = Math.max(4, (br?.top ?? 100) - panelHeight - 4);
   y = Math.max(4, y);
 
-  const el = buildPanelEl(blockKey, channelId, pid);
-  el.style.cssText = `position:absolute;left:${x}px;top:${y}px;z-index:${++zTop}`;
-  app.appendChild(el);
-  makeDraggable(el, app);
+  const el = buildPanelEl(blockKey, channelId, pid, isWide);
+  el.style.cssText = `left:${x}px;top:${y}px;z-index:${++zTop}`;
+  document.body.appendChild(el);
+  makeDraggable(el);
   el.addEventListener('pointerdown', () => {
     el.style.zIndex = ++zTop;
   });
@@ -178,9 +83,9 @@ export function closeAllPanels() {
   }
 }
 
-function buildPanelEl(blockKey, channelId, pid) {
+function buildPanelEl(blockKey, channelId, pid, isWide) {
   const panel = document.createElement('div');
-  panel.className = 'dsp-panel';
+  panel.className = 'dsp-panel' + (isWide ? ' dsp-panel--wide' : '');
   panel.id = pid;
 
   const color = DSP_COLOURS[blockKey]?.fg ?? '#888';
@@ -191,7 +96,11 @@ function buildPanelEl(blockKey, channelId, pid) {
 
   const title = document.createElement('div');
   title.className = 'dsp-panel-title';
-  title.textContent = `${blockKey} · ${channelId}`;
+  title.style.color = color;
+  const chObj = _getCh(channelId);
+  const chName = chObj?.name ?? channelId;
+  const blockLabel = (DSP_COLOURS[blockKey]?.label ?? blockKey).toUpperCase();
+  title.textContent = `${blockLabel} · ${chName}`;
   header.appendChild(title);
 
   const closeBtn = document.createElement('button');
@@ -214,10 +123,7 @@ function buildPanelEl(blockKey, channelId, pid) {
 async function _loadContent(blockKey, channelId, contentEl) {
   try {
     const mod = await import(`./dsp/${blockKey}.js`);
-    const isBus = channelId.startsWith('bus_');
-    const ch = isBus
-      ? state.buses.get(channelId)
-      : state.channels.get(channelId) ?? state.outputs.get(channelId);
+    const ch = _getCh(channelId);
     const blockData = ch?.dsp?.[blockKey] ?? {};
     const params = { ...(blockData.params ?? {}), bypassed: blockData.bypassed ?? false, enabled: blockData.enabled ?? true };
     const accent = DSP_COLOURS[blockKey]?.fg ?? '#888';
@@ -229,11 +135,30 @@ async function _loadContent(blockKey, channelId, contentEl) {
         onBypass: (block, bypassed) => _onBypass(channelId, block, bypassed),
       })
     );
+
+    syncBadges(channelId, blockKey);
   } catch (err) {
     console.error(`Failed to load DSP module ${blockKey}:`, err);
     contentEl.innerHTML =
       '<span style="color: var(--text-error);">Failed to load</span>';
   }
+}
+
+/**
+ * Sync badge visual state (byp / dsp-active) for all matching badge elements.
+ */
+export function syncBadges(channelId, block) {
+  const ch = _getCh(channelId);
+  if (!ch?.dsp?.[block]) return;
+  const bd = ch.dsp[block];
+  const isByp    = !!bd.bypassed || !bd.enabled;
+  const isActive = !!bd.enabled && !bd.bypassed;
+  document.querySelectorAll(
+    `[data-block="${block}"][data-ch="${channelId}"]`
+  ).forEach(el => {
+    el.classList.toggle('byp',        isByp);
+    el.classList.toggle('dsp-active', isActive);
+  });
 }
 
 function _onParamChange(channelId, block, newParams) {
@@ -246,11 +171,7 @@ function _onParamChange(channelId, block, newParams) {
   const idx = parseInt(channelId.split('_')[1], 10);
   const base = isBus ? `/buses/${channelId}` : (isRx ? `/inputs/${idx}` : `/outputs/${idx}`);
 
-  const getCh = () => isBus
-    ? state.buses.get(channelId)
-    : isRx
-      ? state.channels.get(channelId)
-      : state.outputs.get(channelId);
+  const getCh = () => _getCh(channelId);
 
   const before = existing?.before ?? (() => {
     const ch = getCh();
@@ -350,25 +271,10 @@ async function _onBypass(channelId, block, bypassed) {
     const idx = parseInt(channelId.split('_')[1], 10);
     const base = isBus ? `/buses/${channelId}` : (isRx ? `/inputs/${idx}` : `/outputs/${idx}`);
 
-    const getCh = () => isBus
-      ? state.buses.get(channelId)
-      : isRx
-        ? state.channels.get(channelId)
-        : state.outputs.get(channelId);
+    const getCh = () => _getCh(channelId);
 
     const ch0 = getCh();
     const beforeByp = !!(ch0?.dsp?.[block]?.bypassed);
-
-    const syncBadges = () => {
-      const ch = getCh();
-      if (!ch?.dsp?.[block]) return;
-      const shouldByp = !!(ch.dsp[block].bypassed) || !ch.dsp[block].enabled;
-      document.querySelectorAll(
-        '[data-block="' + block + '"][data-ch="' + channelId + '"]'
-      ).forEach(function(el) {
-        el.classList.toggle('byp', shouldByp);
-      });
-    };
 
     if (block === 'flt') {
       const applyFltByp = async (byp) => {
@@ -382,7 +288,7 @@ async function _onBypass(channelId, block, bypassed) {
           ch.dsp.flt.bypassed = byp;
           ch.dsp.flt.enabled = !byp;
         }
-        syncBadges();
+        syncBadges(channelId, block);
       };
 
       await applyFltByp(bypassed);
@@ -404,7 +310,7 @@ async function _onBypass(channelId, block, bypassed) {
         ch.dsp[block].bypassed = byp;
         ch.dsp[block].enabled = !byp;
       }
-      syncBadges();
+      syncBadges(channelId, block);
     };
 
     await applyByp(bypassed);
@@ -420,7 +326,7 @@ async function _onBypass(channelId, block, bypassed) {
   }
 }
 
-function makeDraggable(el, container) {
+function makeDraggable(el) {
   const header = el.querySelector('.dsp-panel-header');
   let isDragging = false;
   let startX = 0, startY = 0;
@@ -439,14 +345,10 @@ function makeDraggable(el, container) {
   function handleMove(e) {
     if (!isDragging) return;
     e.preventDefault?.();
-    let x = startLeft + (e.clientX - startX);
-    let y = startTop + (e.clientY - startY);
-    const containerRect = container.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    x = Math.max(0, Math.min(x, containerRect.width - elRect.width));
-    y = Math.max(0, Math.min(y, containerRect.height - elRect.height));
+    const x = Math.max(0, Math.min(startLeft + (e.clientX - startX), window.innerWidth  - el.offsetWidth));
+    const y = Math.max(0, Math.min(startTop  + (e.clientY - startY), window.innerHeight - el.offsetHeight));
     el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
+    el.style.top  = `${y}px`;
   }
 
   function handleEnd() {

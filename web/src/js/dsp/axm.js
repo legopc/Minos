@@ -1,4 +1,6 @@
 // dsp/axm.js — Automixer (Dugan gain-sharing) channel panel
+import { selectRow, sliderRow, fmtPlain } from './common.js';
+
 const BK = 'axm';
 
 let _groupCache = null;
@@ -22,55 +24,28 @@ export function buildContent(channelId, params, accentColor, { onChange }) {
 
   function emit() { onChange(BK, { group_id: p.group_id ?? '', weight: p.weight }); }
 
-  // Group selector (populated async)
-  const sel = document.createElement('select');
-  sel.className = 'dsp-select';
-  const noneOpt = document.createElement('option');
-  noneOpt.value = '';
-  noneOpt.textContent = '— no group —';
-  sel.appendChild(noneOpt);
-  if (!p.group_id) noneOpt.selected = true;
-  sel.onchange = () => {
-    p.group_id = sel.value === '' ? null : sel.value;
+  const { el: groupRow, sel: groupSel } = selectRow('Group', [{ value: '', label: '— no group —' }], p.group_id ?? '', v => {
+    p.group_id = v === '' ? null : v;
     emit();
-  };
+  });
+  el.appendChild(groupRow);
 
   _fetchGroups().then(groups => {
-    // Rebuild options preserving none
-    while (sel.options.length > 1) sel.remove(1);
+    while (groupSel.options.length > 1) groupSel.remove(1);
     groups.forEach(g => {
       const opt = document.createElement('option');
       opt.value = g.id;
       opt.textContent = g.name;
       if (p.group_id === g.id) opt.selected = true;
-      sel.appendChild(opt);
+      groupSel.appendChild(opt);
     });
-    if (!p.group_id) noneOpt.selected = true;
+    if (!p.group_id) groupSel.options[0].selected = true;
   });
 
-  el.appendChild(_row('Group', sel));
-
-  // Weight slider (0.1 – 4.0)
-  const wtVal = document.createElement('span');
-  wtVal.className = 'dsp-value';
-  wtVal.textContent = p.weight.toFixed(2);
-  const wt = document.createElement('input');
-  wt.type = 'range';
-  wt.className = 'dsp-slider';
-  wt.min = '0.1'; wt.max = '4.0'; wt.step = '0.01';
-  wt.value = String(p.weight);
-  wt.oninput = () => {
-    p.weight = parseFloat(wt.value);
-    wtVal.textContent = p.weight.toFixed(2);
+  el.appendChild(sliderRow('Weight', 0.1, 4.0, 0.01, p.weight, fmtPlain, v => {
+    p.weight = v;
     emit();
-  };
-  el.appendChild(_row('Weight', wt, wtVal));
+  }));
 
   return el;
-}
-
-function _row(label, ctrl, val) {
-  const d = document.createElement('div'); d.className = 'dsp-row';
-  const l = document.createElement('span'); l.className = 'dsp-label'; l.textContent = label;
-  d.appendChild(l); d.appendChild(ctrl); if (val) d.appendChild(val); return d;
 }

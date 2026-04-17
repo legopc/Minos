@@ -3,54 +3,17 @@
  * blockKey: 'peq'
  */
 
-function row(label, control, valueEl) {
-  const d = document.createElement('div');
-  d.className = 'dsp-row';
-  const lbl = document.createElement('span');
-  lbl.className = 'dsp-label';
-  lbl.textContent = label;
-  d.appendChild(lbl);
-  d.appendChild(control);
-  if (valueEl) d.appendChild(valueEl);
-  return d;
-}
-
-function slider(min, max, step, value, oninput) {
-  const s = document.createElement('input');
-  s.type = 'range';
-  s.min = min;
-  s.max = max;
-  s.step = step;
-  s.value = value;
-  s.className = 'dsp-slider';
-  s.oninput = oninput;
-  return s;
-}
-
-function valEl(text) {
-  const s = document.createElement('span');
-  s.className = 'dsp-value';
-  s.textContent = text;
-  return s;
-}
-
-function fmtHz(v) {
-  return v >= 1000 ? (v / 1000).toFixed(2) + 'kHz' : v + 'Hz';
-}
-
-function fmtDb(v) {
-  return (v >= 0 ? '+' : '') + Number(v).toFixed(1) + ' dB';
-}
+import { sliderRow, selectRow, toggleRow, sectionHeader, fmtDb, fmtHz } from './common.js';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const el = document.createElement('div');
   el.className = 'dsp-content peq';
 
   const bands = params.bands || [
-    { freq: 100, gain: 0, q: 0.7 },
-    { freq: 1000, gain: 0, q: 0.7 },
-    { freq: 8000, gain: 0, q: 0.7 },
-    { freq: 16000, gain: 0, q: 0.7 }
+    { freq: 100,   gain: 0, q: 0.7, band_type: 'Peaking' },
+    { freq: 1000,  gain: 0, q: 0.7, band_type: 'Peaking' },
+    { freq: 8000,  gain: 0, q: 0.7, band_type: 'Peaking' },
+    { freq: 16000, gain: 0, q: 0.7, band_type: 'Peaking' }
   ];
 
   // EQ frequency response canvas
@@ -124,59 +87,48 @@ export function buildContent(channelId, params, accentColor, { onChange, onBypas
   setTimeout(_drawCurve, 0);
 
   // Enable toggle
-  const enableCheckbox = document.createElement('input');
-  enableCheckbox.type = 'checkbox';
-  enableCheckbox.className = 'dsp-toggle';
-  enableCheckbox.checked = params.enabled || false;
-  enableCheckbox.onchange = () => {
-    const updated = { ...params, enabled: enableCheckbox.checked };
-    onChange('peq', updated);
-  };
-  el.appendChild(row('Enable', enableCheckbox));
+  el.appendChild(toggleRow('Enable', params.enabled || false, v => {
+    onChange('peq', { ...params, enabled: v });
+  }));
 
   // Build band controls
   bands.forEach((band, idx) => {
     const bandContainer = document.createElement('div');
     bandContainer.className = 'dsp-band';
 
-    // Band header
-    const header = document.createElement('div');
-    header.className = 'dsp-band-header';
-    header.textContent = `Band ${idx + 1}`;
-    bandContainer.appendChild(header);
+    bandContainer.appendChild(sectionHeader(`Band ${idx + 1}`));
+
+    // Type
+    bandContainer.appendChild(selectRow('Type', [
+      { value: 'LowShelf',  label: 'Low Shelf' },
+      { value: 'Peaking',   label: 'Bell' },
+      { value: 'HighShelf', label: 'Hi Shelf' }
+    ], band.band_type || 'Peaking', v => {
+      bands[idx] = { ...bands[idx], band_type: v };
+      onChange('peq', { ...params, bands: [...bands] });
+      _drawCurve();
+    }).el);
 
     // Frequency
-    const freqVal = valEl(fmtHz(band.freq));
-    const freqSlider = slider(20, 20000, 10, band.freq, (e) => {
-      const v = parseFloat(e.target.value);
-      freqVal.textContent = fmtHz(v);
+    bandContainer.appendChild(sliderRow('Freq', 20, 20000, 10, band.freq, fmtHz, v => {
       bands[idx] = { ...bands[idx], freq: v };
       onChange('peq', { ...params, bands: [...bands] });
       _drawCurve();
-    });
-    bandContainer.appendChild(row('Freq', freqSlider, freqVal));
+    }));
 
     // Gain
-    const gainVal = valEl(fmtDb(band.gain));
-    const gainSlider = slider(-18, 18, 0.5, band.gain, (e) => {
-      const v = parseFloat(e.target.value);
-      gainVal.textContent = fmtDb(v);
+    bandContainer.appendChild(sliderRow('Gain', -18, 18, 0.5, band.gain, fmtDb, v => {
       bands[idx] = { ...bands[idx], gain: v };
       onChange('peq', { ...params, bands: [...bands] });
       _drawCurve();
-    });
-    bandContainer.appendChild(row('Gain', gainSlider, gainVal));
+    }));
 
     // Q
-    const qVal = valEl('Q:' + band.q.toFixed(1));
-    const qSlider = slider(0.1, 10, 0.1, band.q, (e) => {
-      const v = parseFloat(e.target.value);
-      qVal.textContent = 'Q:' + v.toFixed(1);
+    bandContainer.appendChild(sliderRow('Q', 0.1, 10, 0.1, band.q, v => 'Q:' + v.toFixed(1), v => {
       bands[idx] = { ...bands[idx], q: v };
       onChange('peq', { ...params, bands: [...bands] });
       _drawCurve();
-    });
-    bandContainer.appendChild(row('Q', qSlider, qVal));
+    }));
 
     el.appendChild(bandContainer);
   });
