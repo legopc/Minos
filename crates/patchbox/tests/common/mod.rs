@@ -48,6 +48,26 @@ pub fn login_token(_app: &Router) -> String {
     jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate test jwt")
 }
 
+pub fn viewer_token() -> String {
+    let claims = jwt::Claims::new("viewer-user", "viewer", None);
+    jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate viewer jwt")
+}
+
+pub fn operator_token() -> String {
+    let claims = jwt::Claims::new("operator-user", "operator", None);
+    jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate operator jwt")
+}
+
+pub fn admin_token() -> String {
+    let claims = jwt::Claims::new("admin-user", "admin", None);
+    jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate admin jwt")
+}
+
+pub fn no_role_token() -> String {
+    let claims = jwt::Claims::new("old-user", "", None);
+    jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate no-role jwt")
+}
+
 fn scratch_dir() -> PathBuf {
     // Avoid /tmp (policy) + keep artifacts out of repo root.
     Path::new(env!("CARGO_MANIFEST_DIR"))
