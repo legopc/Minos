@@ -337,6 +337,12 @@ impl FeedbackSuppressor {
     }
 }
 
+impl Default for FeedbackSuppressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,11 +397,7 @@ mod tests {
 
         // Verify output is bounded and finite
         for s in &buf {
-            assert!(
-                s.is_finite(),
-                "output contains NaN or inf: {}",
-                s
-            );
+            assert!(s.is_finite(), "output contains NaN or inf: {}", s);
             assert!(
                 s.abs() <= 10.0, // Very loose bound
                 "output is unbounded: {}",

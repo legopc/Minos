@@ -358,8 +358,11 @@ impl BusProcessor {
         for (rx_idx, &is_routed) in routed.iter().enumerate().take(n_inputs) {
             if is_routed {
                 let gain = db_to_linear(*routing_gain.get(rx_idx).unwrap_or(&0.0));
-                for i in 0..nf {
-                    self.sum_buf[i] += post_input_dsp[rx_idx][i] * gain;
+                for (dst, &src) in self.sum_buf[..nf]
+                    .iter_mut()
+                    .zip(post_input_dsp[rx_idx][..nf].iter())
+                {
+                    *dst += src * gain;
                 }
             }
         }
@@ -586,14 +589,14 @@ impl MatrixProcessor {
         for (i, gains) in self.gen_gains_linear.iter_mut().enumerate().take(n_gens) {
             let n_tx = cfg.tx_channels;
             gains.resize(n_tx.max(gains.len()), 0.0);
-            for tx_idx in 0..n_tx {
+            for (tx_idx, g) in gains.iter_mut().enumerate().take(n_tx) {
                 let db = cfg
                     .generator_bus_matrix
                     .get(i)
                     .and_then(|row| row.get(tx_idx))
                     .copied()
                     .unwrap_or(f32::NEG_INFINITY);
-                gains[tx_idx] = if db.is_finite() {
+                *g = if db.is_finite() {
                     db_to_linear(db)
                 } else {
                     0.0
@@ -632,11 +635,9 @@ impl MatrixProcessor {
             for s in self.monitor_buf[..nf].iter_mut() {
                 *s = 0.0;
             }
-            for rx_idx in 0..max_inputs {
+            for (rx_idx, input) in inputs.iter().take(max_inputs).enumerate() {
                 if self.solo_mask[rx_idx] {
-                    for (s_out, &s_in) in self.monitor_buf[..nf]
-                        .iter_mut()
-                        .zip(inputs[rx_idx][..nf].iter())
+                    for (s_out, &s_in) in self.monitor_buf[..nf].iter_mut().zip(input[..nf].iter())
                     {
                         *s_out += s_in;
                     }
@@ -652,8 +653,12 @@ impl MatrixProcessor {
 
         // Tick all VCA ramps once per block
         let mut vca_gains = [1.0f32; MAX_VCA_GROUPS];
-        for i in 0..config.vca_groups.len().min(MAX_VCA_GROUPS) {
-            vca_gains[i] = self.vca_ramps[i].tick();
+        for (gain, ramp) in vca_gains
+            .iter_mut()
+            .zip(self.vca_ramps.iter_mut())
+            .take(config.vca_groups.len().min(MAX_VCA_GROUPS))
+        {
+            *gain = ramp.tick();
         }
 
         for (i, inp) in inputs.iter().enumerate().take(max_inputs) {
@@ -714,8 +719,9 @@ impl MatrixProcessor {
                     for (src_b, &feeds) in dst_row.iter().enumerate().take(b) {
                         if feeds {
                             let src_buf = &left[src_b].sum_buf;
-                            for i in 0..nf {
-                                bp.sum_buf[i] += src_buf[i];
+                            for (dst, &src) in bp.sum_buf[..nf].iter_mut().zip(src_buf[..nf].iter())
+                            {
+                                *dst += src;
                             }
                         }
                     }
@@ -780,7 +786,7 @@ impl MatrixProcessor {
                         let white = (x as i64 as f32) / (i64::MAX as f32);
                         b[0] = 0.99886 * b[0] + white * 0.0555179;
                         b[1] = 0.99332 * b[1] + white * 0.0750759;
-                        b[2] = 0.96900 * b[2] + white * 0.1538520;
+                        b[2] = 0.96900 * b[2] + white * 0.153_852;
                         b[3] = 0.86650 * b[3] + white * 0.3104856;
                         b[4] = 0.55000 * b[4] + white * 0.5329522;
                         b[5] = -0.7616 * b[5] - white * 0.0168980;
@@ -831,7 +837,7 @@ impl MatrixProcessor {
                 continue;
             }
 
-            for rx_idx in 0..inputs.len() {
+            for (rx_idx, input) in inputs.iter().enumerate() {
                 // Tick xp_ramp once per block (block-level approximation for crossfade)
                 let xp_linear = if tx_idx < MAX_INPUT_CHANNELS && rx_idx < MAX_INPUT_CHANNELS {
                     self.xp_ramps[tx_idx][rx_idx].tick()
@@ -848,7 +854,7 @@ impl MatrixProcessor {
                 let src = if rx_idx < max_inputs {
                     &self.scratch[rx_idx][..nf]
                 } else {
-                    &inputs[rx_idx][..nf]
+                    &input[..nf]
                 };
                 for (s_out, s_in) in output[..nf].iter_mut().zip(src.iter()) {
                     *s_out += s_in * in_gain;

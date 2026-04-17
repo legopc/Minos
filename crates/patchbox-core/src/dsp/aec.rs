@@ -101,7 +101,6 @@ impl AecProcessor {
         {
             // Feature not compiled in — passthrough
             let _ = buf;
-            return;
         }
 
         #[cfg(feature = "aec")]

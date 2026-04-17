@@ -150,7 +150,7 @@ impl ParametricEq {
     /// RT-safe: pure arithmetic, no allocation.
     pub fn sync(&mut self, cfg: &EqConfig) {
         use crate::config::EqBandType;
-        let changed = self.last_config.as_ref().map_or(true, |prev| {
+        let changed = self.last_config.as_ref().is_none_or(|prev| {
             prev.enabled != cfg.enabled
                 || prev.bands.iter().zip(cfg.bands.iter()).any(|(a, b)| {
                     a.band_type != b.band_type

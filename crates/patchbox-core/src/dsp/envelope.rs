@@ -76,6 +76,7 @@ pub struct DspBlockAny {
     #[schema(value_type = Object)]
     pub params: serde_json::Value,
 }
+#[cfg(test)]
 mod tests {
     use super::DspBlock;
 

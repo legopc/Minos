@@ -4,17 +4,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 /// EQ band filter type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, Default)]
 pub enum EqBandType {
     LowShelf,
+    #[default]
     Peaking,
     HighShelf,
-}
-
-impl Default for EqBandType {
-    fn default() -> Self {
-        EqBandType::Peaking
-    }
 }
 
 /// One band of a parametric EQ.
@@ -359,19 +354,15 @@ impl Default for FeedbackSuppressorConfig {
 }
 
 /// Dynamic EQ band type.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, Default)]
 pub enum DynamicEqBandType {
     #[serde(rename = "peaking")]
+    #[default]
     Peaking,
     #[serde(rename = "low_shelf")]
     LowShelf,
     #[serde(rename = "high_shelf")]
     HighShelf,
-}
-impl Default for DynamicEqBandType {
-    fn default() -> Self {
-        Self::Peaking
-    }
 }
 
 /// One band of the Dynamic EQ.
@@ -755,17 +746,13 @@ impl Default for InternalBusConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, Default)]
 pub enum VcaGroupType {
     #[serde(rename = "input")]
+    #[default]
     Input,
     #[serde(rename = "output")]
     Output,
-}
-impl Default for VcaGroupType {
-    fn default() -> Self {
-        Self::Input
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

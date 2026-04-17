@@ -586,6 +586,7 @@ impl DanteDevice {
 }
 
 /// Compute linear RMS of a sample block.
+#[allow(dead_code)]
 #[inline]
 fn rms_linear(samples: &[f32]) -> f32 {
     if samples.is_empty() {

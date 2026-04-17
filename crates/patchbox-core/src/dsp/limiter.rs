@@ -240,11 +240,7 @@ mod tests {
         let min_gr = lim.process_block(&mut buf);
 
         // Attack should cause gain reduction
-        assert!(
-            min_gr < 1.0,
-            "attack should reduce gain: min_gr={}",
-            min_gr
-        );
+        assert!(min_gr < 1.0, "attack should reduce gain: min_gr={}", min_gr);
 
         // Output should be limited
         let threshold_linear = 10.0_f32.powf(-6.0 / 20.0);

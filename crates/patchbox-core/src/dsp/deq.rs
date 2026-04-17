@@ -297,6 +297,12 @@ impl DynamicEq {
     }
 }
 
+impl Default for DynamicEq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,6 +453,9 @@ mod tests {
         let gains = deq.band_gains();
         // Should return gains for all 4 bands (even inactive ones = 0.0)
         assert_eq!(gains.len(), 4, "band_gains should return all 4 bands");
-        assert!(gains.iter().all(|g| g.is_finite()), "all gains should be finite");
+        assert!(
+            gains.iter().all(|g| g.is_finite()),
+            "all gains should be finite"
+        );
     }
 }

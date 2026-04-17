@@ -6,7 +6,7 @@ use crate::config::FilterConfig;
 #[allow(dead_code)]
 const SAMPLE_RATE: f32 = 48_000.0;
 #[allow(dead_code)]
-const Q_BUTTERWORTH: f32 = 0.7071067811865475; // 1/sqrt(2)
+const Q_BUTTERWORTH: f32 = 0.707_106_77; // 1/sqrt(2)
 
 /// Filter mode: highpass or lowpass.
 #[derive(Debug, Clone, Copy, PartialEq)]

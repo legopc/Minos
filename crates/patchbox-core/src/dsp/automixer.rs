@@ -129,12 +129,12 @@ impl AutomixerGroupState {
         if weighted_sum < 1e-12 {
             // All channels silent → equal gain
             let equal = 1.0 / n as f32;
-            for slot in 0..n {
-                self.dugan_gains[slot] = equal;
+            for gain in self.dugan_gains.iter_mut().take(n) {
+                *gain = equal;
             }
         } else {
-            for slot in 0..n {
-                self.dugan_gains[slot] = weighted_envs[slot] / weighted_sum;
+            for (slot, gain) in self.dugan_gains.iter_mut().enumerate().take(n) {
+                *gain = weighted_envs[slot] / weighted_sum;
             }
         }
 
