@@ -1,9 +1,11 @@
 [book]
-title = "Patchbox Manual"
-authors = ["Patchbox"]
+title = "Minos — Dante Patchbox User Manual"
+authors = ["Minos Contributors"]
+description = "User manual and API reference for Minos, a Dante AoIP patchbay + DSP mixer with zone control."
 language = "en"
 multilingual = false
 src = "src"
+repository = "https://github.com/legopc/dante-patchbox"
 
 [output.html]
 default-theme = "navy"

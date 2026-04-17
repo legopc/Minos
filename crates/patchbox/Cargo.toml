@@ -36,3 +36,7 @@ aec = ['patchbox-core/aec']
 
 [dev-dependencies]
 tempfile = "3"
+insta = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"

@@ -1,5 +1,5 @@
-# Patchbox
+# Minos — Dante Patchbox
 
-Dante AoIP patchbay + DSP mixer with zone control.
+Minos is a Dante AoIP patchbay + DSP mixer with zone control. It provides real-time audio routing, signal processing, and multi-zone output management over Dante networks. Build sophisticated sound reinforcement, broadcast, and live event systems with low-latency Dante connectivity and flexible DSP chains per source and output.
 
-TODO fill in overview once docs effort (s7-ops-docs-site) starts.
+**Repository:** [github.com/legopc/dante-patchbox](https://github.com/legopc/dante-patchbox)

@@ -1,21 +1,24 @@
-# Summary
+# User Manual
 
 - [Introduction](./intro.md)
-
-## User Manual
-
-- [Mixer](./user/mixer.md)
-- [Matrix Routing](./user/matrix.md)
-- [Zones](./user/zones.md)
-- [Scenes](./user/scenes.md)
-- [DSP Blocks](./user/dsp.md)
-
-## API Reference
-
-- [Overview](./api/overview.md)
-
-## Operations
-
-- [Deployment](./ops/deployment.md)
-- [Backup & Restore](./ops/backup.md)
-- [RBAC](./ops/rbac.md)
+- [Concepts](./concepts.md)
+  - [Inputs, Outputs, Buses, Zones](./concepts/topology.md)
+  - [DSP Chain](./concepts/dsp.md)
+  - [Scenes](./concepts/scenes.md)
+- [UI Tour](./ui/index.md)
+  - [Mixer](./ui/mixer.md)
+  - [Matrix](./ui/matrix.md)
+  - [Zones](./ui/zones.md)
+  - [Panels (DSP)](./ui/panels.md)
+  - [Scenes](./ui/scenes.md)
+  - [System](./ui/system.md)
+- [Configuration](./config/index.md)
+  - [config.toml Reference](./config/toml.md)
+  - [Dante Device Setup](./config/dante.md)
+- [API Reference](./api/index.md)
+  - [Authentication](./api/auth.md)
+  - [Endpoints](./api/endpoints.md)
+- [Operations](./ops/index.md)
+  - [Install & Deploy](./ops/deploy.md)
+  - [Upgrades](./ops/upgrade.md)
+  - [Troubleshooting](./ops/troubleshoot.md)
