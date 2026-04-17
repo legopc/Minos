@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { DSP_COLOURS } from './dsp/colours.js';
+import { blockMap as dspBlockMap } from './dsp/registry.js';
 import * as api from './api.js';
 import { toast } from './toast.js';
 
@@ -253,18 +254,7 @@ function _onParamChange(channelId, block, newParams) {
         return;
       }
 
-      const blockMap = {
-        peq: 'eq',
-        cmp: 'compressor',
-        gte: 'gate',
-        lim: 'limiter',
-        dly: 'delay',
-        aec: 'aec',
-        axm: 'automixer',
-        afs: 'feedback',
-        deq: 'deq',
-      };
-      const mappedBlock = blockMap[block] || block;
+      const mappedBlock = dspBlockMap[block] || block;
       const endpoint = `${base}/${mappedBlock}`;
 
       await api.put(endpoint, newParams);
@@ -322,8 +312,7 @@ async function _onBypass(channelId, block, bypassed) {
       return;
     }
 
-    const blockMap = { peq: 'eq', cmp: 'compressor', gte: 'gate', lim: 'limiter', dly: 'delay' };
-    const mappedBlock = blockMap[block] || block;
+    const mappedBlock = dspBlockMap[block] || block;
     const blockData = ch?.dsp?.[block] ?? {};
     const fullParams = { ...(blockData.params ?? {}), enabled: !bypassed };
 
