@@ -57,14 +57,43 @@ function _showZonePanel(zone) {
   muteAll.className = 'zone-mute-btn' + (allMuted ? ' active' : '');
   muteAll.textContent = allMuted ? 'UNMUTE ALL' : 'MUTE ALL';
   muteAll.onclick = async () => {
-    const nowMuted = muteAll.classList.contains('active');
-    const txIndices = (zone.tx_ids ?? []).map(id => parseInt(id.replace('tx_', ''), 10));
+    const wasMuted = muteAll.classList.contains('active');
+    const willMute = !wasMuted;
+    const txIds = zone.tx_ids ?? [];
+    const txIndices = txIds.map(id => parseInt(id.replace('tx_', ''), 10));
     try {
       for (const idx of txIndices) {
-        nowMuted ? await api.unmuteZone(idx) : await api.muteZone(idx);
+        willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
       }
-      muteAll.classList.toggle('active', !nowMuted);
-      muteAll.textContent = !nowMuted ? 'UNMUTE ALL' : 'MUTE ALL';
+      txIds.forEach(id => {
+        const o = st.state.outputs.get(id);
+        if (o) st.setOutput({ ...o, muted: willMute });
+      });
+
+      muteAll.classList.toggle('active', willMute);
+      muteAll.textContent = willMute ? 'UNMUTE ALL' : 'MUTE ALL';
+
+      undo.push({
+        label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
+        apply: async () => {
+          for (const idx of txIndices) {
+            willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          }
+          txIds.forEach(id => {
+            const o = st.state.outputs.get(id);
+            if (o) st.setOutput({ ...o, muted: willMute });
+          });
+        },
+        revert: async () => {
+          for (const idx of txIndices) {
+            wasMuted ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          }
+          txIds.forEach(id => {
+            const o = st.state.outputs.get(id);
+            if (o) st.setOutput({ ...o, muted: wasMuted });
+          });
+        },
+      });
     } catch(e) { toast('Mute error: ' + e.message, true); }
   };
   header.appendChild(muteAll);
@@ -127,14 +156,43 @@ function _buildCard(zone) {
 
   muteBtn.onclick = async (e) => {
     e.stopPropagation();
-    const nowMuted = muteBtn.classList.contains('active');
-    const txIndices = (zone.tx_ids ?? []).map(id => parseInt(id.replace('tx_', ''), 10));
+    const wasMuted = muteBtn.classList.contains('active');
+    const willMute = !wasMuted;
+    const txIds = zone.tx_ids ?? [];
+    const txIndices = txIds.map(id => parseInt(id.replace('tx_', ''), 10));
     try {
       for (const idx of txIndices) {
-        nowMuted ? await api.unmuteZone(idx) : await api.muteZone(idx);
+        willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
       }
-      muteBtn.classList.toggle('active', !nowMuted);
-      muteBtn.textContent = !nowMuted ? 'UNMUTE' : 'MUTE';
+      txIds.forEach(id => {
+        const o = st.state.outputs.get(id);
+        if (o) st.setOutput({ ...o, muted: willMute });
+      });
+
+      muteBtn.classList.toggle('active', willMute);
+      muteBtn.textContent = willMute ? 'UNMUTE' : 'MUTE';
+
+      undo.push({
+        label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
+        apply: async () => {
+          for (const idx of txIndices) {
+            willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          }
+          txIds.forEach(id => {
+            const o = st.state.outputs.get(id);
+            if (o) st.setOutput({ ...o, muted: willMute });
+          });
+        },
+        revert: async () => {
+          for (const idx of txIndices) {
+            wasMuted ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          }
+          txIds.forEach(id => {
+            const o = st.state.outputs.get(id);
+            if (o) st.setOutput({ ...o, muted: wasMuted });
+          });
+        },
+      });
     } catch(e) { toast('Mute error: ' + e.message, true); }
   };
 
@@ -159,15 +217,40 @@ function _buildCard(zone) {
   if (zoneRoutes.length) srcSel.value = zoneRoutes[0].rx_id;
   srcSel.onchange = async () => {
     const rxId = srcSel.value;
+    const prevRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id))
+      .map(r => ({ rx_id: r.rx_id, tx_id: r.tx_id, route_type: r.route_type }));
+
     try {
       await api.deleteRoutesByZone(zone.id);
-      st.routeList().filter(r => (zone.tx_ids??[]).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
+      st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
       if (rxId) {
         for (const txId of (zone.tx_ids ?? [])) {
           const route = await api.postRoute(rxId, txId, 'local');
           st.setRoute(route);
         }
       }
+
+      undo.push({
+        label: `Zone input: ${zone.name ?? zone.id}`,
+        apply: async () => {
+          await api.deleteRoutesByZone(zone.id);
+          st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
+          if (rxId) {
+            for (const txId of (zone.tx_ids ?? [])) {
+              const route = await api.postRoute(rxId, txId, 'local');
+              st.setRoute(route);
+            }
+          }
+        },
+        revert: async () => {
+          await api.deleteRoutesByZone(zone.id);
+          st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
+          for (const r of prevRoutes) {
+            const route = await api.postRoute(r.rx_id, r.tx_id, r.route_type === 'bus' ? 'bus' : 'local');
+            st.setRoute(route);
+          }
+        },
+      });
     } catch(e) { toast('Zone route error: ' + e.message, true); }
   };
   card.appendChild(srcSel);
@@ -191,6 +274,12 @@ function _buildCard(zone) {
   volS.min = 0; volS.max = 1000; volS.step = 1;
   volS.value = st.dbToSlider(avgVol);
   let volTimer;
+  let volStart = null; // [{id, volume_db}]
+
+  volS.addEventListener('pointerdown', () => {
+    volStart = (zone.tx_ids ?? []).map(id => ({ id, volume_db: st.state.outputs.get(id)?.volume_db ?? 0 }));
+  });
+
   volS.oninput = () => {
     const db = st.sliderToDb(+volS.value);
     volDbEl.textContent = _db(db);
@@ -201,6 +290,44 @@ function _buildCard(zone) {
       }
     }, 100);
   };
+
+  volS.addEventListener('pointerup', async () => {
+    if (!volStart) return;
+    const endDb = st.sliderToDb(+volS.value);
+    clearTimeout(volTimer);
+
+    try {
+      for (const txId of (zone.tx_ids ?? [])) {
+        await api.putOutput(txId, { volume_db: endDb });
+        const o = st.state.outputs.get(txId);
+        if (o) st.setOutput({ ...o, volume_db: endDb });
+      }
+
+      const prev = volStart;
+      volStart = null;
+
+      undo.push({
+        label: `Zone volume: ${zone.name ?? zone.id}`,
+        apply: async () => {
+          for (const txId of (zone.tx_ids ?? [])) {
+            await api.putOutput(txId, { volume_db: endDb });
+            const o = st.state.outputs.get(txId);
+            if (o) st.setOutput({ ...o, volume_db: endDb });
+          }
+        },
+        revert: async () => {
+          for (const p of prev) {
+            await api.putOutput(p.id, { volume_db: p.volume_db });
+            const o = st.state.outputs.get(p.id);
+            if (o) st.setOutput({ ...o, volume_db: p.volume_db });
+          }
+        },
+      });
+    } catch (e) {
+      volStart = null;
+      toast('Zone volume error: ' + e.message, true);
+    }
+  });
   volRow.appendChild(volS);
   volRow.appendChild(volDbEl);
   card.appendChild(volRow);
