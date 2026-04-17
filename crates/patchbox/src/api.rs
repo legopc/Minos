@@ -1168,7 +1168,8 @@ async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
         .map(|i| {
             let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
             let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
-            let colour_index = cfg.input_colours.get(i).cloned().flatten();
+            let colour_index = cfg.input_colours.get(i).copied()
+                .and_then(|v| if v < 0 { None } else { Some(v as u8) });
             ChannelResponse {
                 id: format!("rx_{}", i),
                 name,
@@ -1194,7 +1195,8 @@ async fn get_channel(State(s): State<AppState>, Path(id): Path<String>) -> impl 
     }
     let name = cfg.sources.get(i).cloned().unwrap_or_else(|| format!("Source {}", i + 1));
     let dsp = cfg.input_dsp.get(i).cloned().unwrap_or_default();
-    let colour_index = cfg.input_colours.get(i).cloned().flatten();
+    let colour_index = cfg.input_colours.get(i).copied()
+        .and_then(|v| if v < 0 { None } else { Some(v as u8) });
     Json(ChannelResponse {
         id: format!("rx_{}", i),
         name,
@@ -1225,8 +1227,8 @@ async fn put_channel(State(s): State<AppState>, Path(id): Path<String>, Json(bod
         if i < cfg.input_dsp.len() { cfg.input_dsp[i].enabled = enabled; }
     }
     if let Some(colour_index) = body.colour_index {
-        if i >= cfg.input_colours.len() { cfg.input_colours.resize(i + 1, None); }
-        cfg.input_colours[i] = colour_index.map(|c| c % 10);
+        if i >= cfg.input_colours.len() { cfg.input_colours.resize(i + 1, -1); }
+        cfg.input_colours[i] = colour_index.map(|c| (c % 10) as i8).unwrap_or(-1);
     }
     drop(cfg);
     persist_or_500!(s);
