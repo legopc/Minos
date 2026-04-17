@@ -63,33 +63,115 @@ Dante AoIP software patchbay + DSP mixer. Single binary, HTTP API + WebSocket VU
 
 | Item | Status | Est. | Description |
 |---|---|---|---|
-| AEC via `aec3` crate | ⬜ | 4–5 days | Acoustic echo cancellation per input using the `aec3` crate (pure Rust WebRTC AEC3 port). Feature-gated (`--features aec`). 480-sample accumulator to bridge Dante block size to AEC frame size. Reference signal = assigned zone TX output. |
-| VCA groups | ⬜ | 4.5 days | Groups of inputs or outputs controlled by a single gain offset fader. Proportional level control — not audio summing. VCA `RampState` for smooth transitions. Fader strips in Mixer tab. |
-| Scene recall crossfade | ⬜ | 4–6 days | Configurable ramp time (0–5000 ms) on scene load. Uses existing `RampState`; routes fade in/out via gain rather than instant crosspoint toggle. |
-| Stereo link | ⬜ | 3–4 days | Link adjacent channel pairs with ganged gain/mute/solo and pan control. EQ/dynamics linkable or independent. |
+| AEC via `aec3` crate | ✅ | — | Shipped. |
+| VCA groups | ✅ | — | Shipped with members window. |
+| Scene recall crossfade | ✅ | — | Shipped. |
+| Stereo link | ✅ | — | Shipped (L/R labels indicative, independent routing). |
 
 ---
 
-### Sprint 4 — Automixer + Feedback Suppression (~13–20 days)
+### Sprint 4 — Automixer + Feedback Suppression (~13–20 days) ✅
 
 | Item | Status | Est. | Description |
 |---|---|---|---|
-| Gain-sharing automixer | ⬜ | 3–4 days | Dugan-style: total system gain constant; each mic's gain proportional to its level vs. sum of all. New `dsp/automixer.rs`, sits between input DSP and matrix routing. |
-| Gating automixer | ⬜ | 4–5 days | NOM-based attenuation variant. Shares infrastructure with gain-sharing. Adds `off_attenuation_db`, `hold_time_ms`, `last_mic_hold`. |
-| Automixer UI | ⬜ | 1–2 days | Panel showing NOM count, per-channel gate/gain state, threshold visualization. |
-| Feedback suppression | ⬜ | 5–8 days | Automatic notch filters: detect sustained single-frequency peaks via FFT/Goertzel, insert narrow notch (Q≈30–50). Up to 12 notches per channel with configurable auto-release. |
+| Gain-sharing automixer | ✅ | — | Shipped (Dugan). |
+| Gating automixer | ✅ | — | Shipped (NOM). |
+| Automixer UI | ✅ | — | Shipped. |
+| Feedback suppression | ✅ | — | Shipped (AFS). |
 
 ---
 
-### Sprint 5 — DSP Extras + Touch (~11–15 days)
+### Sprint 5 — DSP Extras + Touch (~11–15 days) ✅
 
 | Item | Status | Est. | Description |
 |---|---|---|---|
-| Dynamic EQ | ⬜ | 3–5 days | EQ band that only engages above threshold. Combination of compression + equalization per band. |
-| De-esser | ⬜ | 2–3 days | Frequency-selective compressor with HPF sidechain (4–8 kHz). Attenuates sibilance on vocal channels. |
+| Dynamic EQ | ✅ | — | Shipped (4-band, obsoletes de-esser). |
+| De-esser | 🚫 | — | Obsoleted by Dynamic EQ. |
 | Dither on output | ⬜ | 1 day | Triangular dither before 24→16 bit conversion at end of `PerOutputDsp::process_block()`. |
 | Multi-touch fader control | ⬜ | 2 days | Replace mouse events with pointer events in `mixer.js`. Track multiple simultaneous touches by `pointerId`. |
-| Custom zone panels | ⬜ | 3–4 days | Configurable per-zone touchpanel layout. Operator defines visible/locked controls for bar staff. |
+| Custom zone panels | ✅ | — | Zone detail drilldown with full output strips shipped. |
+
+---
+
+### Sprint 6 — System Admin + Polish (~14–18 days) — in progress
+
+See upcoming table above; 6 of 10 items still pending (audit-log, bulk-mutations, prometheus, responsive, scheduler, schema-version).
+
+---
+
+### Sprint 7 — Product Completeness (scoped 2026-04-17)
+
+Derived from gap analysis; scaffolded in repo. See `files/S7_ROADMAP.md` in session-state and commit `7c13bea`.
+
+**Accepted features (5):**
+
+| Item | Status | Scaffold | Description |
+|---|---|---|---|
+| Snapshot A/B compare + morph | ⬜ | `crates/patchbox/src/ab_compare.rs` | Two scene slots, instant toggle, N-ms parameter morph. |
+| MIDI / OSC control surface | ⬜ | `crates/patchbox-control-surface/` | Map hardware (BCF2000, X-Touch, TouchOSC) to faders/mutes/scenes. |
+| LUFS meters + auto-gain | ⬜ | `crates/patchbox-core/src/dsp/lufs.rs` | EBU R128 short-term + integrated per output. |
+| Sidechain + ducker block | ⬜ | `crates/patchbox-core/src/dsp/ducker.rs` | Sidechain key picker on comp + dedicated ducker for pages-over-music. |
+| DSP block preset library | ⬜ | `crates/patchbox/src/presets.rs` | Save/share per-block presets, JSON import/export. |
+
+**Low-prio features (deferred S8+):** recording/streaming tap, RTA/spectrum analyzer, scheduler v2 (sunrise/holidays).
+
+**UI / UX Polish:**
+
+| Item | Status | Description |
+|---|---|---|
+| Consolidate CSS tokens | ⬜ | Dedupe colour/space tokens into `base.css :root`. |
+| Unified fader taper | ⬜ | Audit all `sliderToDb` usages — consistent across matrix / mixer / DEQ. |
+| Keyboard shortcuts overlay | ⬜ | `?` modal listing all shortcuts. |
+| Undo/redo stack | ⬜ | Config-edit inverse-op ring buffer. |
+| Touch / tablet layout v2 | ⬜ | Builds on s6-responsive; collapsible DSP rack. |
+| 44 px min touch targets | ⬜ | Increase DSP badge + mute/solo size. |
+| Stacking toast queue | ⬜ | Replace 11-line single-slot toast with queue + severity. |
+| Matrix search / filter | ⬜ | Filter inputs/outputs + zone filter pills. |
+| Route-conflict warnings | ⬜ | Unrouted input / zone without source hints. |
+| Per-input colour accent | ⬜ | Channel colour-coding independent of zones. |
+| Drag-to-reorder buses & gens | ⬜ | DnD ordering. |
+| Meter ballistics option | ⬜ | VU / PPM / digital-peak selection. |
+| Accessibility pass | ⬜ | ARIA labels, focus rings, SR meter values. |
+
+**Architecture / tech-debt:**
+
+| Item | Status | Description |
+|---|---|---|
+| Split api.rs | ⬜ | 3049 lines → `api/routes/{inputs,outputs,buses,zones,scenes,routing,system,dsp}.rs`. |
+| Shared strip component | ⬜ | Kill mixer.js ↔ matrix.js duplication via `web/src/js/components/strip.js`. |
+| Rename api.patch → api.put | ⬜ | Helper actually sends PUT. |
+| JSDoc API payload types | ⬜ | Typedefs for state + API shapes. |
+| DSP block registry | ⬜ | Single source of truth in `web/src/js/dsp/registry.js`. |
+| Codegen JS defaults from Rust | ⬜ | `ts-rs` or build-script emit. |
+| Collapse input_/output_dsp_to_value | ⬜ | 90% identical — trait/macro. |
+| Uniform DSP JSON envelope | ⬜ | Replace ad-hoc `params:` wrapper. |
+| Fix 7 rustc warnings | ⬜ | No blanket allow. |
+| CI clippy + rustfmt + eslint | ⬜ | `.github/workflows/ci.yml` scaffolded. |
+
+**Testing:**
+
+| Item | Status | Description |
+|---|---|---|
+| DSP unit tests | ⬜ | Known-answer tests: biquads, AFS, compressor, DEQ. |
+| API integration tests | ⬜ | `reqwest` harness + ephemeral config. |
+| State JSON snapshot | ⬜ | `insta` golden snapshot of GET /state. |
+| Playwright UI smoke | ⬜ | Tab switching, DSP panels, routing, scenes. |
+| Config loader fuzz | ⬜ | `cargo fuzz` on `config.rs`. |
+| Matrix routing proptest | ⬜ | No feedback loops, bus-order invariant. |
+
+**Ops / productisation:**
+
+| Item | Status | Description |
+|---|---|---|
+| RBAC roles | ⬜ | admin / engineer / operator-ro. |
+| Config backup & restore UI | ⬜ | One-click export + scheduled auto-backups. |
+| Structured tracing logs | ⬜ | JSON + runtime log-level control. |
+| Deep health endpoint | ⬜ | Dante card, ALSA xruns, DSP CPU headroom. |
+| DSP CPU meter in UI | ⬜ | Per-block cost surfaced. |
+| OpenAPI spec (utoipa) | ⬜ | Swagger UI at `/api/docs`. |
+| User docs site (mdbook) | ⬜ | `docs/` scaffolded. |
+
+**Deferred (S8+ ops):** HTTPS + Let's Encrypt, firmware update channel integration.
 
 ---
 
