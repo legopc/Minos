@@ -17,7 +17,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::time::interval;
 use utoipa::OpenApi;
-use utoipa_scalar::Scalar;
+use utoipa_swagger_ui::SwaggerUi;
 
 type IpLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
@@ -74,6 +74,7 @@ use crate::auth_api;
 use crate::state::AppState;
 
 pub mod atomic_write;
+pub mod openapi;
 pub mod routes;
 
 use routes::buses::*;
@@ -628,22 +629,20 @@ pub fn router(state: AppState) -> Router {
     app = app
         .route(
             "/api/openapi.json",
-            get(|| async { Json(crate::openapi::ApiDoc::openapi()) }),
+            get(|| async { axum::response::Redirect::permanent("/api/v1/openapi.json") }),
         )
         .route(
             "/api/docs",
-            get(|| async {
-                let html = Scalar::new(crate::openapi::ApiDoc::openapi()).to_html();
-                axum::response::Html(html)
-            }),
+            get(|| async { axum::response::Redirect::permanent("/api/v1/docs") }),
         )
         .route(
             "/api/docs/",
-            get(|| async {
-                let html = Scalar::new(crate::openapi::ApiDoc::openapi()).to_html();
-                axum::response::Html(html)
-            }),
-        );
+            get(|| async { axum::response::Redirect::permanent("/api/v1/docs/") }),
+        )
+        .merge(Router::from(
+            SwaggerUi::new("/api/v1/docs")
+                .url("/api/v1/openapi.json", crate::openapi::ApiDoc::openapi()),
+        ));
 
     if let Ok(dev_dir) = std::env::var("PATCHBOX_DEV_ASSETS") {
         tracing::warn!("⚡ DEV MODE: serving assets from disk at {dev_dir}");

@@ -28,7 +28,8 @@ governor = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
 nix = { version = "0.29", features = ["fs"] }
 utoipa = { version = "5", features = ["axum_extras"] }
-utoipa-scalar = "0.2"
+utoipa-axum = "0.1"
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
 [lib]
 name = "patchbox"
 path = "src/lib.rs"
