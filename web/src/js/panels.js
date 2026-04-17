@@ -237,8 +237,8 @@ function _onParamChange(channelId, block, newParams) {
 
       if (block === 'flt') {
         const promises = [];
-        if (newParams.hpf) promises.push(api.put(`${base}/hpf`, newParams.hpf));
-        if (newParams.lpf) promises.push(api.put(`${base}/lpf`, newParams.lpf));
+        if (newParams.hpf) promises.push(api.put(`${base}/hpf`, {kind:'flt',enabled:newParams.hpf.enabled??true,version:1,params:newParams.hpf}));
+        if (newParams.lpf) promises.push(api.put(`${base}/lpf`, {kind:'flt',enabled:newParams.lpf.enabled??true,version:1,params:newParams.lpf}));
         await Promise.all(promises);
         let ch;
         if (isBus) {
@@ -257,7 +257,8 @@ function _onParamChange(channelId, block, newParams) {
       const mappedBlock = dspBlockMap[block] || block;
       const endpoint = `${base}/${mappedBlock}`;
 
-      await api.put(endpoint, newParams);
+      const enabled = newParams.enabled ?? true;
+      await api.put(endpoint, {kind: block, enabled, version: 1, params: newParams});
 
       const ch = isBus
         ? state.buses.get(channelId)
@@ -298,8 +299,8 @@ async function _onBypass(channelId, block, bypassed) {
     if (block === 'flt') {
       const fltParams = ch?.dsp?.flt?.params ?? {};
       await Promise.all([
-        api.put(`${base}/hpf`, { enabled: !bypassed, freq_hz: fltParams.hpf?.freq_hz ?? 80 }),
-        api.put(`${base}/lpf`, { enabled: !bypassed, freq_hz: fltParams.lpf?.freq_hz ?? 18000 }),
+        api.put(`${base}/hpf`, {kind:'flt',enabled:!bypassed,version:1,params:{...(fltParams.hpf??{}),enabled:!bypassed,freq_hz:fltParams.hpf?.freq_hz??80}}),
+        api.put(`${base}/lpf`, {kind:'flt',enabled:!bypassed,version:1,params:{...(fltParams.lpf??{}),enabled:!bypassed,freq_hz:fltParams.lpf?.freq_hz??18000}}),
       ]);
       if (ch?.dsp?.flt) ch.dsp.flt.bypassed = bypassed;
       // Sync badge DOM for flt block
@@ -316,7 +317,7 @@ async function _onBypass(channelId, block, bypassed) {
     const blockData = ch?.dsp?.[block] ?? {};
     const fullParams = { ...(blockData.params ?? {}), enabled: !bypassed };
 
-    await api.put(`${base}/${mappedBlock}`, fullParams);
+    await api.put(`${base}/${mappedBlock}`, {kind: block, enabled: !bypassed, version: 1, params: blockData.params ?? {}});
 
     if (ch?.dsp?.[block]) ch.dsp[block].bypassed = bypassed;
     // Sync badge DOM for other blocks
