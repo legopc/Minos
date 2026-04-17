@@ -160,12 +160,12 @@ mod tests {
         // buf[0..48] should be 0 (reading pre-delay buffer, which was 0)
         // buf[48] should be 1.0 (the impulse shifted)
         // buf[49..96] should be 0
-        for i in 0..48 {
+        for (i, &sample) in buf.iter().enumerate().take(48) {
             assert!(
-                (buf[i] - 0.0).abs() < 1e-6,
+                (sample - 0.0).abs() < 1e-6,
                 "buf[{}] should be 0.0, got {}",
                 i,
-                buf[i]
+                sample
             );
         }
         assert!(
@@ -173,12 +173,12 @@ mod tests {
             "buf[48] should be 1.0 (delayed impulse), got {}",
             buf[48]
         );
-        for i in 49..96 {
+        for (i, &sample) in buf.iter().enumerate().skip(49) {
             assert!(
-                (buf[i] - 0.0).abs() < 1e-6,
+                (sample - 0.0).abs() < 1e-6,
                 "buf[{}] should be 0.0, got {}",
                 i,
-                buf[i]
+                sample
             );
         }
     }
@@ -213,12 +213,12 @@ mod tests {
         delay.process_block(&mut test_buf);
 
         // After flushing and processing zeros, output should be zeros
-        for i in 0..50 {
+        for (i, &sample) in test_buf.iter().enumerate() {
             assert!(
-                (test_buf[i] - 0.0).abs() < 1e-6,
+                (sample - 0.0).abs() < 1e-6,
                 "test_buf[{}] should be 0.0 (clean after flush), got {}",
                 i,
-                test_buf[i]
+                sample
             );
         }
     }

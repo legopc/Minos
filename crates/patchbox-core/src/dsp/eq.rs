@@ -209,8 +209,10 @@ mod tests {
 
     fn make_cfg(freq: f32, gain_db: f32, q: f32, enabled: bool) -> EqConfig {
         use crate::config::EqBandType;
-        let mut cfg = EqConfig::default();
-        cfg.enabled = enabled;
+        let mut cfg = EqConfig {
+            enabled,
+            bands: Default::default(),
+        };
         cfg.bands[2] = EqBand {
             freq_hz: freq,
             gain_db,
@@ -375,12 +377,12 @@ mod tests {
         );
 
         // Rest should be near zero (transient response of identity)
-        for i in 1..256 {
+        for (i, &sample) in impulse.iter().enumerate().skip(1) {
             assert!(
-                impulse[i].abs() < 0.05,
+                sample.abs() < 0.05,
                 "0dB EQ impulse response should settle to zero: impulse[{}]={}",
                 i,
-                impulse[i]
+                sample
             );
         }
     }
