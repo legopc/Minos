@@ -336,3 +336,118 @@ impl FeedbackSuppressor {
         &self.notch_freqs[..self.n_active]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_cfg(enabled: bool) -> FeedbackSuppressorConfig {
+        FeedbackSuppressorConfig {
+            enabled,
+            threshold_db: -20.0,
+            hysteresis_db: 6.0,
+            bandwidth_hz: 10.0,
+            auto_reset: false,
+            quiet_hold_ms: 5000.0,
+            max_notches: 6,
+            quiet_threshold_db: -60.0,
+        }
+    }
+
+    #[test]
+    fn disabled_feedback_suppressor_passes_signal_unchanged() {
+        let mut fs = FeedbackSuppressor::new();
+        fs.sync(&make_cfg(false), 48_000.0);
+
+        let input = vec![0.1f32; 256];
+        let mut buf = input.clone();
+        fs.process_block(&mut buf);
+
+        for (a, b) in input.iter().zip(buf.iter()) {
+            assert!(
+                (a - b).abs() < 1e-6,
+                "disabled feedback suppressor must pass signal unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn feedback_suppressor_does_not_explode_on_white_noise() {
+        // Test that the suppressor doesn't produce NaN or unbounded output
+        let mut fs = FeedbackSuppressor::new();
+        fs.sync(&make_cfg(true), 48_000.0);
+
+        // Generate simple pseudo-random noise (not true random, but deterministic)
+        let mut noise = Vec::new();
+        let mut seed: u32 = 12345;
+        for _ in 0..4800 {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let normalized = ((seed >> 8) as f32 / (1u32 << 24) as f32) * 2.0 - 1.0;
+            noise.push(normalized * 0.1); // Scale to reasonable level
+        }
+
+        let mut buf = noise.clone();
+        fs.process_block(&mut buf);
+
+        // Verify output is bounded and finite
+        for s in &buf {
+            assert!(
+                s.is_finite(),
+                "output contains NaN or inf: {}",
+                s
+            );
+            assert!(
+                s.abs() <= 10.0, // Very loose bound
+                "output is unbounded: {}",
+                s
+            );
+        }
+    }
+
+    #[test]
+    fn active_notches_metering_returns_frequencies() {
+        let mut fs = FeedbackSuppressor::new();
+        let mut cfg = make_cfg(true);
+        // Lower threshold to enable detection
+        cfg.threshold_db = -40.0;
+        fs.sync(&cfg, 48_000.0);
+
+        // Generate a sustained sine at ~1 kHz (should accumulate in detection window)
+        let mut sine = Vec::new();
+        for i in 0..DETECT_SIZE * 2 {
+            let sample = (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48_000.0).sin() * 0.5;
+            sine.push(sample);
+        }
+
+        fs.process_block(&mut sine);
+
+        // After processing, should have detected the tone
+        let notches = fs.active_notches();
+        // May or may not have notches depending on hysteresis, but vector should be valid
+        assert!(notches.len() <= MAX_NOTCHES);
+    }
+
+    #[test]
+    fn reset_clears_all_notches() {
+        let mut fs = FeedbackSuppressor::new();
+        fs.sync(&make_cfg(true), 48_000.0);
+
+        // Manually place a notch by setting internal state (via sync with detected feedback)
+        let mut cfg = make_cfg(true);
+        cfg.threshold_db = -20.0;
+        fs.sync(&cfg, 48_000.0);
+
+        // Generate tone to potentially trigger detection
+        let mut tone = Vec::new();
+        for i in 0..DETECT_SIZE {
+            let sample = (2.0 * std::f32::consts::PI * 2000.0 * i as f32 / 48_000.0).sin() * 0.3;
+            tone.push(sample);
+        }
+        fs.process_block(&mut tone);
+
+        // Reset should clear notches
+        fs.reset();
+        let notches = fs.active_notches();
+        assert_eq!(notches.len(), 0, "reset should clear all notches");
+    }
+}

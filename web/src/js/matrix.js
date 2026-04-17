@@ -23,6 +23,220 @@ let _filterTxInput = null;
 let _currentFilterRx = '';
 let _currentFilterTx = '';
 
+// ── Warnings state ─────────────────────────────────────────────────────
+let _showWarnings = localStorage.getItem('patchbox.matrix.showWarnings') !== 'false'; // default true
+let _currentWarnings = []; // {id, severity, title, description, cellKeys}
+const _warningIdCounter = { count: 0 };
+
+function _genWarnId() {
+  return 'warn_' + (++_warningIdCounter.count);
+}
+
+// ── Compute routing warnings ───────────────────────────────────────────────────
+function _computeWarnings(channels, outputs, routes, buses, busMatrix, stereoLinks) {
+  const warnings = [];
+  const routesByRx = new Map(); // rx -> [routes]
+  const routesByTx = new Map(); // tx -> [routes]
+  const highFanOut = new Map(); // rx -> count of routed tx
+
+  // Build lookup maps
+  routes.forEach(r => {
+    if (!routesByRx.has(r.rx_id)) routesByRx.set(r.rx_id, []);
+    if (!routesByTx.has(r.tx_id)) routesByTx.set(r.tx_id, []);
+    routesByRx.get(r.rx_id).push(r);
+    routesByTx.get(r.tx_id).push(r);
+  });
+
+  // 1. Detect stereo mismatches
+  const stereoByIdx = new Map();
+  stereoLinks.forEach(sl => {
+    if (sl.linked) {
+      stereoByIdx.set(sl.left_channel, sl);
+      stereoByIdx.set(sl.right_channel, sl);
+    }
+  });
+
+  channels.forEach(ch => {
+    const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
+    const stereo = stereoByIdx.get(chIdx);
+    const isStereoLeft = stereo && stereo.left_channel === chIdx;
+    const isStereoRight = stereo && stereo.right_channel === chIdx;
+
+    if (stereo && isStereoLeft) {
+      const leftRoutes = routesByRx.get(ch.id) || [];
+      const rightChId = `rx_${stereo.right_channel}`;
+      const rightRoutes = routesByRx.get(rightChId) || [];
+
+      // Find all unique tx across both stereo channels
+      const allTxIds = new Set([...leftRoutes.map(r => r.tx_id), ...rightRoutes.map(r => r.tx_id)]);
+
+      allTxIds.forEach(txId => {
+        const out = outputs.find(o => o.id === txId);
+        if (!out) return;
+
+        const leftHasRoute = leftRoutes.some(r => r.tx_id === txId);
+        const rightHasRoute = rightRoutes.some(r => r.tx_id === txId);
+
+        // Both channels to mono output = warning
+        if (leftHasRoute && rightHasRoute) {
+          const txIdx = parseInt(txId.replace('tx_', ''), 10);
+          // Detect if output is mono (simple heuristic: name doesn't contain stereo keywords)
+          const isMono = !out.name.toLowerCase().includes('stereo') &&
+                         !out.name.toLowerCase().includes('pair') &&
+                         !out.name.toLowerCase().includes('(l') &&
+                         !out.name.toLowerCase().includes('(r');
+          if (isMono) {
+            warnings.push({
+              id: _genWarnId(),
+              severity: 'amber',
+              title: '⚠ Stereo routed to mono',
+              description: `Channels ${chIdx + 1} & ${stereo.right_channel + 1} (stereo pair) both routed to ${out.name} — will sum to mono.`,
+              cellKeys: [`${ch.id}|${txId}`, `${rightChId}|${txId}`],
+            });
+          }
+        }
+      });
+    }
+  });
+
+  // 2. Over-routed detection (single rx feeding many tx)
+  const fanOutThreshold = 8;
+  routesByRx.forEach((routes, rxId) => {
+    const count = routes.length;
+    if (count > fanOutThreshold) {
+      warnings.push({
+        id: _genWarnId(),
+        severity: 'blue',
+        title: '💡 High fan-out',
+        description: `Channel ${rxId} is feeding ${count} destinations — monitor gain.`,
+        cellKeys: routes.map(r => `${r.rx_id}|${r.tx_id}`),
+      });
+    }
+  });
+
+  // 3. Feedback loop detection (conservative: same local route, both directions)
+  const localRoutesByPair = new Map(); // "rx_0|tx_1" -> bool
+  routes.filter(r => r.route_type === 'local').forEach(r => {
+    localRoutesByPair.set(`${r.rx_id}|${r.tx_id}`, true);
+  });
+
+  localRoutesByPair.forEach((_, key) => {
+    const [rxId, txId] = key.split('|');
+    const rxIdx = parseInt(rxId.replace('rx_', ''), 10);
+    const txIdx = parseInt(txId.replace('tx_', ''), 10);
+
+    // Check if output at txIdx is physically routed back to input at rxIdx (simplified)
+    // Conservative: only flag if we detect a local loop pattern
+    // In practice: if an output is also an input source (rare), and there's a route from that output back, flag it
+    // For now, we skip this as we can't definitively detect device-level loops from API responses alone
+  });
+
+  // 4. Zone + Bus double-tap (same source feeding both bus and zone output)
+  const rxToTxsViaBus = new Map(); // rx -> Set of tx
+  buses.forEach(bus => {
+    const busId = bus.id;
+    channels.forEach((ch, chIdx) => {
+      const isRouted = Array.isArray(bus.routing) && bus.routing[chIdx] === true;
+      if (isRouted) {
+        // This channel feeds this bus; now check where bus feeds
+        const txsFromBus = busMatrix[busId] ? Object.keys(busMatrix[busId]).filter(txId => busMatrix[busId][txId]) : [];
+        if (!rxToTxsViaBus.has(ch.id)) rxToTxsViaBus.set(ch.id, new Set());
+        txsFromBus.forEach(txId => rxToTxsViaBus.get(ch.id).add(txId));
+      }
+    });
+  });
+
+  // Check for same source → bus output AND direct route
+  routesByRx.forEach((directRoutes, rxId) => {
+    const viabus = rxToTxsViaBus.get(rxId);
+    if (viabus) {
+      directRoutes.forEach(r => {
+        if (viabus.has(r.tx_id)) {
+          const out = outputs.find(o => o.id === r.tx_id);
+          warnings.push({
+            id: _genWarnId(),
+            severity: 'info',
+            title: '✓ Routed via bus + direct',
+            description: `${rxId} feeds ${out?.name ?? r.tx_id} both via bus and direct route — may cause phase issues.`,
+            cellKeys: [`${rxId}|${r.tx_id}`],
+          });
+        }
+      });
+    }
+  });
+
+  return warnings.sort((a, b) => {
+    const severityOrder = { amber: 0, blue: 1, info: 2 };
+    return (severityOrder[a.severity] ?? 99) - (severityOrder[b.severity] ?? 99);
+  });
+}
+
+// ── Build warning banner ───────────────────────────────────────────────────────
+function _buildWarningBanner(warnings) {
+  const banner = document.createElement('div');
+  banner.className = 'matrix-warning-banner';
+  if (!_showWarnings || warnings.length === 0) {
+    banner.style.display = 'none';
+  }
+
+  const header = document.createElement('div');
+  header.className = 'warning-banner-header';
+
+  const title = document.createElement('span');
+  title.className = 'warning-banner-title';
+  title.textContent = `⚠ ${warnings.length} potential issue${warnings.length !== 1 ? 's' : ''}`;
+  header.appendChild(title);
+
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.className = 'warning-banner-toggle';
+  toggle.checked = _showWarnings;
+  toggle.title = 'Show/hide routing warnings';
+  toggle.addEventListener('change', () => {
+    _showWarnings = toggle.checked;
+    localStorage.setItem('patchbox.matrix.showWarnings', _showWarnings ? 'true' : 'false');
+    if (!_showWarnings) {
+      banner.style.display = 'none';
+    } else {
+      banner.style.display = '';
+    }
+    // Clear any cell highlights
+    document.querySelectorAll('.xp-cell.warning-highlight').forEach(c => c.classList.remove('warning-highlight'));
+  });
+  header.appendChild(toggle);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'warning-banner-close';
+  closeBtn.textContent = '×';
+  closeBtn.title = 'Dismiss';
+  closeBtn.addEventListener('click', () => { banner.style.display = 'none'; });
+  header.appendChild(closeBtn);
+
+  banner.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'warning-list';
+  warnings.forEach(w => {
+    const item = document.createElement('div');
+    item.className = `warning-item warning-${w.severity}`;
+    item.textContent = w.title + ' — ' + w.description;
+    item.style.cursor = 'pointer';
+    item.addEventListener('click', () => {
+      // Highlight cells for this warning
+      document.querySelectorAll('.xp-cell.warning-highlight').forEach(c => c.classList.remove('warning-highlight'));
+      w.cellKeys.forEach(key => {
+        document.querySelectorAll(`.xp-cell[data-rx-id="${key.split('|')[0]}"][data-tx-id="${key.split('|')[1]}"]`).forEach(c => {
+          c.classList.add('warning-highlight');
+        });
+      });
+    });
+    list.appendChild(item);
+  });
+  banner.appendChild(list);
+
+  return banner;
+}
+
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
   _container = container;
