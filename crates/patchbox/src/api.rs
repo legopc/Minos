@@ -112,44 +112,44 @@ macro_rules! persist_scenes_or_500 {
     };
 }
 
-#[derive(Deserialize)]
-pub(crate) struct GainBody {
-    pub(crate) gain_db: f32,
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct GainBody {
+    pub gain_db: f32,
 }
-#[derive(Deserialize)]
-pub(crate) struct EnabledBody {
-    pub(crate) enabled: bool,
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct EnabledBody {
+    pub enabled: bool,
 }
-#[derive(Deserialize)]
-pub(crate) struct MutedBody {
-    pub(crate) muted: bool,
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct MutedBody {
+    pub muted: bool,
 }
-#[derive(Deserialize)]
-pub(crate) struct PolarityBody {
-    pub(crate) invert: bool,
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct PolarityBody {
+    pub invert: bool,
 }
 
-pub(crate) fn parse_rx_id(id: &str) -> Option<usize> {
+pub fn parse_rx_id(id: &str) -> Option<usize> {
     id.strip_prefix("rx_")?.parse().ok()
 }
 
-pub(crate) fn parse_tx_id(id: &str) -> Option<usize> {
+pub fn parse_tx_id(id: &str) -> Option<usize> {
     id.strip_prefix("tx_")?.parse().ok()
 }
 
-pub(crate) fn parse_bus_id(id: &str) -> Option<usize> {
+pub fn parse_bus_id(id: &str) -> Option<usize> {
     id.strip_prefix("bus_")?.parse().ok()
 }
 
-pub(crate) fn parse_zone_id(id: &str) -> Option<usize> {
+pub fn parse_zone_id(id: &str) -> Option<usize> {
     id.strip_prefix("zone_")?.parse().ok()
 }
 
-pub(crate) fn dsp_to_value(dsp: &impl DspChain) -> serde_json::Value {
+pub fn dsp_to_value(dsp: &impl DspChain) -> serde_json::Value {
     dsp.to_dsp_value()
 }
 
-pub(crate) fn linear_to_dbfs(v: f32) -> f32 {
+pub fn linear_to_dbfs(v: f32) -> f32 {
     if v <= 0.0 {
         return -60.0;
     }
@@ -157,7 +157,7 @@ pub(crate) fn linear_to_dbfs(v: f32) -> f32 {
 }
 
 /// Send an event JSON string to all connected WS clients.
-pub(crate) fn ws_broadcast(s: &AppState, msg: String) {
+pub fn ws_broadcast(s: &AppState, msg: String) {
     let _ = s.ws_tx.send(msg);
 }
 

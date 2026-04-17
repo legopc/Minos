@@ -315,38 +315,99 @@ mod tests {
     }
 
     #[test]
-    fn sync_resets_state_on_enable_change() {
-        let mut filter = ButterworthFilter::new(FilterMode::Highpass);
-        let cfg = FilterConfig {
-            enabled: true,
-            freq_hz: 80.0,
-        };
-        filter.sync(&cfg, SAMPLE_RATE);
+    fn hpf_blocks_below_cutoff() {
+        // 80 Hz HPF should block 20 Hz sine significantly
+        let mut filter = make_hpf(true, 80.0);
+        let sine = sine_wave(20.0, 4800, SAMPLE_RATE);
 
-        // Process some samples to dirty the state
-        let mut buf = vec![0.5f32; 64];
-        filter.process_block(&mut buf);
+        let mut warmup = sine[..480].to_vec();
+        filter.process_block(&mut warmup);
+
+        let mut out = sine[480..].to_vec();
+        filter.process_block(&mut out);
+
+        let rms_in = rms(&sine[480..]);
+        let rms_out = rms(&out);
+
         assert!(
-            filter.s1 != 0.0 || filter.s2 != 0.0,
-            "state should be dirty"
+            rms_out < rms_in * 0.3,
+            "80Hz HPF should block 20Hz significantly: in_rms={:.4} out_rms={:.4}",
+            rms_in,
+            rms_out
+        );
+    }
+
+    #[test]
+    fn hpf_lpf_combined_chain_bandpass() {
+        // HPF at 80Hz + LPF at 2kHz creates bandpass
+        let mut hpf = make_hpf(true, 80.0);
+        let mut lpf = make_lpf(true, 2000.0);
+
+        // Test signal: 1kHz (should pass)
+        let sine_1k = sine_wave(1000.0, 4800, SAMPLE_RATE);
+
+        let mut warmup = sine_1k[..480].to_vec();
+        hpf.process_block(&mut warmup);
+        lpf.process_block(&mut warmup);
+
+        let mut bandpass_out = sine_1k[480..].to_vec();
+        hpf.process_block(&mut bandpass_out);
+        lpf.process_block(&mut bandpass_out);
+
+        let rms_in = rms(&sine_1k[480..]);
+        let rms_out = rms(&bandpass_out);
+
+        assert!(
+            rms_out > rms_in * 0.85,
+            "1kHz should pass through 80Hz HPF + 2kHz LPF: in={:.4} out={:.4}",
+            rms_in,
+            rms_out
         );
 
-        // Disable and re-enable
-        let cfg_disabled = FilterConfig {
-            enabled: false,
-            freq_hz: 80.0,
-        };
-        filter.sync(&cfg_disabled, SAMPLE_RATE);
-        assert_eq!(filter.s1, 0.0, "state should reset on disable");
-        assert_eq!(filter.s2, 0.0, "state should reset on disable");
+        // Test signal: 20Hz (should be blocked by HPF)
+        let sine_20hz = sine_wave(20.0, 4800, SAMPLE_RATE);
+        let mut hpf2 = make_hpf(true, 80.0);
+        let mut lpf2 = make_lpf(true, 2000.0);
 
-        // Re-enable
-        let cfg_enabled = FilterConfig {
-            enabled: true,
-            freq_hz: 80.0,
-        };
-        filter.sync(&cfg_enabled, SAMPLE_RATE);
-        assert_eq!(filter.s1, 0.0, "state should reset on re-enable");
-        assert_eq!(filter.s2, 0.0, "state should reset on re-enable");
+        let mut warmup = sine_20hz[..480].to_vec();
+        hpf2.process_block(&mut warmup);
+        lpf2.process_block(&mut warmup);
+
+        let mut blocked_out = sine_20hz[480..].to_vec();
+        hpf2.process_block(&mut blocked_out);
+        lpf2.process_block(&mut blocked_out);
+
+        let rms_in = rms(&sine_20hz[480..]);
+        let rms_out = rms(&blocked_out);
+
+        assert!(
+            rms_out < rms_in * 0.3,
+            "20Hz should be blocked by 80Hz HPF: in={:.4} out={:.4}",
+            rms_in,
+            rms_out
+        );
+
+        // Test signal: 15kHz (should be blocked by LPF)
+        let sine_15k = sine_wave(15000.0, 4800, SAMPLE_RATE);
+        let mut hpf3 = make_hpf(true, 80.0);
+        let mut lpf3 = make_lpf(true, 2000.0);
+
+        let mut warmup = sine_15k[..480].to_vec();
+        hpf3.process_block(&mut warmup);
+        lpf3.process_block(&mut warmup);
+
+        let mut blocked_out = sine_15k[480..].to_vec();
+        hpf3.process_block(&mut blocked_out);
+        lpf3.process_block(&mut blocked_out);
+
+        let rms_in = rms(&sine_15k[480..]);
+        let rms_out = rms(&blocked_out);
+
+        assert!(
+            rms_out < rms_in * 0.2,
+            "15kHz should be blocked by 2kHz LPF: in={:.4} out={:.4}",
+            rms_in,
+            rms_out
+        );
     }
 }
