@@ -170,6 +170,13 @@ pub async fn refresh_token(
     }
 }
 
+#[derive(Serialize)]
+struct RbacForbidden {
+    error: &'static str,
+    required: &'static str,
+    actual: &'static str,
+}
+
 pub async fn require_auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let token = req
         .headers()
@@ -181,6 +188,47 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
     match token.and_then(|t| jwt::validate(t, &secret).ok()) {
         Some(claims) => {
             drop(secret);
+            req.extensions_mut().insert(claims);
+            next.run(req).await
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid or missing token".to_string(),
+                in_memory: None,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn check_min_role(
+    state: AppState,
+    min_role: jwt::Role,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let secret = state.jwt_secret.read().await;
+    match token.and_then(|t| jwt::validate(t, &secret).ok()) {
+        Some(claims) => {
+            drop(secret);
+            let actual = claims.role_level();
+            if actual < min_role {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(RbacForbidden {
+                        error: "insufficient_role",
+                        required: min_role.as_str(),
+                        actual: actual.as_str(),
+                    }),
+                )
+                    .into_response();
+            }
             req.extensions_mut().insert(claims);
             next.run(req).await
         }
