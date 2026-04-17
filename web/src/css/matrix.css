@@ -641,7 +641,6 @@
 
 /* ── Internal Buses ─────────────────────────────────────── */
 :root {
-  --accent-gold: var(--accent-gold);
   --bus-route-color: var(--accent-gold);
   --surface-0: var(--bg-dark);
   --surface-1: var(--bg-surface);
