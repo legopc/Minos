@@ -21,14 +21,15 @@ export function loadOrder(key) {
  */
 export function applyOrder(key, items, getId) {
   const saved = loadOrder(key);
-  if (!saved || !saved.length) return;
-  const parent = items[0]?.parentElement;
-  if (!parent) return;
+  if (!saved || !saved.length) return items;
   const map = new Map(items.map(el => [getId(el), el]));
-  // append in saved order first, then any unknown items at the end
   const ordered = saved.map(id => map.get(id)).filter(Boolean);
   const rest = items.filter(el => !saved.includes(getId(el)));
-  [...ordered, ...rest].forEach(el => parent.appendChild(el));
+  const sorted = [...ordered, ...rest];
+  // If items are DOM elements already appended, re-order them in their parent
+  const parent = items[0]?.parentElement;
+  if (parent) sorted.forEach(el => parent.appendChild(el));
+  return sorted;
 }
 
 /**
