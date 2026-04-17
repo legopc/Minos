@@ -9,6 +9,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 mod api;
 mod auth_api;
 mod jwt;
+mod openapi;
 mod pam_auth;
 mod scenes;
 mod state;

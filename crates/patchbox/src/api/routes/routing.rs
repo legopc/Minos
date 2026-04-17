@@ -25,28 +25,29 @@ pub struct GainUpdate {
     pub db: f32,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct MatrixState {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MatrixState {
     enabled: Vec<Vec<bool>>,
     gain_db: Vec<Vec<f32>>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct RouteResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct RouteResponse {
     id: String,
     rx_id: String,
     tx_id: String,
+    #[schema(value_type = String)]
     route_type: &'static str,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct CreateRouteRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct CreateRouteRequest {
     rx_id: String,
     tx_id: String,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CreateVcaRequest {
+pub struct CreateVcaRequest {
     pub name: String,
     #[serde(default)]
     pub group_type: patchbox_core::config::VcaGroupType,
@@ -57,7 +58,7 @@ pub(crate) struct CreateVcaRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateVcaRequest {
+pub struct UpdateVcaRequest {
     pub name: Option<String>,
     pub gain_db: Option<f32>,
     pub muted: Option<bool>,
@@ -65,7 +66,7 @@ pub(crate) struct UpdateVcaRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CreateAutomixerGroupRequest {
+pub struct CreateAutomixerGroupRequest {
     pub name: String,
     #[serde(default = "default_true_req")]
     pub enabled: bool,
@@ -77,7 +78,7 @@ fn default_true_req() -> bool {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateAutomixerGroupRequest {
+pub struct UpdateAutomixerGroupRequest {
     pub name: Option<String>,
     pub enabled: Option<bool>,
     pub gate_threshold_db: Option<f32>,
@@ -88,19 +89,19 @@ pub(crate) struct UpdateAutomixerGroupRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CreateStereoLinkRequest {
+pub struct CreateStereoLinkRequest {
     pub left_channel: usize,
     pub right_channel: usize,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateStereoLinkRequest {
+pub struct UpdateStereoLinkRequest {
     pub linked: Option<bool>,
     pub pan: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CreateGeneratorRequest {
+pub struct CreateGeneratorRequest {
     name: String,
     #[serde(default)]
     gen_type: SignalGenType,
@@ -135,7 +136,7 @@ fn default_sweep_duration_api() -> f32 {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateGeneratorRequest {
+pub struct UpdateGeneratorRequest {
     name: Option<String>,
     gen_type: Option<SignalGenType>,
     freq_hz: Option<f32>,
@@ -147,14 +148,14 @@ pub(crate) struct UpdateGeneratorRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateGeneratorMatrixRequest {
+pub struct UpdateGeneratorMatrixRequest {
     /// gains[tx_idx] = gain_db (f32::NEG_INFINITY or absent = not routed)
     gains: Vec<f32>,
 }
 
 // PUT /api/v1/matrix
 #[tracing::instrument(skip_all)]
-pub(crate) async fn put_matrix(
+pub async fn put_matrix(
     State(s): State<AppState>,
     Json(u): Json<MatrixUpdate>,
 ) -> impl IntoResponse {
@@ -172,7 +173,7 @@ pub(crate) async fn put_matrix(
 }
 
 // GET /api/v1/matrix
-pub(crate) async fn get_matrix(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_matrix(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(MatrixState {
         enabled: cfg.matrix.clone(),
@@ -181,7 +182,7 @@ pub(crate) async fn get_matrix(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/gain/input
-pub(crate) async fn put_gain_input(
+pub async fn put_gain_input(
     State(s): State<AppState>,
     Json(u): Json<GainUpdate>,
 ) -> impl IntoResponse {
@@ -196,7 +197,7 @@ pub(crate) async fn put_gain_input(
 }
 
 // PUT /api/v1/gain/output
-pub(crate) async fn put_gain_output(
+pub async fn put_gain_output(
     State(s): State<AppState>,
     Json(u): Json<GainUpdate>,
 ) -> impl IntoResponse {
@@ -211,7 +212,15 @@ pub(crate) async fn put_gain_output(
 }
 
 // GET /api/v1/routes
-pub(crate) async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/routes",
+    tag = "routing",
+    responses(
+        (status = 200, description = "All active routes", body = Vec<RouteResponse>)
+    )
+)]
+pub async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let mut routes = Vec::new();
     for (tx, row) in cfg.matrix.iter().enumerate() {
@@ -245,8 +254,17 @@ pub(crate) async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // POST /api/v1/routes
+#[utoipa::path(
+    post,
+    path = "/api/v1/routes",
+    tag = "routing",
+    request_body = CreateRouteRequest,
+    responses(
+        (status = 201, description = "Route created", body = RouteResponse)
+    )
+)]
 #[tracing::instrument(skip_all, fields(rx_id, tx_id))]
-pub(crate) async fn post_route(
+pub async fn post_route(
     State(s): State<AppState>,
     Json(body): Json<CreateRouteRequest>,
 ) -> impl IntoResponse {
@@ -315,10 +333,16 @@ pub(crate) async fn post_route(
 }
 
 // DELETE /api/v1/routes/:id — id is "rx_N|tx_M" (| may be URL-encoded as %7C)
-pub(crate) async fn delete_route(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+#[utoipa::path(
+    delete,
+    path = "/api/v1/routes/{id}",
+    tag = "routing",
+    params(("id" = String, Path, description = "Route ID")),
+    responses(
+        (status = 204, description = "Route deleted")
+    )
+)]
+pub async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     let parts: Vec<&str> = id.splitn(2, '|').collect();
     if parts.len() != 2 {
         return (
@@ -366,7 +390,7 @@ pub(crate) async fn delete_route(
 }
 
 // DELETE /api/v1/routes?rx_id=...&tx_id=...
-pub(crate) async fn delete_routes_bulk(
+pub async fn delete_routes_bulk(
     State(s): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
@@ -417,13 +441,13 @@ pub(crate) async fn delete_routes_bulk(
 }
 
 // GET /api/v1/vca-groups
-pub(crate) async fn get_vca_groups(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_vca_groups(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(serde_json::json!({"vca_groups": cfg.vca_groups})).into_response()
 }
 
 // POST /api/v1/vca-groups
-pub(crate) async fn post_vca_group(
+pub async fn post_vca_group(
     State(s): State<AppState>,
     Json(body): Json<CreateVcaRequest>,
 ) -> impl IntoResponse {
@@ -449,7 +473,7 @@ pub(crate) async fn post_vca_group(
 }
 
 // PUT /api/v1/vca-groups/:id
-pub(crate) async fn put_vca_group(
+pub async fn put_vca_group(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateVcaRequest>,
@@ -481,7 +505,7 @@ pub(crate) async fn put_vca_group(
 }
 
 // DELETE /api/v1/vca-groups/:id
-pub(crate) async fn delete_vca_group(
+pub async fn delete_vca_group(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -502,13 +526,13 @@ pub(crate) async fn delete_vca_group(
 }
 
 // GET /api/v1/automixer-groups
-pub(crate) async fn get_automixer_groups(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_automixer_groups(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(serde_json::json!({"automixer_groups": cfg.automixer_groups})).into_response()
 }
 
 // POST /api/v1/automixer-groups
-pub(crate) async fn post_automixer_group(
+pub async fn post_automixer_group(
     State(s): State<AppState>,
     Json(body): Json<CreateAutomixerGroupRequest>,
 ) -> impl IntoResponse {
@@ -533,7 +557,7 @@ pub(crate) async fn post_automixer_group(
 }
 
 // PUT /api/v1/automixer-groups/:id
-pub(crate) async fn put_automixer_group(
+pub async fn put_automixer_group(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateAutomixerGroupRequest>,
@@ -574,7 +598,7 @@ pub(crate) async fn put_automixer_group(
 }
 
 // DELETE /api/v1/automixer-groups/:id
-pub(crate) async fn delete_automixer_group(
+pub async fn delete_automixer_group(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -601,13 +625,13 @@ pub(crate) async fn delete_automixer_group(
 }
 
 // GET /api/v1/stereo-links
-pub(crate) async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(serde_json::json!({"stereo_links": cfg.stereo_links})).into_response()
 }
 
 // POST /api/v1/stereo-links
-pub(crate) async fn post_stereo_link(
+pub async fn post_stereo_link(
     State(s): State<AppState>,
     Json(body): Json<CreateStereoLinkRequest>,
 ) -> impl IntoResponse {
@@ -628,7 +652,7 @@ pub(crate) async fn post_stereo_link(
 }
 
 // PUT /api/v1/stereo-links/:left_ch
-pub(crate) async fn put_stereo_link(
+pub async fn put_stereo_link(
     State(s): State<AppState>,
     Path(left_ch): Path<usize>,
     Json(body): Json<UpdateStereoLinkRequest>,
@@ -653,7 +677,7 @@ pub(crate) async fn put_stereo_link(
 }
 
 // DELETE /api/v1/stereo-links/:left_ch
-pub(crate) async fn delete_stereo_link(
+pub async fn delete_stereo_link(
     State(s): State<AppState>,
     Path(left_ch): Path<usize>,
 ) -> impl IntoResponse {
@@ -669,7 +693,7 @@ pub(crate) async fn delete_stereo_link(
 }
 
 // GET /api/v1/signal-generators
-pub(crate) async fn get_signal_generators(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_signal_generators(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(serde_json::json!({
         "signal_generators": cfg.signal_generators,
@@ -679,7 +703,7 @@ pub(crate) async fn get_signal_generators(State(s): State<AppState>) -> impl Int
 }
 
 // POST /api/v1/signal-generators
-pub(crate) async fn post_signal_generator(
+pub async fn post_signal_generator(
     State(s): State<AppState>,
     Json(body): Json<CreateGeneratorRequest>,
 ) -> impl IntoResponse {
@@ -710,7 +734,7 @@ pub(crate) async fn post_signal_generator(
 }
 
 // PUT /api/v1/signal-generators/:id
-pub(crate) async fn put_signal_generator(
+pub async fn put_signal_generator(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateGeneratorRequest>,
@@ -754,7 +778,7 @@ pub(crate) async fn put_signal_generator(
 }
 
 // DELETE /api/v1/signal-generators/:id
-pub(crate) async fn delete_signal_generator(
+pub async fn delete_signal_generator(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -776,7 +800,7 @@ pub(crate) async fn delete_signal_generator(
 }
 
 // GET /api/v1/signal-generators/:id/routing
-pub(crate) async fn get_generator_routing(
+pub async fn get_generator_routing(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -793,7 +817,7 @@ pub(crate) async fn get_generator_routing(
 }
 
 // PUT /api/v1/signal-generators/:id/routing
-pub(crate) async fn put_generator_routing(
+pub async fn put_generator_routing(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateGeneratorMatrixRequest>,

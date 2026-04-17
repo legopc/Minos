@@ -10,28 +10,45 @@ use axum::{
 use tokio::time::Duration;
 use tracing;
 
-#[derive(serde::Deserialize)]
-pub(crate) struct SaveSceneRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct SaveSceneRequest {
     pub name: String,
     pub description: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateSceneRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateSceneRequest {
     name: Option<String>,
     description: Option<String>,
     is_favourite: Option<bool>,
 }
 
 // GET /api/v1/scenes
-pub(crate) async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/scenes",
+    tag = "scenes",
+    responses(
+        (status = 200, description = "List of scenes")
+    )
+)]
+pub async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
     let store = s.scenes.read().await;
     let list: Vec<&Scene> = store.scenes.values().collect();
     Json(serde_json::json!({ "scenes": list, "active": store.active }))
 }
 
 // POST /api/v1/scenes
-pub(crate) async fn save_scene(
+#[utoipa::path(
+    post,
+    path = "/api/v1/scenes",
+    tag = "scenes",
+    request_body = SaveSceneRequest,
+    responses(
+        (status = 200, description = "Scene saved")
+    )
+)]
+pub async fn save_scene(
     State(s): State<AppState>,
     Json(req): Json<SaveSceneRequest>,
 ) -> impl IntoResponse {
@@ -46,11 +63,18 @@ pub(crate) async fn save_scene(
 }
 
 // POST /api/v1/scenes/:name/load
+#[utoipa::path(
+    post,
+    path = "/api/v1/scenes/{name}/load",
+    tag = "scenes",
+    params(("name" = String, Path, description = "Scene name")),
+    responses(
+        (status = 200, description = "Scene loaded"),
+        (status = 404, description = "Scene not found")
+    )
+)]
 #[tracing::instrument(skip_all, fields(scene_name = %name))]
-pub(crate) async fn load_scene(
-    State(s): State<AppState>,
-    Path(name): Path<String>,
-) -> impl IntoResponse {
+pub async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
     let store = s.scenes.read().await;
     let scene = match store.scenes.get(&name) {
         Some(sc) => sc.clone(),
@@ -110,7 +134,7 @@ pub(crate) async fn load_scene(
 }
 
 // DELETE /api/v1/scenes/:name
-pub(crate) async fn delete_scene(
+pub async fn delete_scene(
     State(s): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
@@ -124,7 +148,7 @@ pub(crate) async fn delete_scene(
 }
 
 // GET /api/v1/scenes/:id
-pub(crate) async fn get_scene_by_id(
+pub async fn get_scene_by_id(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -136,7 +160,7 @@ pub(crate) async fn get_scene_by_id(
 }
 
 // PUT /api/v1/scenes/:id
-pub(crate) async fn put_scene(
+pub async fn put_scene(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateSceneRequest>,
@@ -160,7 +184,7 @@ pub(crate) async fn put_scene(
 }
 
 // GET /api/v1/scenes/:id/diff
-pub(crate) async fn get_scene_diff(
+pub async fn get_scene_diff(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {

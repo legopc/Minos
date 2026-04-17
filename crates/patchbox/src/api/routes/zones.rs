@@ -10,12 +10,12 @@ use patchbox_core::config::ZoneConfig;
 use tracing;
 
 #[derive(serde::Deserialize)]
-pub(crate) struct NameUpdate {
+pub struct NameUpdate {
     pub name: String,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct EqUpdate {
+pub struct EqUpdate {
     pub band: usize,
     pub freq_hz: f32,
     pub gain_db: f32,
@@ -23,41 +23,38 @@ pub(crate) struct EqUpdate {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct EqEnabledUpdate {
+pub struct EqEnabledUpdate {
     pub enabled: bool,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct LimiterUpdate {
+pub struct LimiterUpdate {
     pub threshold_db: f32,
     pub attack_ms: f32,
     pub release_ms: f32,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct LimiterEnabledUpdate {
+pub struct LimiterEnabledUpdate {
     pub enabled: bool,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct CreateZoneRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct CreateZoneRequest {
     name: String,
     colour_index: Option<u8>,
     tx_ids: Option<Vec<String>>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateZoneRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateZoneRequest {
     name: Option<String>,
     colour_index: Option<u8>,
     tx_ids: Option<Vec<String>>,
 }
 
 // POST /api/v1/zones/:tx/mute
-pub(crate) async fn mute_zone(
-    State(s): State<AppState>,
-    Path(tx): Path<usize>,
-) -> impl IntoResponse {
+pub async fn mute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if tx >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
@@ -69,10 +66,7 @@ pub(crate) async fn mute_zone(
 }
 
 // POST /api/v1/zones/:tx/unmute
-pub(crate) async fn unmute_zone(
-    State(s): State<AppState>,
-    Path(tx): Path<usize>,
-) -> impl IntoResponse {
+pub async fn unmute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if tx >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
@@ -84,7 +78,7 @@ pub(crate) async fn unmute_zone(
 }
 
 // POST /api/v1/mute-all
-pub(crate) async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() {
         *m = true;
@@ -95,7 +89,7 @@ pub(crate) async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // POST /api/v1/unmute-all
-pub(crate) async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() {
         *m = false;
@@ -106,13 +100,30 @@ pub(crate) async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // GET /api/v1/zones
-pub(crate) async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/zones",
+    tag = "zones",
+    responses(
+        (status = 200, description = "List of zones")
+    )
+)]
+pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(cfg.zone_config.clone())
 }
 
 // POST /api/v1/zones
-pub(crate) async fn post_zone(
+#[utoipa::path(
+    post,
+    path = "/api/v1/zones",
+    tag = "zones",
+    request_body = CreateZoneRequest,
+    responses(
+        (status = 201, description = "Zone created")
+    )
+)]
+pub async fn post_zone(
     State(s): State<AppState>,
     Json(body): Json<CreateZoneRequest>,
 ) -> impl IntoResponse {
@@ -131,8 +142,18 @@ pub(crate) async fn post_zone(
 }
 
 // PUT /api/v1/zones/:zone_id
+#[utoipa::path(
+    put,
+    path = "/api/v1/zones/{zone_id}",
+    tag = "zones",
+    params(("zone_id" = String, Path, description = "Zone ID")),
+    request_body = UpdateZoneRequest,
+    responses(
+        (status = 204, description = "Updated")
+    )
+)]
 #[tracing::instrument(skip_all, fields(zone_id))]
-pub(crate) async fn put_zone_resource(
+pub async fn put_zone_resource(
     State(s): State<AppState>,
     Path(zone_id): Path<String>,
     Json(body): Json<UpdateZoneRequest>,
@@ -162,7 +183,16 @@ pub(crate) async fn put_zone_resource(
 }
 
 // DELETE /api/v1/zones/:zone_id
-pub(crate) async fn delete_zone_resource(
+#[utoipa::path(
+    delete,
+    path = "/api/v1/zones/{zone_id}",
+    tag = "zones",
+    params(("zone_id" = String, Path, description = "Zone ID")),
+    responses(
+        (status = 204, description = "Deleted")
+    )
+)]
+pub async fn delete_zone_resource(
     State(s): State<AppState>,
     Path(zone_id): Path<String>,
 ) -> impl IntoResponse {
@@ -180,7 +210,7 @@ pub(crate) async fn delete_zone_resource(
 }
 
 // PUT /api/v1/sources/:idx/name
-pub(crate) async fn put_source_name(
+pub async fn put_source_name(
     State(s): State<AppState>,
     Path(idx): Path<usize>,
     Json(u): Json<NameUpdate>,
@@ -196,7 +226,7 @@ pub(crate) async fn put_source_name(
 }
 
 // PUT /api/v1/zones/:idx/name
-pub(crate) async fn put_zone_name(
+pub async fn put_zone_name(
     State(s): State<AppState>,
     Path(idx): Path<usize>,
     Json(u): Json<NameUpdate>,
@@ -212,7 +242,7 @@ pub(crate) async fn put_zone_name(
 }
 
 // GET /api/v1/zones/:tx/eq
-pub(crate) async fn get_eq(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
+pub async fn get_eq(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     match cfg.per_output_eq.get(tx) {
         Some(eq) => Json(eq.clone()).into_response(),
@@ -221,7 +251,7 @@ pub(crate) async fn get_eq(State(s): State<AppState>, Path(tx): Path<usize>) -> 
 }
 
 // PUT /api/v1/zones/:tx/eq
-pub(crate) async fn put_eq(
+pub async fn put_eq(
     State(s): State<AppState>,
     Path(tx): Path<usize>,
     Json(u): Json<EqUpdate>,
@@ -242,7 +272,7 @@ pub(crate) async fn put_eq(
 }
 
 // PUT /api/v1/zones/:tx/eq/enabled
-pub(crate) async fn put_eq_enabled(
+pub async fn put_eq_enabled(
     State(s): State<AppState>,
     Path(tx): Path<usize>,
     Json(u): Json<EqEnabledUpdate>,
@@ -258,10 +288,7 @@ pub(crate) async fn put_eq_enabled(
 }
 
 // GET /api/v1/zones/:tx/limiter
-pub(crate) async fn get_limiter(
-    State(s): State<AppState>,
-    Path(tx): Path<usize>,
-) -> impl IntoResponse {
+pub async fn get_limiter(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     match cfg.per_output_limiter.get(tx) {
         Some(lim) => Json(lim.clone()).into_response(),
@@ -270,7 +297,7 @@ pub(crate) async fn get_limiter(
 }
 
 // PUT /api/v1/zones/:tx/limiter
-pub(crate) async fn put_limiter(
+pub async fn put_limiter(
     State(s): State<AppState>,
     Path(tx): Path<usize>,
     Json(u): Json<LimiterUpdate>,
@@ -288,7 +315,7 @@ pub(crate) async fn put_limiter(
 }
 
 // PUT /api/v1/zones/:tx/limiter/enabled
-pub(crate) async fn put_limiter_enabled(
+pub async fn put_limiter_enabled(
     State(s): State<AppState>,
     Path(tx): Path<usize>,
     Json(u): Json<LimiterEnabledUpdate>,

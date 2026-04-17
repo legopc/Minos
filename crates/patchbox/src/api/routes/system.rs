@@ -12,8 +12,8 @@ use std::os::unix::fs::FileTypeExt;
 use std::sync::atomic::Ordering as AOrdering;
 use tokio::time::Duration;
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthDante {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthDante {
     pub name: String,
     pub nic: String,
     pub connected: bool,
@@ -21,16 +21,16 @@ pub(crate) struct HealthDante {
     pub tx_channels: usize,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthPtp {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthPtp {
     pub synced: bool,
     pub socket_path: String,
     pub offset_ns: Option<i64>,
     pub state: Option<String>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthAudio {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthAudio {
     pub rx_channels: usize,
     pub tx_channels: usize,
     pub active_routes: usize,
@@ -40,8 +40,8 @@ pub(crate) struct HealthAudio {
     pub tx_levels_rms_db: Vec<f32>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthZone {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthZone {
     pub name: String,
     pub index: usize,
     pub muted: bool,
@@ -51,28 +51,30 @@ pub(crate) struct HealthZone {
     pub active_sources: Vec<String>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthConfig {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthConfig {
     pub loaded: bool,
     pub path: String,
     pub last_modified: Option<String>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthDsp {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthDsp {
     pub cpu_load_percent: Option<f32>,
     pub processing: bool,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthStorage {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthStorage {
     pub free_bytes: u64,
     pub total_bytes: u64,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct HealthResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
+    #[schema(value_type = String)]
     pub status: &'static str,
+    #[schema(value_type = String)]
     pub version: &'static str,
     pub uptime_secs: u64,
     pub dante: HealthDante,
@@ -85,15 +87,16 @@ pub(crate) struct HealthResponse {
     pub clients_connected: usize,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct MeteringResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MeteringResponse {
     rx: HashMap<String, f32>,
     tx: HashMap<String, f32>,
     gr: HashMap<String, f32>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct SystemResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct SystemResponse {
+    #[schema(value_type = String)]
     version: &'static str,
     hostname: String,
     uptime_s: u64,
@@ -110,40 +113,40 @@ pub(crate) struct SystemResponse {
     monitor_volume_db: f32,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateSystemConfig {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateSystemConfig {
     scene_crossfade_ms: Option<f32>,
     gain_ramp_ms: Option<f32>,
     show_buses_in_mixer: Option<bool>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct AdminChannelsReq {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct AdminChannelsReq {
     rx: usize,
     tx: usize,
     bus_count: Option<usize>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct SoloRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct SoloRequest {
     channels: Vec<usize>,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct SoloResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct SoloResponse {
     channels: Vec<usize>,
     monitor_device: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct MonitorRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct MonitorRequest {
     device: Option<String>,
     #[serde(default)]
     volume_db: f32,
 }
 
-#[derive(serde::Serialize)]
-pub(crate) struct MonitorResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MonitorResponse {
     device: Option<String>,
     volume_db: f32,
 }
@@ -257,7 +260,15 @@ async fn _create_backup(s: &AppState) -> Result<String, String> {
 }
 
 // GET /api/v1/health
-pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Health status", body = HealthResponse)
+    )
+)]
+pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let meters = s.meters.read().await;
 
@@ -297,7 +308,7 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     let storage_path = "/opt/patchbox";
     let (storage_free_bytes, storage_total_bytes) =
         if let Ok(stat) = nix::sys::statvfs::statvfs(storage_path) {
-            let block_size = stat.block_size() as u64;
+            let block_size = stat.block_size();
             let free_bytes = stat.blocks_available() * block_size;
             let total_bytes = stat.blocks() * block_size;
             (free_bytes, total_bytes)
@@ -367,7 +378,7 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
     // Determine health status
     let is_ptp_locked =
         ptp_state.as_deref() == Some("SLAVE") || ptp_state.as_deref() == Some("MASTER");
-    let cpu_load_ok = dsp_cpu_load_percent.map_or(true, |cpu| cpu <= 80.0);
+    let cpu_load_ok = dsp_cpu_load_percent.is_none_or(|cpu| cpu <= 80.0);
     let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024; // 50 MiB
 
     let status = if !dante_connected || !config_loaded || !storage_free_ok {
@@ -423,7 +434,7 @@ pub(crate) async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // GET /api/v1/metering
-pub(crate) async fn get_metering(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_metering(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let rx_count = cfg.rx_channels;
     let tx_count = cfg.tx_channels;
@@ -467,7 +478,15 @@ pub(crate) async fn get_metering(State(s): State<AppState>) -> impl IntoResponse
 }
 
 // GET /api/v1/system
-pub(crate) async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/system",
+    tag = "system",
+    responses(
+        (status = 200, description = "System info", body = SystemResponse)
+    )
+)]
+pub async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let zone_count = cfg.zone_config.len();
     let rx_count = cfg.rx_channels;
@@ -504,7 +523,7 @@ pub(crate) async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/system/config
-pub(crate) async fn put_system_config(
+pub async fn put_system_config(
     State(s): State<AppState>,
     Json(body): Json<UpdateSystemConfig>,
 ) -> impl IntoResponse {
@@ -524,7 +543,7 @@ pub(crate) async fn put_system_config(
 }
 
 // GET /api/v1/system/config/export
-pub(crate) async fn get_system_config_export(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_system_config_export(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     match toml::to_string_pretty(&*cfg) {
         Ok(toml_str) => (
@@ -543,7 +562,7 @@ pub(crate) async fn get_system_config_export(State(s): State<AppState>) -> impl 
 }
 
 // POST /api/v1/system/config/import
-pub(crate) async fn post_system_config_import(
+pub async fn post_system_config_import(
     State(s): State<AppState>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
@@ -563,7 +582,7 @@ pub(crate) async fn post_system_config_import(
 }
 
 // GET /api/v1/system/config/backups
-pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse {
     let stem = s
         .config_path
         .file_stem()
@@ -584,14 +603,14 @@ pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoRe
             let n = n.to_string_lossy();
             n.starts_with(&format!("{}-bak-", stem)) && n.ends_with(".toml")
         })
-        .filter_map(|e| {
+        .map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
             let ts: u64 = name
                 .strip_prefix(&format!("{}-bak-", stem))
                 .and_then(|s| s.strip_suffix(".toml"))
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
-            Some(serde_json::json!({ "name": name, "timestamp": ts }))
+            serde_json::json!({ "name": name, "timestamp": ts })
         })
         .collect();
     baks.sort_by(|a, b| b["timestamp"].as_u64().cmp(&a["timestamp"].as_u64()));
@@ -599,7 +618,7 @@ pub(crate) async fn get_config_backups(State(s): State<AppState>) -> impl IntoRe
 }
 
 // GET /api/v1/system/config/backups/:name
-pub(crate) async fn get_config_backup(
+pub async fn get_config_backup(
     State(s): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
@@ -628,7 +647,7 @@ pub(crate) async fn get_config_backup(
 }
 
 // POST /api/v1/system/config/backups/:name/restore
-pub(crate) async fn restore_config_backup(
+pub async fn restore_config_backup(
     State(s): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
@@ -656,7 +675,15 @@ pub(crate) async fn restore_config_backup(
 }
 
 // GET /api/v1/solo
-pub(crate) async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/solo",
+    tag = "system",
+    responses(
+        (status = 200, description = "Current solo state", body = SoloResponse)
+    )
+)]
+pub async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(SoloResponse {
         channels: cfg.solo_channels.clone(),
@@ -665,7 +692,16 @@ pub(crate) async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // PUT /api/v1/solo
-pub(crate) async fn put_solo(
+#[utoipa::path(
+    put,
+    path = "/api/v1/solo",
+    tag = "system",
+    request_body = SoloRequest,
+    responses(
+        (status = 204, description = "Solo updated")
+    )
+)]
+pub async fn put_solo(
     State(s): State<AppState>,
     Json(body): Json<SoloRequest>,
 ) -> impl IntoResponse {
@@ -690,14 +726,11 @@ pub(crate) async fn put_solo(
         })
         .to_string(),
     );
-    Json(resp)
+    StatusCode::NO_CONTENT
 }
 
 // POST /api/v1/solo/:rx/toggle
-pub(crate) async fn toggle_solo(
-    State(s): State<AppState>,
-    Path(rx): Path<usize>,
-) -> impl IntoResponse {
+pub async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "Invalid RX index").into_response();
@@ -725,7 +758,7 @@ pub(crate) async fn toggle_solo(
 }
 
 // DELETE /api/v1/solo
-pub(crate) async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     cfg.solo_channels.clear();
     ws_broadcast(
@@ -741,7 +774,15 @@ pub(crate) async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse 
 }
 
 // GET /api/v1/monitor
-pub(crate) async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/monitor",
+    tag = "system",
+    responses(
+        (status = 200, description = "Monitor state", body = MonitorResponse)
+    )
+)]
+pub async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(MonitorResponse {
         device: cfg.monitor_device.clone(),
@@ -750,7 +791,16 @@ pub(crate) async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse 
 }
 
 // PUT /api/v1/monitor
-pub(crate) async fn put_monitor(
+#[utoipa::path(
+    put,
+    path = "/api/v1/system/monitor",
+    tag = "system",
+    request_body = MonitorRequest,
+    responses(
+        (status = 200, description = "Monitor updated", body = MonitorResponse)
+    )
+)]
+pub async fn put_monitor(
     State(s): State<AppState>,
     Json(body): Json<MonitorRequest>,
 ) -> impl IntoResponse {
@@ -782,7 +832,7 @@ pub(crate) async fn put_monitor(
 }
 
 // GET /api/v1/audio-devices
-pub(crate) async fn list_audio_devices() -> impl IntoResponse {
+pub async fn list_audio_devices() -> impl IntoResponse {
     #[cfg(feature = "inferno")]
     {
         let devs = patchbox_dante::monitor::enumerate_devices();
@@ -797,10 +847,7 @@ pub(crate) async fn list_audio_devices() -> impl IntoResponse {
 }
 
 // GET /api/v1/whoami
-pub(crate) async fn whoami(
-    State(_s): State<AppState>,
-    req: axum::extract::Request,
-) -> impl IntoResponse {
+pub async fn whoami(State(_s): State<AppState>, req: axum::extract::Request) -> impl IntoResponse {
     let claims = req.extensions().get::<crate::jwt::Claims>().cloned();
     match claims {
         Some(c) => Json(serde_json::json!({"username": c.sub, "role": c.role, "zone": c.zone}))
@@ -810,7 +857,7 @@ pub(crate) async fn whoami(
 }
 
 // POST /api/v1/admin/channels
-pub(crate) async fn post_admin_channels(
+pub async fn post_admin_channels(
     State(state): State<AppState>,
     Json(body): Json<AdminChannelsReq>,
 ) -> impl IntoResponse {
@@ -862,7 +909,7 @@ pub(crate) async fn post_admin_channels(
 }
 
 // POST /api/v1/admin/restart
-pub(crate) async fn post_admin_restart(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn post_admin_restart(State(state): State<AppState>) -> impl IntoResponse {
     let _ = state.persist().await;
     tokio::spawn(async {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;

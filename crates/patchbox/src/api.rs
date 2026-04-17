@@ -16,6 +16,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::time::interval;
+use utoipa::OpenApi;
+use utoipa_scalar::Scalar;
 
 type IpLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
@@ -191,7 +193,7 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
             "solo_channels": &cfg.solo_channels,
             "monitor_device": &cfg.monitor_device,
         });
-        let _ = sender.send(Message::Text(hello.to_string().into())).await;
+        let _ = sender.send(Message::Text(hello.to_string())).await;
     }
 
     // Subscribe to broadcast channel *before* spawning the send task
@@ -222,14 +224,14 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                     let mut rx_map = serde_json::Map::new();
                     for (i, &v) in meters.rx_rms.iter().enumerate() {
                         let id = format!("rx_{}", i);
-                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                        if filter.as_ref().is_none_or(|f| f.contains(&id)) {
                             rx_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
                         }
                     }
                     let mut tx_map = serde_json::Map::new();
                     for (i, &v) in meters.tx_rms.iter().enumerate() {
                         let id = format!("tx_{}", i);
-                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                        if filter.as_ref().is_none_or(|f| f.contains(&id)) {
                             tx_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
                         }
                     }
@@ -240,7 +242,7 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                     let mut bus_map = serde_json::Map::new();
                     for (i, &v) in meters.bus_rms.iter().enumerate() {
                         let id = format!("bus_{}", i);
-                        if filter.as_ref().map_or(true, |f| f.contains(&id)) {
+                        if filter.as_ref().is_none_or(|f| f.contains(&id)) {
                             bus_map.insert(id, serde_json::json!(linear_to_dbfs(v)));
                         }
                     }
@@ -273,14 +275,14 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                         "peak": peak_map,
                         "clip": clip_map
                     });
-                    if sender.send(Message::Text(msg.to_string().into())).await.is_err() {
+                    if sender.send(Message::Text(msg.to_string())).await.is_err() {
                         break;
                     }
                 }
                 result = rx.recv() => {
                     match result {
                         Ok(event) => {
-                            if sender.send(Message::Text(event.into())).await.is_err() { break; }
+                            if sender.send(Message::Text(event)).await.is_err() { break; }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             tracing::warn!(n, "WS broadcast lagged — closing connection");
@@ -621,6 +623,27 @@ pub fn router(state: AppState) -> Router {
         .route("/docs/", get(serve_docs_index))
         .route("/docs/*path", get(serve_docs))
         .merge(protected);
+
+    // OpenAPI spec and interactive docs (public, no auth required)
+    app = app
+        .route(
+            "/api/openapi.json",
+            get(|| async { Json(crate::openapi::ApiDoc::openapi()) }),
+        )
+        .route(
+            "/api/docs",
+            get(|| async {
+                let html = Scalar::new(crate::openapi::ApiDoc::openapi()).to_html();
+                axum::response::Html(html)
+            }),
+        )
+        .route(
+            "/api/docs/",
+            get(|| async {
+                let html = Scalar::new(crate::openapi::ApiDoc::openapi()).to_html();
+                axum::response::Html(html)
+            }),
+        );
 
     if let Ok(dev_dir) = std::env::var("PATCHBOX_DEV_ASSETS") {
         tracing::warn!("⚡ DEV MODE: serving assets from disk at {dev_dir}");

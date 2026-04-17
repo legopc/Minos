@@ -13,51 +13,52 @@ use patchbox_core::config::{
 };
 use patchbox_core::dsp::DspBlock;
 
-#[derive(serde::Serialize)]
-pub(crate) struct BusResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct BusResponse {
     id: String,
     name: String,
     muted: bool,
     routing: Vec<bool>,
     routing_gain: Vec<f32>,
+    #[schema(value_type = Object)]
     dsp: serde_json::Value,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct CreateBusRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct CreateBusRequest {
     name: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateBusRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateBusRequest {
     name: Option<String>,
     muted: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct BusRoutingBody {
+pub struct BusRoutingBody {
     routing: Vec<bool>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct BusMatrixBody {
+pub struct BusMatrixBody {
     matrix: Vec<Vec<bool>>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct BusInputGainBody {
+pub struct BusInputGainBody {
     rx: usize,
     gain_db: f32,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct BusFeedBody {
+pub struct BusFeedBody {
     src_id: String,
     dst_id: String,
     active: bool,
 }
 
-pub(crate) fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusResponse {
+pub fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusResponse {
     BusResponse {
         id: bus.id.clone(),
         name: bus.name.clone(),
@@ -69,7 +70,15 @@ pub(crate) fn bus_to_response(_idx: usize, bus: &InternalBusConfig) -> BusRespon
 }
 
 // GET /api/v1/buses
-pub(crate) async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/buses",
+    tag = "buses",
+    responses(
+        (status = 200, description = "List of buses", body = Vec<BusResponse>)
+    )
+)]
+pub async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let buses: Vec<BusResponse> = cfg
         .internal_buses
@@ -81,7 +90,16 @@ pub(crate) async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // POST /api/v1/buses
-pub(crate) async fn post_bus(
+#[utoipa::path(
+    post,
+    path = "/api/v1/buses",
+    tag = "buses",
+    request_body = CreateBusRequest,
+    responses(
+        (status = 201, description = "Bus created", body = BusResponse)
+    )
+)]
+pub async fn post_bus(
     State(s): State<AppState>,
     Json(body): Json<CreateBusRequest>,
 ) -> impl IntoResponse {
@@ -113,10 +131,17 @@ pub(crate) async fn post_bus(
 }
 
 // GET /api/v1/buses/:id
-pub(crate) async fn get_bus(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/buses/{id}",
+    tag = "buses",
+    params(("id" = String, Path, description = "Bus ID")),
+    responses(
+        (status = 200, description = "Bus", body = BusResponse),
+        (status = 404, description = "Not found")
+    )
+)]
+pub async fn get_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     let Some(i) = parse_bus_id(&id) else {
         return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
     };
@@ -128,7 +153,18 @@ pub(crate) async fn get_bus(
 }
 
 // PUT /api/v1/buses/:id
-pub(crate) async fn put_bus(
+#[utoipa::path(
+    put,
+    path = "/api/v1/buses/{id}",
+    tag = "buses",
+    params(("id" = String, Path, description = "Bus ID")),
+    request_body = UpdateBusRequest,
+    responses(
+        (status = 204, description = "Updated"),
+        (status = 404, description = "Not found")
+    )
+)]
+pub async fn put_bus(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<UpdateBusRequest>,
@@ -154,10 +190,17 @@ pub(crate) async fn put_bus(
 }
 
 // DELETE /api/v1/buses/:id
-pub(crate) async fn delete_bus(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+#[utoipa::path(
+    delete,
+    path = "/api/v1/buses/{id}",
+    tag = "buses",
+    params(("id" = String, Path, description = "Bus ID")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found")
+    )
+)]
+pub async fn delete_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     let Some(i) = parse_bus_id(&id) else {
         return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
     };
@@ -183,7 +226,7 @@ pub(crate) async fn delete_bus(
 }
 
 // PUT /api/v1/buses/:id/gain
-pub(crate) async fn put_bus_gain(
+pub async fn put_bus_gain(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<GainBody>,
@@ -204,7 +247,7 @@ pub(crate) async fn put_bus_gain(
 }
 
 // PUT /api/v1/buses/:id/polarity
-pub(crate) async fn put_bus_polarity(
+pub async fn put_bus_polarity(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<PolarityBody>,
@@ -224,7 +267,7 @@ pub(crate) async fn put_bus_polarity(
 }
 
 // PUT /api/v1/buses/:id/hpf
-pub(crate) async fn put_bus_hpf(
+pub async fn put_bus_hpf(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<FilterConfig>>,
@@ -249,7 +292,7 @@ pub(crate) async fn put_bus_hpf(
 }
 
 // PUT /api/v1/buses/:id/lpf
-pub(crate) async fn put_bus_lpf(
+pub async fn put_bus_lpf(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<FilterConfig>>,
@@ -274,7 +317,7 @@ pub(crate) async fn put_bus_lpf(
 }
 
 // PUT /api/v1/buses/:id/eq
-pub(crate) async fn put_bus_eq(
+pub async fn put_bus_eq(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<EqConfig>>,
@@ -299,7 +342,7 @@ pub(crate) async fn put_bus_eq(
 }
 
 // PUT /api/v1/buses/:id/eq/enabled
-pub(crate) async fn put_bus_eq_enabled(
+pub async fn put_bus_eq_enabled(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<EnabledBody>,
@@ -319,7 +362,7 @@ pub(crate) async fn put_bus_eq_enabled(
 }
 
 // PUT /api/v1/buses/:id/gate
-pub(crate) async fn put_bus_gate(
+pub async fn put_bus_gate(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<GateConfig>>,
@@ -344,7 +387,7 @@ pub(crate) async fn put_bus_gate(
 }
 
 // PUT /api/v1/buses/:id/compressor
-pub(crate) async fn put_bus_compressor(
+pub async fn put_bus_compressor(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<CompressorConfig>>,
@@ -369,7 +412,7 @@ pub(crate) async fn put_bus_compressor(
 }
 
 // PUT /api/v1/buses/:id/mute
-pub(crate) async fn put_bus_mute(
+pub async fn put_bus_mute(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<MutedBody>,
@@ -392,7 +435,7 @@ pub(crate) async fn put_bus_mute(
 }
 
 // PUT /api/v1/buses/:id/routing
-pub(crate) async fn put_bus_routing(
+pub async fn put_bus_routing(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<BusRoutingBody>,
@@ -418,7 +461,7 @@ pub(crate) async fn put_bus_routing(
 }
 
 // PUT /api/v1/buses/:id/input-gain
-pub(crate) async fn put_bus_input_gain(
+pub async fn put_bus_input_gain(
     State(s): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<BusInputGainBody>,
@@ -441,7 +484,7 @@ pub(crate) async fn put_bus_input_gain(
 }
 
 // PUT /api/v1/bus-matrix
-pub(crate) async fn put_bus_matrix(
+pub async fn put_bus_matrix(
     State(s): State<AppState>,
     Json(body): Json<BusMatrixBody>,
 ) -> impl IntoResponse {
@@ -464,13 +507,13 @@ pub(crate) async fn put_bus_matrix(
 }
 
 // GET /api/v1/bus-feed-matrix
-pub(crate) async fn get_bus_feed_matrix(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn get_bus_feed_matrix(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(cfg.bus_feed_matrix.clone().unwrap_or_default())
 }
 
 // PUT /api/v1/bus-feed
-pub(crate) async fn put_bus_feed(
+pub async fn put_bus_feed(
     State(s): State<AppState>,
     Json(body): Json<BusFeedBody>,
 ) -> impl IntoResponse {

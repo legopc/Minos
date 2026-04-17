@@ -12,19 +12,21 @@ use patchbox_core::config::{
 use patchbox_core::dsp::DspBlock;
 use tracing;
 
-#[derive(serde::Serialize)]
-pub(crate) struct ChannelResponse {
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct ChannelResponse {
     id: String,
     name: String,
+    #[schema(value_type = String)]
     source_type: &'static str,
     gain_db: f32,
     enabled: bool,
     colour_index: Option<u8>,
+    #[schema(value_type = Object)]
     dsp: serde_json::Value,
 }
 
-#[derive(serde::Deserialize)]
-pub(crate) struct UpdateChannelRequest {
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct UpdateChannelRequest {
     name: Option<String>,
     gain_db: Option<f32>,
     enabled: Option<bool>,
@@ -32,13 +34,13 @@ pub(crate) struct UpdateChannelRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateAutomixerChannelRequest {
+pub struct UpdateAutomixerChannelRequest {
     pub group_id: Option<String>,
     pub weight: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct UpdateFeedbackSuppressorRequest {
+pub struct UpdateFeedbackSuppressorRequest {
     pub enabled: Option<bool>,
     pub threshold_db: Option<f32>,
     pub hysteresis_db: Option<f32>,
@@ -101,10 +103,7 @@ pub async fn get_channels(State(s): State<AppState>) -> impl IntoResponse {
         (status = 404, description = "Not found")
     )
 )]
-pub async fn get_channel(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn get_channel(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     let Some(i) = parse_rx_id(&id) else {
         return (StatusCode::BAD_REQUEST, "invalid channel id").into_response();
     };
@@ -187,10 +186,7 @@ pub async fn put_channel(
 }
 
 // GET /api/v1/inputs/:ch/dsp
-pub async fn get_input_dsp(
-    State(s): State<AppState>,
-    Path(ch): Path<usize>,
-) -> impl IntoResponse {
+pub async fn get_input_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     match cfg.input_dsp.get(ch) {
         Some(dsp) => Json(dsp.clone()).into_response(),
@@ -357,10 +353,7 @@ pub async fn put_input_compressor(
 }
 
 // GET /api/v1/inputs/:ch/aec
-pub async fn get_input_aec(
-    State(s): State<AppState>,
-    Path(ch): Path<usize>,
-) -> impl IntoResponse {
+pub async fn get_input_aec(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     match cfg.input_dsp.get(ch) {
         Some(dsp) => Json(dsp.aec.clone()).into_response(),
@@ -506,10 +499,7 @@ pub async fn put_input_feedback(
 }
 
 // GET /api/v1/inputs/:ch/deq
-pub async fn get_input_deq(
-    State(s): State<AppState>,
-    Path(ch): Path<usize>,
-) -> impl IntoResponse {
+pub async fn get_input_deq(State(s): State<AppState>, Path(ch): Path<usize>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let Some(dsp) = cfg.input_dsp.get(ch) else {
         return StatusCode::NOT_FOUND.into_response();

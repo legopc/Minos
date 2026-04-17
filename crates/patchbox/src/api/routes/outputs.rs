@@ -33,7 +33,7 @@ pub struct UpdateOutputRequest {
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct DitherBody {
+pub struct DitherBody {
     bits: u8,
 }
 
