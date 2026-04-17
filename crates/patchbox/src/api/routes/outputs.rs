@@ -11,6 +11,7 @@ use axum::{
 use patchbox_core::config::{
     CompressorConfig, DelayConfig, DynamicEqConfig, EqConfig, FilterConfig, LimiterConfig,
 };
+use patchbox_core::dsp::DspBlock;
 use tracing;
 
 #[derive(serde::Serialize)]
@@ -197,13 +198,15 @@ pub(crate) async fn put_output_gain(
 pub(crate) async fn put_output_hpf(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<FilterConfig>,
+    Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.hpf = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.hpf = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -213,13 +216,15 @@ pub(crate) async fn put_output_hpf(
 pub(crate) async fn put_output_lpf(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<FilterConfig>,
+    Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.lpf = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.lpf = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -229,13 +234,15 @@ pub(crate) async fn put_output_lpf(
 pub(crate) async fn put_output_eq(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<EqConfig>,
+    Json(body): Json<DspBlock<EqConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.eq = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.eq = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -261,13 +268,15 @@ pub(crate) async fn put_output_eq_enabled(
 pub(crate) async fn put_output_compressor(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<CompressorConfig>,
+    Json(body): Json<DspBlock<CompressorConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.compressor = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.compressor = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -277,13 +286,15 @@ pub(crate) async fn put_output_compressor(
 pub(crate) async fn put_output_limiter(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<LimiterConfig>,
+    Json(body): Json<DspBlock<LimiterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.limiter = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.limiter = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -293,13 +304,15 @@ pub(crate) async fn put_output_limiter(
 pub(crate) async fn put_output_delay(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<DelayConfig>,
+    Json(body): Json<DspBlock<DelayConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.delay = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.delay = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -372,13 +385,15 @@ pub(crate) async fn get_output_deq(
 pub(crate) async fn put_output_deq(
     State(s): State<AppState>,
     Path(ch): Path<usize>,
-    Json(body): Json<DynamicEqConfig>,
+    Json(body): Json<DspBlock<DynamicEqConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.deq = body;
+    let mut params = body.params;
+    params.enabled = body.enabled;
+    dsp.deq = params;
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
