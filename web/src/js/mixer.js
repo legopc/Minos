@@ -147,103 +147,111 @@ function _renderStrips(strips, masters) {
     strips.appendChild(s);
   });
 
-  // Bus strips (in masters, before output strips — buses are outputs not inputs)
-  const busesRaw = st.busList();
-  if (st.state.system?.show_buses_in_mixer !== false && busesRaw.length > 0) {
-    const sep = document.createElement('div');
-    sep.className = 'mixer-bus-separator';
-    sep.textContent = 'BUSES';
-    masters.appendChild(sep);
-    const busGroup = document.createElement('div');
-    busGroup.className = 'mixer-reorder-group';
-    applyOrder('buses', busesRaw, b => b.id).forEach(bus => busGroup.appendChild(_buildBusStrip(bus)));
-    masters.appendChild(busGroup);
-    makeReorderable(busGroup, {
-      itemSelector: '.mixer-strip',
+  try {
+    // Bus strips (in masters, before output strips — buses are outputs not inputs)
+    const busesRaw = st.busList();
+    if (st.state.system?.show_buses_in_mixer !== false && busesRaw.length > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'mixer-bus-separator';
+      sep.textContent = 'BUSES';
+      masters.appendChild(sep);
+      const busGroup = document.createElement('div');
+      busGroup.className = 'mixer-reorder-group';
+      applyOrder('buses', busesRaw, b => b.id).forEach(bus => busGroup.appendChild(_buildBusStrip(bus)));
+      masters.appendChild(busGroup);
+      makeReorderable(busGroup, {
+        itemSelector: '.bus-strip',
+        orientation:  'horizontal',
+        getId:        el => el.dataset.busId,
+        onReorder:    ids => saveOrder('buses', ids),
+      });
+    }
+
+    // VCA Groups section
+    const vcasRaw = st.state.vcaGroups ?? [];
+    const vcaSep = document.createElement('div');
+    vcaSep.className = 'mixer-vca-separator';
+    vcaSep.textContent = 'VCA';
+    masters.appendChild(vcaSep);
+    const vcaGroup = document.createElement('div');
+    vcaGroup.className = 'mixer-reorder-group';
+    applyOrder('vcaGroups', vcasRaw, v => v.id).forEach(vca => vcaGroup.appendChild(_buildVcaStrip(vca)));
+    masters.appendChild(vcaGroup);
+    makeReorderable(vcaGroup, {
+      itemSelector: '[id^="vca-strip-"]',
       orientation:  'horizontal',
-      getId:        el => el.dataset.busId,
-      onReorder:    ids => saveOrder('buses', ids),
+      getId:        el => el.id.replace('vca-strip-', ''),
+      onReorder:    ids => saveOrder('vcaGroups', ids),
     });
+    const addVcaBtn = document.createElement('button');
+    addVcaBtn.className = 'mixer-add-vca-btn';
+    addVcaBtn.textContent = '+';
+    addVcaBtn.title = 'Add VCA group';
+    addVcaBtn.onclick = () => _showAddVcaDialog();
+    masters.appendChild(addVcaBtn);
+
+    // Automixer Groups section
+    const amGroupsRaw = st.state.automixerGroups ?? [];
+    const amSep = document.createElement('div');
+    amSep.className = 'mixer-vca-separator';
+    amSep.textContent = 'AXM';
+    masters.appendChild(amSep);
+    const amReorderGroup = document.createElement('div');
+    amReorderGroup.className = 'mixer-reorder-group';
+    applyOrder('automixerGroups', amGroupsRaw, g => g.id).forEach(g => amReorderGroup.appendChild(_buildAmGroupStrip(g)));
+    masters.appendChild(amReorderGroup);
+    makeReorderable(amReorderGroup, {
+      itemSelector: '[id^="am-strip-"]',
+      orientation:  'horizontal',
+      getId:        el => el.id.replace('am-strip-', ''),
+      onReorder:    ids => saveOrder('automixerGroups', ids),
+    });
+    const addAmBtn = document.createElement('button');
+    addAmBtn.className = 'mixer-add-vca-btn';
+    addAmBtn.textContent = '+';
+    addAmBtn.title = 'Add automixer group';
+    addAmBtn.onclick = () => _showAddAmGroupDialog();
+    masters.appendChild(addAmBtn);
+
+    // Signal Generators section
+    const gensRaw = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
+    const genSep = document.createElement('div');
+    genSep.className = 'mixer-gen-separator';
+    genSep.textContent = 'GEN';
+    masters.appendChild(genSep);
+    const genGroup = document.createElement('div');
+    genGroup.className = 'mixer-reorder-group';
+    applyOrder('generators', gensRaw, g => g.id).forEach(gen => genGroup.appendChild(_buildGenStrip(gen)));
+    masters.appendChild(genGroup);
+    makeReorderable(genGroup, {
+      itemSelector: '[id^="gen-strip-"]',
+      orientation:  'horizontal',
+      getId:        el => el.id.replace('gen-strip-', ''),
+      onReorder:    ids => saveOrder('generators', ids),
+    });
+    const addGenBtn = document.createElement('button');
+    addGenBtn.className = 'mixer-add-gen-btn';
+    addGenBtn.textContent = '+';
+    addGenBtn.title = 'Add signal generator';
+    addGenBtn.onclick = () => _showAddGenDialog();
+    masters.appendChild(addGenBtn);
+
+    // Output master strips (one per output, replaces zone-based iteration)
+    const outSep = document.createElement('div');
+    outSep.className = 'mixer-output-separator';
+    outSep.textContent = 'OUTPUTS';
+    masters.appendChild(outSep);
+    outputs.forEach(out => {
+      const m = _buildOutputMaster(out);
+      masters.appendChild(m);
+    });
+  } catch (err) {
+    console.error('[mixer] _renderStrips masters section failed:', err);
+    const errEl = document.createElement('div');
+    errEl.style.cssText = 'color:#f85149;padding:8px;font-size:11px;max-width:200px;word-break:break-all;';
+    errEl.textContent = 'Mixer render error: ' + (err?.message ?? String(err));
+    masters.appendChild(errEl);
   }
-
-  // VCA Groups section
-  const vcasRaw = st.state.vcaGroups ?? [];
-  const vcaSep = document.createElement('div');
-  vcaSep.className = 'mixer-vca-separator';
-  vcaSep.textContent = 'VCA';
-  masters.appendChild(vcaSep);
-  const vcaGroup = document.createElement('div');
-  vcaGroup.className = 'mixer-reorder-group';
-  applyOrder('vcaGroups', vcasRaw, v => v.id).forEach(vca => vcaGroup.appendChild(_buildVcaStrip(vca)));
-  masters.appendChild(vcaGroup);
-  makeReorderable(vcaGroup, {
-    itemSelector: '[id^="vca-strip-"]',
-    orientation:  'horizontal',
-    getId:        el => el.id.replace('vca-strip-', ''),
-    onReorder:    ids => saveOrder('vcaGroups', ids),
-  });
-  const addVcaBtn = document.createElement('button');
-  addVcaBtn.className = 'mixer-add-vca-btn';
-  addVcaBtn.textContent = '+';
-  addVcaBtn.title = 'Add VCA group';
-  addVcaBtn.onclick = () => _showAddVcaDialog();
-  masters.appendChild(addVcaBtn);
-
-  // Automixer Groups section
-  const amGroupsRaw = st.state.automixerGroups ?? [];
-  const amSep = document.createElement('div');
-  amSep.className = 'mixer-vca-separator';
-  amSep.textContent = 'AXM';
-  masters.appendChild(amSep);
-  const amReorderGroup = document.createElement('div');
-  amReorderGroup.className = 'mixer-reorder-group';
-  applyOrder('automixerGroups', amGroupsRaw, g => g.id).forEach(g => amReorderGroup.appendChild(_buildAmGroupStrip(g)));
-  masters.appendChild(amReorderGroup);
-  makeReorderable(amReorderGroup, {
-    itemSelector: '[id^="am-strip-"]',
-    orientation:  'horizontal',
-    getId:        el => el.id.replace('am-strip-', ''),
-    onReorder:    ids => saveOrder('automixerGroups', ids),
-  });
-  const addAmBtn = document.createElement('button');
-  addAmBtn.className = 'mixer-add-vca-btn';
-  addAmBtn.textContent = '+';
-  addAmBtn.title = 'Add automixer group';
-  addAmBtn.onclick = () => _showAddAmGroupDialog();
-  masters.appendChild(addAmBtn);
-
-  // Signal Generators section
-  const gensRaw = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
-  const genSep = document.createElement('div');
-  genSep.className = 'mixer-gen-separator';
-  genSep.textContent = 'GEN';
-  masters.appendChild(genSep);
-  const genGroup = document.createElement('div');
-  genGroup.className = 'mixer-reorder-group';
-  applyOrder('generators', gensRaw, g => g.id).forEach(gen => genGroup.appendChild(_buildGenStrip(gen)));
-  masters.appendChild(genGroup);
-  makeReorderable(genGroup, {
-    itemSelector: '[id^="gen-strip-"]',
-    orientation:  'horizontal',
-    getId:        el => el.id.replace('gen-strip-', ''),
-    onReorder:    ids => saveOrder('generators', ids),
-  });
-  const addGenBtn = document.createElement('button');
-  addGenBtn.className = 'mixer-add-gen-btn';
-  addGenBtn.textContent = '+';
-  addGenBtn.title = 'Add signal generator';
-  addGenBtn.onclick = () => _showAddGenDialog();
-  masters.appendChild(addGenBtn);
-
-  // Output master strips (one per output, replaces zone-based iteration)
-  const outSep = document.createElement('div');
-  outSep.className = 'mixer-output-separator';
-  outSep.textContent = 'OUTPUTS';
-  masters.appendChild(outSep);
-  outputs.forEach(out => {
-    const m = _buildOutputMaster(out);
-    masters.appendChild(m);
-  });
 }
 
 function _buildStereoLinkBtn(leftCh, rightCh) {
