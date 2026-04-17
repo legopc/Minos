@@ -3,6 +3,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
+use crate::gain;
+
 /// EQ band filter type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, Default)]
 pub enum EqBandType {
@@ -1154,6 +1156,83 @@ impl PatchboxConfig {
             return Err("port must be > 0".into());
         }
         Ok(())
+    }
+
+    pub fn apply_crosspoint(
+        &mut self,
+        tx: usize,
+        rx: usize,
+        enabled: bool,
+        gain_db: f32,
+    ) -> Result<(), String> {
+        if tx >= self.tx_channels {
+            return Err(format!(
+                "tx index {tx} out of range [0, {})",
+                self.tx_channels
+            ));
+        }
+        if rx >= self.rx_channels {
+            return Err(format!(
+                "rx index {rx} out of range [0, {})",
+                self.rx_channels
+            ));
+        }
+        if !gain_db.is_finite() {
+            return Err(format!("gain_db must be finite, got {gain_db}"));
+        }
+        let gain_db = gain::clamp_db(gain_db);
+        let peer = self.stereo_peer(rx);
+
+        let tx_row = self
+            .matrix
+            .get_mut(tx)
+            .ok_or_else(|| format!("matrix missing row {tx}"))?;
+        let tx_gain_row = self
+            .matrix_gain_db
+            .get_mut(tx)
+            .ok_or_else(|| format!("matrix_gain_db missing row {tx}"))?;
+
+        let cell = tx_row
+            .get_mut(rx)
+            .ok_or_else(|| format!("matrix[{tx}] missing col {rx}"))?;
+        let gain_cell = tx_gain_row
+            .get_mut(rx)
+            .ok_or_else(|| format!("matrix_gain_db[{tx}] missing col {rx}"))?;
+
+        *cell = enabled;
+        *gain_cell = gain_db;
+
+        if let Some(peer) = peer {
+            if let (Some(peer_cell), Some(peer_gain_cell)) = (
+                tx_row.get_mut(peer),
+                tx_gain_row.get_mut(peer),
+            ) {
+                *peer_cell = enabled;
+                *peer_gain_cell = gain_db;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn stereo_peer(&self, rx: usize) -> Option<usize> {
+        for link in &self.stereo_links {
+            if !link.linked {
+                continue;
+            }
+            let l = link.left_channel;
+            let r = link.right_channel;
+            if l >= self.rx_channels || r >= self.rx_channels {
+                continue;
+            }
+            if rx == l {
+                return Some(r);
+            }
+            if rx == r {
+                return Some(l);
+            }
+        }
+        None
     }
 }
 
