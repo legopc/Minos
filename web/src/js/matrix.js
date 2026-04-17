@@ -839,6 +839,14 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     cell.className = 'xp-cell' + (routeType ? ' ' + routeType : '');
     cell.dataset.rxId = ch.id;
     cell.dataset.txId = out.id;
+    
+    // ARIA label for crosspoint
+    const cellLabel = `${ch.name || `Input ${rxIdx + 1}`} to ${out.name || `Output ${txIdx + 1}`}`;
+    cell.setAttribute('role', 'button');
+    cell.setAttribute('aria-label', cellLabel);
+    cell.setAttribute('aria-pressed', routeType ? 'true' : 'false');
+    cell.tabIndex = 0;
+    
     if (isZoneStart && zone) {
       cell.style.borderLeft = `2px solid ${st.getZoneColour(zone.colour_index ?? 0)}`;
     }
@@ -853,10 +861,17 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     const gainDb = st.getMatrixGain(txIdx, rxIdx);
     gainLabel.textContent = gainDb !== 0 ? (gainDb > 0 ? `+${gainDb.toFixed(1)}` : gainDb.toFixed(1)) : '';
     gainLabel.style.display = gainDb !== 0 ? '' : 'none';
+    gainLabel.setAttribute('aria-hidden', 'true');
     if (gainDb !== 0) cell.classList.add('xp-gain-nonunity');
     cell.appendChild(gainLabel);
 
     cell.addEventListener('click', () => _toggleRoute(ch.id, out.id, cell));
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        _toggleRoute(ch.id, out.id, cell);
+      }
+    });
     cell.addEventListener('wheel', (e) => _onXpWheel(e, ch.id, out.id, txIdx, rxIdx, cell, gainLabel), { passive: false });
     row.appendChild(cell);
   });
@@ -874,6 +889,14 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       cell.className = 'xp-cell bus-src' + (active ? ' active' : '');
       cell.dataset.rxId = ch.id;
       cell.dataset.busId = bus.id;
+      
+      // ARIA label for bus crosspoint
+      const rxIdx = parseInt(ch.id.split('_')[1], 10);
+      const cellLabel = `${ch.name || `Input ${rxIdx + 1}`} to ${bus.name || bus.id}`;
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('aria-label', cellLabel);
+      cell.setAttribute('aria-pressed', active ? 'true' : 'false');
+      cell.tabIndex = 0;
 
       const dot = document.createElement('div');
       dot.className = 'xp-dot';
@@ -885,10 +908,17 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
       const busGainDb = bus.routing_gain?.[idx] ?? 0;
       busGainLabel.textContent = busGainDb !== 0 ? (busGainDb > 0 ? `+${busGainDb.toFixed(1)}` : busGainDb.toFixed(1)) : '';
       busGainLabel.style.display = busGainDb !== 0 ? '' : 'none';
+      busGainLabel.setAttribute('aria-hidden', 'true');
       if (busGainDb !== 0) cell.classList.add('xp-gain-nonunity');
       cell.appendChild(busGainLabel);
 
       cell.addEventListener('click', () => _toggleInputToBus(bus, idx, cell));
+      cell.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          _toggleInputToBus(bus, idx, cell);
+        }
+      });
       cell.addEventListener('wheel', (e) => _onBusXpWheel(e, bus, idx, cell, busGainLabel), { passive: false });
       row.appendChild(cell);
     });
@@ -945,12 +975,26 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
     cell.className = 'xp-cell' + (routeActive ? ' bus' : '');
     cell.dataset.busId = bus.id;
     cell.dataset.txId = out.id;
+    
+    // ARIA label for bus→output routing
+    const outIdx = parseInt(out.id.split('_')[1], 10);
+    const cellLabel = `${bus.name || bus.id} to ${out.name || `Output ${outIdx + 1}`}`;
+    cell.setAttribute('role', 'button');
+    cell.setAttribute('aria-label', cellLabel);
+    cell.setAttribute('aria-pressed', routeActive ? 'true' : 'false');
+    cell.tabIndex = 0;
 
     const dot = document.createElement('div');
     dot.className = 'xp-dot';
     cell.appendChild(dot);
 
     cell.addEventListener('click', () => _toggleBusRoute(bus.id, out.id, cell));
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        _toggleBusRoute(bus.id, out.id, cell);
+      }
+    });
     row.appendChild(cell);
   });
 
@@ -965,6 +1009,7 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
       if (srcBus.id === bus.id) {
         // Self — always disabled
         cell.className = 'xp-cell bus-feed-self';
+        cell.setAttribute('aria-label', `${bus.name || bus.id} to self (disabled)`);
         row.appendChild(cell);
         return;
       }
@@ -972,10 +1017,24 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
       cell.className = 'xp-cell bus-feed' + (active ? ' active' : '');
       cell.dataset.srcBusId = srcBus.id;
       cell.dataset.dstBusId = bus.id;
+      
+      // ARIA label for bus feed
+      const cellLabel = `${srcBus.name || srcBus.id} to ${bus.name || bus.id}`;
+      cell.setAttribute('role', 'button');
+      cell.setAttribute('aria-label', cellLabel);
+      cell.setAttribute('aria-pressed', active ? 'true' : 'false');
+      cell.tabIndex = 0;
+      
       const dot = document.createElement('div');
       dot.className = 'xp-dot';
       cell.appendChild(dot);
       cell.addEventListener('click', () => _toggleBusFeed(srcBus.id, bus.id, cell));
+      cell.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          _toggleBusFeed(srcBus.id, bus.id, cell);
+        }
+      });
       row.appendChild(cell);
     });
   }
