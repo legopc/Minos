@@ -6,6 +6,7 @@ import { toast } from './toast.js';
 import { openPanel } from './panels.js';
 import { DSP_COLOURS } from './dsp/colours.js';
 import { confirmModal } from './modal.js';
+import { undo } from './undo.js';
 
 let _container = null;
 
@@ -1045,27 +1046,59 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
 // ── Bus route toggle ───────────────────────────────────────────────────────
 async function _toggleBusRoute(busId, txId, cell) {
   if (_locked) return;
-  
+
   const key = `${busId}|${txId}`;
   if (_pendingCrosspoints.has(key)) return;
-  
+
   _pendingCrosspoints.set(key, Date.now());
   cell.classList.add('pending');
   cell.style.pointerEvents = 'none';
-  
+
   const routeActive = st.hasBusRoute(busId, txId);
   const prevClass = cell.className;
+
+  const setBusMatrixCell = (on) => {
+    const row = { ...(st.state.busMatrix?.[txId] ?? {}) };
+    row[busId] = on;
+    st.setBusMatrix({ ...(st.state.busMatrix ?? {}), [txId]: row });
+  };
+
   try {
     if (routeActive) {
       cell.className = 'xp-cell pending';
-      const routeId = `${busId}|${txId}`;
-      await api.deleteRoute(routeId);
-      st.setBusMatrix({ ...st.state.busMatrix, [txId]: { ...st.state.busMatrix[txId], [busId]: false } });
+      await api.deleteRoute(`${busId}|${txId}`);
+      setBusMatrixCell(false);
     } else {
       cell.className = 'xp-cell bus pending';
-      const route = await api.postRoute(busId, txId, 'bus');
-      st.setBusMatrix({ ...st.state.busMatrix, [txId]: { ...st.state.busMatrix[txId], [busId]: true } });
+      await api.postRoute(busId, txId, 'bus');
+      setBusMatrixCell(true);
     }
+
+    const busName = st.state.buses.get(busId)?.name ?? busId;
+    const outName = st.state.outputs.get(txId)?.name ?? txId;
+
+    undo.push({
+      label: `${routeActive ? 'Unroute' : 'Route'} bus: ${busName} → ${outName}`,
+      apply: async () => {
+        if (routeActive) {
+          await api.deleteRoute(`${busId}|${txId}`);
+          setBusMatrixCell(false);
+        } else {
+          await api.postRoute(busId, txId, 'bus');
+          setBusMatrixCell(true);
+        }
+      },
+      revert: async () => {
+        if (routeActive) {
+          await api.postRoute(busId, txId, 'bus');
+          setBusMatrixCell(true);
+        } else {
+          await api.deleteRoute(`${busId}|${txId}`);
+          setBusMatrixCell(false);
+        }
+      },
+    });
+
   } catch (e) {
     cell.className = prevClass;
     toast('Bus route error: ' + e.message, true);
@@ -1088,15 +1121,35 @@ async function _toggleBusFeed(srcId, dstId, cell) {
   const newActive = !active;
   cell.classList.toggle('active', newActive);
 
-  try {
-    await api.putBusFeed(srcId, dstId, newActive);
+  const setFeedCell = (val) => {
     const srcIdx = parseInt(srcId.replace('bus_', ''), 10);
     const dstIdx = parseInt(dstId.replace('bus_', ''), 10);
     const matrix = st.state.busFeedMatrix.map(row => [...row]);
     while (matrix.length <= dstIdx) matrix.push([]);
     while ((matrix[dstIdx] ?? []).length <= srcIdx) matrix[dstIdx].push(false);
-    matrix[dstIdx][srcIdx] = newActive;
+    matrix[dstIdx][srcIdx] = val;
     st.setBusFeedMatrix(matrix);
+  };
+
+  try {
+    await api.putBusFeed(srcId, dstId, newActive);
+    setFeedCell(newActive);
+
+    const srcName = st.state.buses.get(srcId)?.name ?? srcId;
+    const dstName = st.state.buses.get(dstId)?.name ?? dstId;
+
+    undo.push({
+      label: `${newActive ? 'Enable' : 'Disable'} bus feed: ${srcName} → ${dstName}`,
+      apply: async () => {
+        await api.putBusFeed(srcId, dstId, newActive);
+        setFeedCell(newActive);
+      },
+      revert: async () => {
+        await api.putBusFeed(srcId, dstId, active);
+        setFeedCell(active);
+      },
+    });
+
   } catch (e) {
     cell.classList.toggle('active', active);
     toast('Bus feed error: ' + e.message, true);
@@ -1109,6 +1162,7 @@ async function _toggleBusFeed(srcId, dstId, cell) {
 // ── Input→Bus crosspoint toggle ────────────────────────────────────────────
 async function _toggleInputToBus(bus, chIdx, cell) {
   if (_locked) return;
+  const beforeRouting = Array.isArray(bus.routing) ? [...bus.routing] : [];
   const routing = Array.isArray(bus.routing) ? [...bus.routing] : [];
   while (routing.length <= chIdx) routing.push(false);
   const newVal = !routing[chIdx];
@@ -1120,6 +1174,25 @@ async function _toggleInputToBus(bus, chIdx, cell) {
     await api.setBusRouting(bus.id, routing);
     bus.routing = routing;
     st.setBus(bus);
+
+    const busName = st.state.buses.get(bus.id)?.name ?? bus.id;
+    const rxId = `rx_${chIdx}`;
+    const rxName = st.state.channels.get(rxId)?.name ?? rxId;
+
+    undo.push({
+      label: `${newVal ? 'Route' : 'Unroute'} input→bus: ${rxName} → ${busName}`,
+      apply: async () => {
+        const b = st.state.buses.get(bus.id) ?? bus;
+        await api.setBusRouting(bus.id, routing);
+        st.setBus({ ...b, routing: [...routing] });
+      },
+      revert: async () => {
+        const b = st.state.buses.get(bus.id) ?? bus;
+        await api.setBusRouting(bus.id, beforeRouting);
+        st.setBus({ ...b, routing: [...beforeRouting] });
+      },
+    });
+
   } catch (e) {
     routing[chIdx] = !newVal;
     bus.routing = routing;
@@ -1133,14 +1206,14 @@ async function _toggleInputToBus(bus, chIdx, cell) {
 async function _toggleRoute(rxId, txId, cell) {
   if (_locked) return;
   if (_soloMode === 'pending' || _copyMode) return;
-  
+
   const key = `${rxId}|${txId}`;
   if (_pendingCrosspoints.has(key)) return;
-  
+
   _pendingCrosspoints.set(key, Date.now());
   cell.classList.add('pending');
   cell.style.pointerEvents = 'none';
-  
+
   const routeType = st.getRouteType(rxId, txId);
   const prevClass = cell.className;
   try {
@@ -1158,6 +1231,35 @@ async function _toggleRoute(rxId, txId, cell) {
       cell.className = 'xp-cell ' + (st.getRouteType(rxId, txId) ?? 'dante') + ' pending';
     }
     _updateAllStats();
+
+    const rxName = st.state.channels.get(rxId)?.name ?? rxId;
+    const txName = st.state.outputs.get(txId)?.name ?? txId;
+    const wasActive = !!routeType;
+
+    undo.push({
+      label: `${wasActive ? 'Unroute' : 'Route'}: ${rxName} → ${txName}`,
+      apply: async () => {
+        if (wasActive) {
+          await api.deleteRoute(`${rxId}|${txId}`);
+          st.removeRoute(rxId, txId);
+        } else {
+          const route = await api.postRoute(rxId, txId, 'local');
+          st.setRoute({ route_type: 'dante', ...route });
+        }
+        _updateAllStats();
+      },
+      revert: async () => {
+        if (wasActive) {
+          const route = await api.postRoute(rxId, txId, 'local');
+          st.setRoute({ route_type: 'dante', ...route });
+        } else {
+          await api.deleteRoute(`${rxId}|${txId}`);
+          st.removeRoute(rxId, txId);
+        }
+        _updateAllStats();
+      },
+    });
+
   } catch (e) {
     cell.className = prevClass; // revert on error
     toast('Route error: ' + e.message, true);
@@ -1170,6 +1272,7 @@ async function _toggleRoute(rxId, txId, cell) {
 
 // ── Per-crosspoint gain scroll wheel ──────────────────────────────────────
 const _xpWheelThrottle = new Map();
+const _xpWheelUndo = new Map(); // key -> {from, to, timer, ...}
 
 function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
   if (!st.getRouteType(rxId, txId)) return; // only active routes
@@ -1177,9 +1280,10 @@ function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
   e.stopPropagation();
 
   const now = Date.now();
-  const last = _xpWheelThrottle.get(`${rxId}|${txId}`) ?? 0;
+  const throttleKey = `${rxId}|${txId}`;
+  const last = _xpWheelThrottle.get(throttleKey) ?? 0;
   if (now - last < 80) return;
-  _xpWheelThrottle.set(`${rxId}|${txId}`, now);
+  _xpWheelThrottle.set(throttleKey, now);
 
   const step = e.shiftKey ? 0.1 : 1.0;
   const delta = e.deltaY < 0 ? step : -step;
@@ -1193,6 +1297,31 @@ function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
   cell.classList.toggle('xp-gain-nonunity', clamped !== 0);
 
   api.putMatrixGain(txIdx, rxIdx, clamped).catch(err => toast('Gain error: ' + err.message, true));
+
+  const uKey = `xp:${rxId}|${txId}`;
+  const u = _xpWheelUndo.get(uKey) ?? { from: current, to: clamped, txIdx, rxIdx, timer: null, rxId, txId };
+  u.to = clamped;
+  clearTimeout(u.timer);
+  u.timer = setTimeout(() => {
+    _xpWheelUndo.delete(uKey);
+    if (u.from === u.to) return;
+
+    const rxName = st.state.channels.get(u.rxId)?.name ?? u.rxId;
+    const txName = st.state.outputs.get(u.txId)?.name ?? u.txId;
+
+    undo.push({
+      label: `Crosspoint gain: ${rxName} → ${txName}`,
+      apply: async () => {
+        st.setMatrixGainCell(u.txIdx, u.rxIdx, u.to);
+        await api.putMatrixGain(u.txIdx, u.rxIdx, u.to);
+      },
+      revert: async () => {
+        st.setMatrixGainCell(u.txIdx, u.rxIdx, u.from);
+        await api.putMatrixGain(u.txIdx, u.rxIdx, u.from);
+      },
+    });
+  }, 600);
+  _xpWheelUndo.set(uKey, u);
 }
 
 function _onBusXpWheel(e, bus, rxIdx, cell, gainLabel) {
@@ -1221,7 +1350,34 @@ function _onBusXpWheel(e, bus, rxIdx, cell, gainLabel) {
   cell.classList.toggle('xp-gain-nonunity', clamped !== 0);
 
   api.setBusInputGain(bus.id, rxIdx, clamped).catch(err => toast('Bus gain error: ' + err.message, true));
+
+  const uKey = `busxp:${bus.id}|${rxIdx}`;
+  const u = _xpWheelUndo.get(uKey) ?? { from: current, to: clamped, busId: bus.id, rxIdx, timer: null };
+  u.to = clamped;
+  clearTimeout(u.timer);
+  u.timer = setTimeout(() => {
+    _xpWheelUndo.delete(uKey);
+    if (u.from === u.to) return;
+
+    const busName = st.state.buses.get(u.busId)?.name ?? u.busId;
+    const rxId = `rx_${u.rxIdx}`;
+    const rxName = st.state.channels.get(rxId)?.name ?? rxId;
+
+    undo.push({
+      label: `Bus send gain: ${rxName} → ${busName}`,
+      apply: async () => {
+        st.setBusRoutingGainCell(u.busId, u.rxIdx, u.to);
+        await api.setBusInputGain(u.busId, u.rxIdx, u.to);
+      },
+      revert: async () => {
+        st.setBusRoutingGainCell(u.busId, u.rxIdx, u.from);
+        await api.setBusInputGain(u.busId, u.rxIdx, u.from);
+      },
+    });
+  }, 600);
+  _xpWheelUndo.set(uKey, u);
 }
+
 
 // ── Metering update (called from ws.js) ───────────────────────────────────
 export function updateMetering(rxData, txData) {
