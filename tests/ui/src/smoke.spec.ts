@@ -178,6 +178,81 @@ test.describe('Minos UI smoke', () => {
     await expect(page.locator('#tab-mixer .strip-zone-btn')).toHaveCount(0);
   });
 
+  test('linked input fader mirrors paired strip slider', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+
+    const mirrored = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const mixer = await import('/js/mixer.js');
+      const channels = st.channelList();
+      if (channels.length < 2) return null;
+
+      const [left, right] = channels;
+      const leftIdx = parseInt(left.id.replace('rx_', ''), 10);
+      const rightIdx = parseInt(right.id.replace('rx_', ''), 10);
+      const makeAm = (ch) => ({
+        ...(ch.dsp ?? {}),
+        am: {
+          ...(ch.dsp?.am ?? {}),
+          enabled: true,
+          bypassed: false,
+          params: {
+            ...(ch.dsp?.am?.params ?? {}),
+            gain_db: 0,
+          },
+        },
+      });
+
+      st.setChannel({ ...left, gain_db: 0, dsp: makeAm(left) });
+      st.setChannel({ ...right, gain_db: 0, dsp: makeAm(right) });
+      st.setStereoLinks([{ left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }]);
+      mixer.render(document.getElementById('tab-mixer'));
+
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.includes(`/inputs/${leftIdx}/gain`)) {
+          return new Response(null, { status: 204 });
+        }
+        return originalFetch(input, init);
+      };
+
+      try {
+        const targetDb = 6;
+        const targetSlider = String(st.dbToSlider(targetDb));
+        const leftStrip = document.getElementById(`strip-${left.id}`);
+        const rightStrip = document.getElementById(`strip-${right.id}`);
+        const leftFader = leftStrip?.querySelector('.strip-fader');
+        const rightFader = rightStrip?.querySelector('.strip-fader');
+        const rightLabel = rightStrip?.querySelector('.strip-fader-label');
+
+        if (!leftFader || !rightFader || !rightLabel) return { error: 'missing-strip' };
+
+        leftFader.value = targetSlider;
+        leftFader.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(resolve => setTimeout(resolve, 140));
+
+        return {
+          targetSlider,
+          targetLabel: '+6.0',
+          rightValue: rightFader.value,
+          rightLabel: rightLabel.textContent,
+          rightAria: rightFader.getAttribute('aria-valuenow'),
+          rightGain: st.state.channels.get(right.id)?.gain_db,
+        };
+      } finally {
+        window.fetch = originalFetch;
+      }
+    });
+
+    expect(mirrored).toBeTruthy();
+    expect(mirrored?.error).toBeUndefined();
+    expect(mirrored?.rightValue).toBe(mirrored?.targetSlider);
+    expect(mirrored?.rightLabel).toBe(mirrored?.targetLabel);
+    expect(mirrored?.rightAria).toBe(mirrored?.targetLabel);
+    expect(mirrored?.rightGain).toBe(6);
+  });
+
   test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {
     await expect(page.locator('#tb-undo')).toBeDisabled();
     await expect(page.locator('#tb-redo')).toBeDisabled();

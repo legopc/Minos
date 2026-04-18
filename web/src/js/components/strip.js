@@ -364,6 +364,9 @@ export function updateStripFader(stripEl, db) {
   const id    = stripEl.id.replace('strip-', '');
   const fader = stripEl.querySelector('.strip-fader');
   const label = document.getElementById(`mix-lbl-${id}`);
-  if (fader) fader.value = st.dbToSlider(db);
+  if (fader) {
+    fader.value = st.dbToSlider(db);
+    fader.setAttribute('aria-valuenow', _fmt(db));
+  }
   if (label) label.textContent = _fmt(db);
 }

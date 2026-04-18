@@ -4,12 +4,37 @@ import * as api from './api.js';
 import { openPanel } from './panels.js';
 import { toast } from './toast.js';
 import { buildBusRoutingContent } from './dsp/bus-routing.js';
-import { createStrip } from './components/strip.js';
+import { createStrip, updateStripFader } from './components/strip.js';
 import { undo } from './undo.js';
 import { makeReorderable, applyOrder, saveOrder } from './reorder.js';
 
 let _animFrame = null;
 let _soloSet = new Set();
+
+function _setInputGainState(channelId, db) {
+  const chanState = st.state.channels.get(channelId);
+  if (chanState) chanState.gain_db = db;
+  if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
+}
+
+function _getLinkedInputId(channelId) {
+  const chIdx = parseInt(channelId.replace('rx_', ''), 10);
+  const link = st.getStereoLink(chIdx);
+  if (!link?.linked) return null;
+  const linkedIdx = link.left_channel === chIdx ? link.right_channel : link.left_channel;
+  return Number.isInteger(linkedIdx) ? `rx_${linkedIdx}` : null;
+}
+
+function _mirrorLinkedInputFader(channelId, db) {
+  _setInputGainState(channelId, db);
+  const strip = document.getElementById(`strip-${channelId}`);
+  if (strip) updateStripFader(strip, db);
+  const linkedId = _getLinkedInputId(channelId);
+  if (!linkedId) return;
+  _setInputGainState(linkedId, db);
+  const linkedStrip = document.getElementById(`strip-${linkedId}`);
+  if (linkedStrip) updateStripFader(linkedStrip, db);
+}
 
 export function render(container) {
   container.innerHTML = '';
@@ -908,9 +933,7 @@ function _buildInputStrip(ch, nextCh) {
     hasClip:   true,
     dsp:       ch.dsp ?? {},
     onFader: (db) => {
-      const chanState = st.state.channels.get(ch.id);
-      if (chanState) chanState.gain_db = db;
-      if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
+      _mirrorLinkedInputFader(ch.id, db);
       api.putInputGain(chIdx, db).catch(e => toast(e.message, true));
     },
     onFaderCommit: (fromDb, toDb) => {
@@ -920,15 +943,11 @@ function _buildInputStrip(ch, nextCh) {
           undo.push({
             label: `Input level: ${ch.name ?? ch.id}`,
             apply: async () => {
-              const cs = st.state.channels.get(ch.id);
-              if (cs) cs.gain_db = toDb;
-              if (cs?.dsp?.am?.params) cs.dsp.am.params.gain_db = toDb;
+              _mirrorLinkedInputFader(ch.id, toDb);
               await api.putInputGain(chIdx, toDb);
             },
             revert: async () => {
-              const cs = st.state.channels.get(ch.id);
-              if (cs) cs.gain_db = fromDb;
-              if (cs?.dsp?.am?.params) cs.dsp.am.params.gain_db = fromDb;
+              _mirrorLinkedInputFader(ch.id, fromDb);
               await api.putInputGain(chIdx, fromDb);
             },
           });
