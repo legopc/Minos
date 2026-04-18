@@ -453,30 +453,30 @@ impl DanteDevice {
                     // micro-gaps between writes whenever the interval fires late — those gaps hit
                     // TX as silent zeros → pops.  Pure linear advance eliminates the gaps.
                     //
-                    // On first block: init write_pos = elapsed + lead_samples and send start_time = ptp_at_poll.
-                    if let Some(tx) = start_tx_opt.take() {
-                        let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
-                        let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
-                        tracing::info!(
-                            block,
-                            elapsed_ms = elapsed_ns / 1_000_000,
-                            elapsed_samples,
-                            write_pos_init = elapsed_samples + lead_samples,
-                            "TX start_tx_opt fired — DIAG",
-                        );
-                        write_pos_cb.store(
-                            elapsed_samples.wrapping_add(lead_samples),
-                            AOrdering::Release,
-                        );
-                        if let Err(e) = tx.send(ptp_at_poll) {
-                            tracing::warn!("Failed to send TX start time: {e}");
-                        } else {
-                            tracing::info!(
-                                ptp_at_poll,
-                                write_pos = elapsed_samples + lead_samples,
-                                "TX ring armed — write leads TX by {} samples",
-                                lead_samples
+                    // On first real block (block > 0): init write_pos = elapsed + lead_samples
+                    // and send start_time = ptp_at_poll to the TX transmitter.
+                    // We wait for block > 0 so elapsed_samples is measured at the exact moment
+                    // real audio arrives — TX starts with a clean 1ms (lead_samples) of silence
+                    // then immediately hits real audio, avoiding a longer stall if block=0
+                    // callbacks fire first during flow negotiation.
+                    if block > 0 {
+                        if let Some(tx) = start_tx_opt.take() {
+                            let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
+                            let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
+                            write_pos_cb.store(
+                                elapsed_samples.wrapping_add(lead_samples),
+                                AOrdering::Release,
                             );
+                            if let Err(e) = tx.send(ptp_at_poll) {
+                                tracing::warn!("Failed to send TX start time: {e}");
+                            } else {
+                                tracing::info!(
+                                    ptp_at_poll,
+                                    write_pos = elapsed_samples + lead_samples,
+                                    "TX ring armed — write leads TX by {} samples",
+                                    lead_samples
+                                );
+                            }
                         }
                     }
 
