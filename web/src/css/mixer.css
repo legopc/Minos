@@ -162,12 +162,13 @@
 
 /* Vertical VU meter */
 .strip-meter {
-  width: 12px;
+  width: 16px;
   flex: 1;
   background: var(--meter-bg);
   border-radius: 1px;
   position: relative;
   min-height: 40px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .strip-meter-bar {
@@ -609,7 +610,7 @@
   display: flex;
   flex-direction: row;
   flex: 1;
-  gap: 3px;
+  gap: 4px;
   align-items: stretch;
   width: 100%;
   min-height: 60px;
@@ -625,7 +626,7 @@
 
 .mixer-fader-meter-wrap .strip-meter,
 .mixer-fader-meter-wrap .mixer-strip-meter {
-  width: 12px;
+  width: 16px;
   flex-shrink: 0;
 }
 
@@ -724,12 +725,12 @@
   position: absolute;
   left: 0; right: 0;
   height: 1px;
-  background: rgba(255,255,255,0.20);
+  background: rgba(255,255,255,0.34);
   display: block;
 }
 /* Clip indicator at top (0 dBFS) */
 .strip-meter-scale span:first-child {
-  background: rgba(255,80,80,0.45);
+  background: rgba(255,80,80,0.70);
 }
 
 .strip-fader-entry {
@@ -752,25 +753,60 @@
 /* VU scale label column */
 .strip-vu-scale {
   position: relative;
-  width: 18px;
+  width: 26px;
   flex-shrink: 0;
   align-self: stretch;
 }
 .strip-vu-scale span {
   position: absolute;
-  right: 2px;
-  font-size: 6px;
-  color: var(--text-muted);
+  right: 3px;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
   transform: translateY(50%);
   white-space: nowrap;
   line-height: 1;
-  opacity: 0.75;
+  opacity: 0.95;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.85);
 }
+
+.strip-vu-scale span:first-child,
+.strip-vu-scale span:last-child,
+.strip-fader-scale span:first-child,
+.strip-fader-scale span:last-child {
+  transform: translateY(0);
+}
+
 /* 0 dBFS tick is red */
 .strip-vu-scale span:first-child {
   color: var(--vu-red, #e05050);
   opacity: 1;
   font-weight: bold;
+}
+
+.strip-fader-scale {
+  position: relative;
+  width: 28px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.strip-fader-scale span {
+  position: absolute;
+  left: 2px;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transform: translateY(50%);
+  white-space: nowrap;
+  line-height: 1;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-fader-scale span:nth-child(-n+3) {
+  color: var(--text-secondary);
 }
 
 /* ── Peak hold line ─────────────────────────────────── */

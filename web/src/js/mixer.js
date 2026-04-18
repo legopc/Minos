@@ -17,6 +17,12 @@ function _setInputGainState(channelId, db) {
   if (chanState?.dsp?.am?.params) chanState.dsp.am.params.gain_db = db;
 }
 
+function _setInputState(channelId, patch) {
+  const liveCh = st.state.channels.get(channelId);
+  if (!liveCh) return;
+  st.setChannel({ ...liveCh, ...patch });
+}
+
 function _getLinkedInputId(channelId) {
   const chIdx = parseInt(channelId.replace('rx_', ''), 10);
   const link = st.getStereoLink(chIdx);
@@ -34,6 +40,22 @@ function _mirrorLinkedInputFader(channelId, db) {
   _setInputGainState(linkedId, db);
   const linkedStrip = document.getElementById(`strip-${linkedId}`);
   if (linkedStrip) updateStripFader(linkedStrip, db);
+}
+
+function _setInputMuteButton(channelId, muted) {
+  const btn = document.getElementById(`mute-${channelId}`);
+  if (!btn) return;
+  btn.classList.toggle('active', muted);
+  btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+}
+
+function _mirrorLinkedInputMute(channelId, muted) {
+  _setInputState(channelId, { enabled: !muted });
+  _setInputMuteButton(channelId, muted);
+  const linkedId = _getLinkedInputId(channelId);
+  if (!linkedId) return;
+  _setInputState(linkedId, { enabled: !muted });
+  _setInputMuteButton(linkedId, muted);
 }
 
 function _setOutputState(outputId, patch) {
@@ -360,7 +382,6 @@ function _renderStrips(strips, masters) {
       addBusBtn.textContent = '+';
       addBusBtn.title = 'Add internal bus';
       addBusBtn.onclick = () => _showAddBusDialog();
-      masters.appendChild(addBusBtn);
       if (busesRaw.length > 0) {
         const busGroup = document.createElement('div');
         busGroup.className = 'mixer-reorder-group';
@@ -373,6 +394,7 @@ function _renderStrips(strips, masters) {
           onReorder:    ids => saveOrder('buses', ids),
         });
       }
+      masters.appendChild(addBusBtn);
     }
 
     // VCA Groups section
@@ -537,14 +559,52 @@ function _buildVcaStrip(vca) {
   fader.min = 0; fader.max = 1000; fader.step = 1;
   fader.value = st.dbToSlider(gainDb);
   let fTimer;
+  let dragStartDb = null;
+  fader.addEventListener('pointerdown', () => {
+    dragStartDb = st.sliderToDb(+fader.value);
+  });
   fader.oninput = () => {
     const db = st.sliderToDb(+fader.value);
     dbLabel.textContent = _db(db);
+    vca.gain_db = db;
+    st.setVcaGroup({ ...vca });
     clearTimeout(fTimer);
     fTimer = setTimeout(() => {
       api.putVcaGroup(vca.id, { gain_db: db }).catch(e => toast(e.message, true));
     }, 80);
   };
+  fader.addEventListener('pointerup', async () => {
+    if (dragStartDb == null) return;
+    const fromDb = dragStartDb;
+    const toDb = st.sliderToDb(+fader.value);
+    dragStartDb = null;
+    clearTimeout(fTimer);
+    try {
+      await api.putVcaGroup(vca.id, { gain_db: toDb });
+      vca.gain_db = toDb;
+      st.setVcaGroup({ ...vca });
+      if (fromDb !== toDb) {
+        undo.push({
+          label: `VCA level: ${vca.name ?? vca.id}`,
+          apply: async () => {
+            await api.putVcaGroup(vca.id, { gain_db: toDb });
+            vca.gain_db = toDb;
+            st.setVcaGroup({ ...vca });
+          },
+          revert: async () => {
+            await api.putVcaGroup(vca.id, { gain_db: fromDb });
+            vca.gain_db = fromDb;
+            st.setVcaGroup({ ...vca });
+          },
+        });
+      }
+    } catch (e) {
+      toast(e.message, true);
+    }
+  });
+  fader.addEventListener('pointercancel', () => {
+    dragStartDb = null;
+  });
   strip.appendChild(dbLabel);
   strip.appendChild(fader);
 
@@ -556,6 +616,8 @@ function _buildVcaStrip(vca) {
     const nowMuted = muteBtn.classList.contains('active');
     try {
       await api.putVcaGroup(vca.id, { muted: !nowMuted });
+      vca.muted = !nowMuted;
+      st.setVcaGroup({ ...vca });
       muteBtn.classList.toggle('active', !nowMuted);
     } catch(e) { toast(e.message, true); }
   };
@@ -1113,21 +1175,18 @@ function _buildInputStrip(ch) {
     onMute: async (nowMuted) => {
       const newMuted = !nowMuted;
       await api.putInputEnabled(chIdx, !newMuted);
-      const live = st.state.channels.get(ch.id);
-      if (live) st.setChannel({ ...live, enabled: !newMuted });
+      _mirrorLinkedInputMute(ch.id, newMuted);
     },
     onMuteCommit: (fromMuted, toMuted) => {
       undo.push({
         label: `${toMuted ? 'Mute' : 'Unmute'}: ${ch.name ?? ch.id}`,
         apply: async () => {
-          const live = st.state.channels.get(ch.id);
           await api.putInputEnabled(chIdx, !toMuted);
-          if (live) st.setChannel({ ...live, enabled: !toMuted });
+          _mirrorLinkedInputMute(ch.id, toMuted);
         },
         revert: async () => {
-          const live = st.state.channels.get(ch.id);
           await api.putInputEnabled(chIdx, !fromMuted);
-          if (live) st.setChannel({ ...live, enabled: !fromMuted });
+          _mirrorLinkedInputMute(ch.id, fromMuted);
         },
       });
     },

@@ -182,8 +182,37 @@ function _dispatch(msg) {
     case 'output_update':
       if (msg.output) {
         st.setOutput(msg.output);
-        // Could trigger mixer strip refresh here
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+      } else if (msg.id) {
+        const existing = st.state.outputs.get(msg.id);
+        if (existing) {
+          const patch = {
+            ...existing,
+            ...(msg.volume_db !== undefined ? { volume_db: msg.volume_db } : {}),
+            ...(msg.muted !== undefined ? { muted: msg.muted } : {}),
+          };
+          st.setOutput(patch);
+          const txIdx = Number.parseInt(String(msg.id).replace(/^tx_/, ''), 10);
+          const link = Number.isInteger(txIdx) ? st.getOutputStereoLink(txIdx) : null;
+          if (link?.linked) {
+            const linkedIdx = link.left_channel === txIdx ? link.right_channel : link.left_channel;
+            const linkedId = Number.isInteger(linkedIdx) ? `tx_${linkedIdx}` : null;
+            const linkedExisting = linkedId ? st.state.outputs.get(linkedId) : null;
+            if (linkedExisting) {
+              st.setOutput({
+                ...linkedExisting,
+                ...(msg.volume_db !== undefined ? { volume_db: msg.volume_db } : {}),
+                ...(msg.muted !== undefined ? { muted: msg.muted } : {}),
+              });
+            }
+          }
+          window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+        }
       }
+      break;
+
+    case 'vca_updated':
+      st.setVcaGroups(msg.vca_groups ?? []);
       break;
 
     case 'scene_loaded':

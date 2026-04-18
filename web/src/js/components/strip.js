@@ -25,13 +25,25 @@
 //   onDspOpen   (blockId, buttonEl) -> void
 
 import * as st from '../state.js';
+import { dbToPercent } from '../metering.js';
 import { DSP_COLOURS } from '../dsp/colours.js';
 
 // --- private helpers --------------------------------------------------------
 
+const METER_SCALE_DBS = [0, -6, -12, -18, -24, -30, -36, -42, -48];
+const FADER_SCALE_DBS = [12, 6, 0, -6, -12, -24, -40, -60];
+
 function _buildMeterEl(id, hasClip) {
   const meter = document.createElement('div');
   meter.className = 'strip-meter';
+
+  const scale = document.createElement('div');
+  scale.className = 'strip-meter-scale';
+  METER_SCALE_DBS.forEach((db) => {
+    const tick = document.createElement('span');
+    tick.style.bottom = dbToPercent(db) + '%';
+    scale.appendChild(tick);
+  });
 
   const bar = document.createElement('div');
   bar.className = 'strip-meter-bar';
@@ -45,6 +57,7 @@ function _buildMeterEl(id, hasClip) {
   hold.className = 'strip-meter-peak-hold';
   hold.id = `vu-hold-${id}`;
 
+  meter.appendChild(scale);
   meter.appendChild(bar);
   meter.appendChild(peak);
   meter.appendChild(hold);
@@ -60,26 +73,39 @@ function _buildMeterEl(id, hasClip) {
   return meter;
 }
 
+function _buildScaleColumn(className, values, toPercent, formatter) {
+  const col = document.createElement('div');
+  col.className = className;
+  values.forEach((db) => {
+    const lbl = document.createElement('span');
+    lbl.style.bottom = toPercent(db) + '%';
+    lbl.textContent = formatter(db);
+    col.appendChild(lbl);
+  });
+  return col;
+}
+
 function _buildFaderMeterWrap(meterEl, faderEl) {
   const wrap = document.createElement('div');
   wrap.className = 'mixer-fader-meter-wrap';
 
-  const scaleCol = document.createElement('div');
-  scaleCol.className = 'strip-vu-scale';
-  [0, -6, -12, -18, -30].forEach(db => {
-    const lbl = document.createElement('span');
-    // Meter scale is linear (-60 … 0 dB). Position labels relative to fader taper
-    // so they align visually with corresponding fader positions.
-    const sliderPos = st.dbToSlider(db);
-    const faderPct = (sliderPos / 1000) * 100;
-    lbl.style.bottom = faderPct + '%';
-    lbl.textContent = db === 0 ? '0' : String(db);
-    scaleCol.appendChild(lbl);
-  });
+  const scaleCol = _buildScaleColumn(
+    'strip-vu-scale',
+    METER_SCALE_DBS,
+    (db) => dbToPercent(db),
+    (db) => (db === 0 ? '0' : String(db)),
+  );
+  const faderScaleCol = _buildScaleColumn(
+    'strip-fader-scale',
+    FADER_SCALE_DBS,
+    (db) => (st.dbToSlider(db) / 1000) * 100,
+    (db) => (db > 0 ? `+${db}` : String(db)),
+  );
 
   wrap.appendChild(scaleCol);
   wrap.appendChild(meterEl);
   wrap.appendChild(faderEl);
+  wrap.appendChild(faderScaleCol);
   return wrap;
 }
 
