@@ -137,9 +137,18 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--vu-green);
+  height: 100%;
   border-radius: 1px;
-  height: 0%;
+  transform: scaleY(0);
+  transform-origin: bottom center;
+  background: linear-gradient(to top,
+    #1a7a1a  0%,
+    #2ec42e 50%,
+    #c8a020 76%,
+    #e03030 90%,
+    #ff2828 100%
+  );
+  will-change: transform;
 }
 
 .strip-meter-peak {
@@ -508,7 +517,17 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--vu-green);
+  height: 100%;
+  transform: scaleY(0);
+  transform-origin: bottom center;
+  background: linear-gradient(to top,
+    #1a7a1a  0%,
+    #2ec42e 50%,
+    #c8a020 76%,
+    #e03030 90%,
+    #ff2828 100%
+  );
+  will-change: transform;
 }
 
 .mixer-strip-peak {

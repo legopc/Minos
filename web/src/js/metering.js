@@ -1,24 +1,29 @@
 // metering.js — VU metering with continuous rAF animation loop
 //
 // Architecture:
-//   WS frames (10 Hz) → store targets per meter
+//   Server (50ms EMA) → WS frames (10 Hz) → store targets per meter
 //   rAF loop (60 Hz)  → chase targets with frame-rate-independent ballistics
-//   DOM writes         → direct style sets, no CSS transitions
+//   DOM writes         → scaleY transform (GPU-composited, no layout reflow)
 
 import { state } from './state.js';
 
 // ─── Ballistics Presets ───────────────────────────────────────────────────
 export const BALLISTICS_PRESETS = {
+  // Fast: smooth interpolation between 10Hz WS frames, slow visual release.
+  // Server already provides 50ms EMA so we don't need long client attack.
+  Fast:    { attackMs: 80,  releaseMs: 500,  peakHoldMs: 2000, peakDecayDbPerSec: 8  },
   Digital: { attackMs: 0,   releaseMs: 300,  peakHoldMs: 1500, peakDecayDbPerSec: 20 },
   PPM:     { attackMs: 10,  releaseMs: 1700, peakHoldMs: 0,    peakDecayDbPerSec: 0  },
   VU:      { attackMs: 300, releaseMs: 300,  peakHoldMs: 0,    peakDecayDbPerSec: 0  },
 };
 
 // ─── Conversion helpers ───────────────────────────────────────────────────
+// Floor at -48 dBFS: keeps the full bar within the normal working range.
+// -48 → 0%, -24 → 50%, -12 → 75%, -6 → 87.5%, 0 → 100%
 export function dbToPercent(db) {
-  if (!isFinite(db) || db <= -60) return 0;
+  if (!isFinite(db) || db <= -48) return 0;
   if (db >= 0) return 100;
-  return ((db + 60) / 60) * 100;
+  return ((db + 48) / 48) * 100;
 }
 
 export function dbToColour(db) {
@@ -33,7 +38,7 @@ const _anim = new Map();  // id → { displayDb, targetDb, peakLevel, peakTime }
 function _getAnim(id) {
   let a = _anim.get(id);
   if (!a) {
-    a = { displayDb: -60, targetDb: -60, peakLevel: -60, peakTime: 0 };
+    a = { displayDb: -48, targetDb: -48, peakLevel: -48, peakTime: 0 };
     _anim.set(id, a);
   }
   return a;
@@ -43,7 +48,7 @@ function _getAnim(id) {
 let _loopRunning = false;
 let _lastTick = 0;
 let _idleCount = 0;
-let _ballistics = BALLISTICS_PRESETS.Digital;
+let _ballistics = BALLISTICS_PRESETS.Fast;
 const IDLE_LIMIT = 300;  // ~5s at 60fps before auto-stop
 
 function _ensureLoop() {
@@ -90,9 +95,9 @@ function _tick(now) {
       if (b.peakDecayDbPerSec > 0) {
         peakDb = a.peakLevel - b.peakDecayDbPerSec * ((elapsed - holdMs) / 1000);
       }
-      if (peakDb <= -60) {
-        a.peakLevel = -60;
-        peakDb = -60;
+      if (peakDb <= -48) {
+        a.peakLevel = -48;
+        peakDb = -48;
       }
       anyMoving = true;
     }
@@ -100,16 +105,15 @@ function _tick(now) {
     // Update shared peak hold state for external consumers
     state.peakHold.set(id, { level: peakDb, timestamp: now });
 
-    // DOM writes
-    const pct  = dbToPercent(a.displayDb);
-    const col  = dbToColour(a.displayDb);
-    const ppct = dbToPercent(peakDb);
-    const pcol = dbToColour(peakDb);
+    // DOM writes — scaleY for GPU-composited animation
+    const scale  = dbToPercent(a.displayDb) / 100;
+    const pscale = dbToPercent(peakDb) / 100;
+    const pcol   = dbToColour(peakDb);
 
-    _setBar(`vu-bar-${id}`,   pct,  col);
-    _setBar(`vu-fill-${id}`,  pct,  col);
-    _setPeak(`vu-peak-${id}`, ppct, pcol);
-    _setPeak(`vu-hold-${id}`, ppct, pcol);
+    _setScale(`vu-bar-${id}`,  scale);
+    _setScale(`vu-fill-${id}`, scale);
+    _setPeak(`vu-peak-${id}`, pscale * 100, pcol);
+    _setPeak(`vu-hold-${id}`, pscale * 100, pcol);
   }
 
   if (anyMoving) {
@@ -122,9 +126,9 @@ function _tick(now) {
   requestAnimationFrame(_tick);
 }
 
-function _setBar(elId, pct, col) {
+function _setScale(elId, scale) {
   const el = document.getElementById(elId);
-  if (el) { el.style.height = pct + '%'; el.style.background = col; }
+  if (el) el.style.transform = `scaleY(${scale})`;
 }
 
 function _setPeak(elId, pct, col) {
@@ -167,7 +171,7 @@ function _updateGR(grData) {
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
-export function setGlobalBallistics(ballistics = BALLISTICS_PRESETS.Digital) {
+export function setGlobalBallistics(ballistics = BALLISTICS_PRESETS.Fast) {
   _ballistics = ballistics;
 }
 
@@ -184,7 +188,7 @@ export function updatePeakHold(id, db) {
  * Main entry: called from ws.js on every metering frame.
  * Cheap — just stores target values, no DOM work.
  */
-export function updateAll(msg, ballistics = BALLISTICS_PRESETS.Digital) {
+export function updateAll(msg, ballistics = BALLISTICS_PRESETS.Fast) {
   _ballistics = ballistics;
 
   const { rx, tx, gr, bus, peak, clip } = msg;

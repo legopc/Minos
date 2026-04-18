@@ -383,9 +383,17 @@ impl DanteDevice {
                             m.tx_clip_count.resize(n_tx, 0);
                         }
 
+                        // EMA integration: 50ms time constant smooths block-to-block noise.
+                        // alpha = 1 - exp(-dt/tau) where dt = block_frames / 48000 Hz.
+                        let ema_alpha = {
+                            let dt = block as f32 / 48_000.0;
+                            1.0 - (-dt / 0.05f32).exp()
+                        };
+
                         for (i, ch) in rx_f32.iter().enumerate() {
                             if i < m.rx_rms.len() {
-                                m.rx_rms[i] = rms_linear(ch);
+                                let inst = rms_linear(ch);
+                                m.rx_rms[i] = ema_alpha * inst + (1.0 - ema_alpha) * m.rx_rms[i];
                             }
                             if i < m.rx_peak.len() {
                                 let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
@@ -397,7 +405,8 @@ impl DanteDevice {
                         }
                         for (i, ch) in tx_f32.iter().enumerate() {
                             if i < m.tx_rms.len() {
-                                m.tx_rms[i] = rms_linear(ch);
+                                let inst = rms_linear(ch);
+                                m.tx_rms[i] = ema_alpha * inst + (1.0 - ema_alpha) * m.tx_rms[i];
                             }
                             if i < m.tx_peak.len() {
                                 let peak = ch.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
@@ -426,8 +435,8 @@ impl DanteDevice {
                         }
                         for (b, bp) in matrix_proc.bus_processors.iter().enumerate().take(n_buses) {
                             if b < m.bus_rms.len() {
-                                m.bus_rms[b] =
-                                    rms_linear(&bp.sum_buf[..block.min(bp.sum_buf.len())]);
+                                let inst = rms_linear(&bp.sum_buf[..block.min(bp.sum_buf.len())]);
+                                m.bus_rms[b] = ema_alpha * inst + (1.0 - ema_alpha) * m.bus_rms[b];
                             }
                         }
                     }
