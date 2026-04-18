@@ -227,7 +227,7 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
     // --- Send task: metering loop + broadcast relay ---
     let state_send = s.clone();
     let send_task = tokio::spawn(async move {
-        let mut meter_tick = interval(Duration::from_millis(200));
+        let mut meter_tick = interval(Duration::from_millis(100));
         tokio::pin!(cancel_rx);
         loop {
             tokio::select! {

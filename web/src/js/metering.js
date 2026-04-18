@@ -1,78 +1,24 @@
-// metering.js — VU update utilities, dBFS→%, peak hold, rAF batching
+// metering.js — VU metering with continuous rAF animation loop
 //
-// Meter ballistics:
-//   - Exponential moving average (attack/release) per meter, per frame (~200ms)
-//   - Peak hold with time-based decay latch
-//   - Presets: Digital (fast, 1.5s hold), PPM (IEC standard), VU (slow)
+// Architecture:
+//   WS frames (10 Hz) → store targets per meter
+//   rAF loop (60 Hz)  → chase targets with frame-rate-independent ballistics
+//   DOM writes         → direct style sets, no CSS transitions
 
 import { state } from './state.js';
 
-// ─── Ballistics Presets ─────────────────────────────────────────────────────
-/**
- * Ballistics preset: instantaneous attack, 300ms release, 1.5s peak hold.
- * @typedef {Object} BallisticsPreset
- * @property {number} attackMs - Attack time in milliseconds
- * @property {number} releaseMs - Release time in milliseconds
- * @property {number} peakHoldMs - Peak hold latch duration in milliseconds (0 = disabled)
- * @property {number} peakDecayDbPerSec - Decay rate when hold expires (dB/s)
- */
-
+// ─── Ballistics Presets ───────────────────────────────────────────────────
 export const BALLISTICS_PRESETS = {
-  Digital: { attackMs: 0, releaseMs: 300, peakHoldMs: 1500, peakDecayDbPerSec: 20 },
-  PPM:     { attackMs: 10, releaseMs: 1700, peakHoldMs: 0, peakDecayDbPerSec: 0 },
-  VU:      { attackMs: 300, releaseMs: 300, peakHoldMs: 0, peakDecayDbPerSec: 0 },
+  Digital: { attackMs: 0,   releaseMs: 300,  peakHoldMs: 1500, peakDecayDbPerSec: 20 },
+  PPM:     { attackMs: 10,  releaseMs: 1700, peakHoldMs: 0,    peakDecayDbPerSec: 0  },
+  VU:      { attackMs: 300, releaseMs: 300,  peakHoldMs: 0,    peakDecayDbPerSec: 0  },
 };
 
-const FRAME_INTERVAL_MS = 200;  // WS metering frame cadence
-
-const PEAK_HOLD_MS  = 2000;  // Legacy peak hold fallback
-const PEAK_DECAY_MS = 200;
-
-let _pending = false;
-const _queue = new Map();  // el id → { db, isPeak }
-
-// Per-meter ballistics state
-const _meterState = new Map();  // id → { smoothed, ballistics, peakTime, peakLevel }
-
-/**
- * Initialize or get ballistics state for a meter.
- * @param {string} id - Meter ID
- * @param {BallisticsPreset} ballistics - Ballistics preset
- * @returns {Object} meter state
- */
-function _getMeterState(id, ballistics) {
-  if (!_meterState.has(id)) {
-    _meterState.set(id, {
-      smoothed: -60,
-      ballistics,
-      peakTime: 0,
-      peakLevel: -60,
-    });
-  }
-  const st = _meterState.get(id);
-  if (st.ballistics !== ballistics) {
-    st.ballistics = ballistics;
-  }
-  return st;
-}
-
-/**
- * Compute exponential smoothing coefficient from attack/release time and frame interval.
- * α = 1 - exp(-2 * τ_frame / τ_time)
- * @param {number} timeMs - Attack or release time in ms
- * @returns {number} smoothing coefficient (0–1)
- */
-function _calcSmoothCoeff(timeMs) {
-  if (timeMs <= 0) return 1;
-  const tau = timeMs / 1000;
-  const dt = FRAME_INTERVAL_MS / 1000;
-  return 1 - Math.exp(-2 * dt / tau);
-}
-
+// ─── Conversion helpers ───────────────────────────────────────────────────
 export function dbToPercent(db) {
   if (!isFinite(db) || db <= -60) return 0;
   if (db >= 0) return 100;
-  return Math.round(((db + 60) / 60) * 100);
+  return ((db + 60) / 60) * 100;
 }
 
 export function dbToColour(db) {
@@ -81,70 +27,116 @@ export function dbToColour(db) {
   return 'var(--vu-green)';
 }
 
-/**
- * Update peak hold with optional decay after hold expires.
- * @param {string} id - Meter ID
- * @param {number} db - Current signal level in dBFS
- * @param {BallisticsPreset} [ballistics] - If provided, use ballistics decay; else legacy mode
- */
-export function updatePeakHold(id, db, ballistics = null) {
-  const now = Date.now();
-  const ph  = state.peakHold.get(id);
-  let peakDb = db;
+// ─── Per-meter animation state ────────────────────────────────────────────
+const _anim = new Map();  // id → { displayDb, targetDb, peakLevel, peakTime }
 
-  if (ph) {
-    const holdExpired = now - ph.timestamp > (ballistics?.peakHoldMs ?? PEAK_HOLD_MS);
-    if (db >= ph.level) {
-      // New peak
-      peakDb = db;
-    } else if (!holdExpired) {
-      // Still holding
-      peakDb = ph.level;
-    } else if (ballistics?.peakDecayDbPerSec > 0) {
-      // Decay phase
-      const decayDb = ballistics.peakDecayDbPerSec * ((now - ph.timestamp - (ballistics.peakHoldMs ?? PEAK_HOLD_MS)) / 1000);
-      peakDb = Math.max(db, ph.level - decayDb);
+function _getAnim(id) {
+  let a = _anim.get(id);
+  if (!a) {
+    a = { displayDb: -60, targetDb: -60, peakLevel: -60, peakTime: 0 };
+    _anim.set(id, a);
+  }
+  return a;
+}
+
+// ─── Animation loop ──────────────────────────────────────────────────────
+let _loopRunning = false;
+let _lastTick = 0;
+let _idleCount = 0;
+let _ballistics = BALLISTICS_PRESETS.Digital;
+const IDLE_LIMIT = 300;  // ~5s at 60fps before auto-stop
+
+function _ensureLoop() {
+  _idleCount = 0;
+  if (!_loopRunning) {
+    _loopRunning = true;
+    _lastTick = performance.now();
+    requestAnimationFrame(_tick);
+  }
+}
+
+function _tick(now) {
+  if (!_loopRunning) return;
+
+  const dt = Math.min(now - _lastTick, 50);  // cap to avoid jumps after tab restore
+  _lastTick = now;
+  const b = _ballistics;
+  let anyMoving = false;
+
+  for (const [id, a] of _anim) {
+    const prev = a.displayDb;
+    const target = a.targetDb;
+    const diff = target - prev;
+
+    // Ballistic chase with real delta time
+    if (Math.abs(diff) > 0.05) {
+      const tauMs = diff > 0 ? b.attackMs : b.releaseMs;
+      const alpha = tauMs <= 0 ? 1 : 1 - Math.exp(-2 * dt / tauMs);
+      a.displayDb = prev + alpha * diff;
+      anyMoving = true;
     } else {
-      // Legacy decay
-      const decayDb = 60 * ((now - ph.timestamp - PEAK_HOLD_MS) / PEAK_DECAY_MS);
-      peakDb = Math.max(db, ph.level - decayDb);
+      a.displayDb = target;
     }
-  }
 
-  if (!ph || peakDb >= ph.level || holdExpired) {
+    // Peak hold & decay
+    if (a.displayDb > a.peakLevel) {
+      a.peakLevel = a.displayDb;
+      a.peakTime = now;
+    }
+    let peakDb = a.peakLevel;
+    const holdMs = b.peakHoldMs || 1500;
+    const elapsed = now - a.peakTime;
+    if (elapsed > holdMs) {
+      if (b.peakDecayDbPerSec > 0) {
+        peakDb = a.peakLevel - b.peakDecayDbPerSec * ((elapsed - holdMs) / 1000);
+      }
+      if (peakDb <= -60) {
+        a.peakLevel = -60;
+        peakDb = -60;
+      }
+      anyMoving = true;
+    }
+
+    // Update shared peak hold state for external consumers
     state.peakHold.set(id, { level: peakDb, timestamp: now });
+
+    // DOM writes
+    const pct  = dbToPercent(a.displayDb);
+    const col  = dbToColour(a.displayDb);
+    const ppct = dbToPercent(peakDb);
+    const pcol = dbToColour(peakDb);
+
+    _setBar(`vu-bar-${id}`,   pct,  col);
+    _setBar(`vu-fill-${id}`,  pct,  col);
+    _setPeak(`vu-peak-${id}`, ppct, pcol);
+    _setPeak(`vu-hold-${id}`, ppct, pcol);
   }
+
+  if (anyMoving) {
+    _idleCount = 0;
+  } else if (++_idleCount > IDLE_LIMIT) {
+    _loopRunning = false;
+    return;
+  }
+
+  requestAnimationFrame(_tick);
 }
 
-/**
- * Apply exponential smoothing (attack/release) to a signal.
- * When new value > previous, use attack coefficient; else use release.
- * @param {string} id - Meter ID
- * @param {number} db - Incoming signal level in dBFS
- * @param {BallisticsPreset} ballistics - Ballistics preset
- * @returns {number} smoothed dB level
- */
-function _smooth(id, db, ballistics) {
-  const meterState = _getMeterState(id, ballistics);
-  const prev = meterState.smoothed;
-  
-  let alpha;
-  if (db > prev) {
-    alpha = _calcSmoothCoeff(ballistics.attackMs);
-  } else {
-    alpha = _calcSmoothCoeff(ballistics.releaseMs);
-  }
-  
-  const next = prev + alpha * (db - prev);
-  meterState.smoothed = next;
-  return next;
+function _setBar(elId, pct, col) {
+  const el = document.getElementById(elId);
+  if (el) { el.style.height = pct + '%'; el.style.background = col; }
 }
 
-// Clip badge tracking
+function _setPeak(elId, pct, col) {
+  const el = document.getElementById(elId);
+  if (el) { el.style.bottom = pct + '%'; el.style.background = col; }
+}
+
+// ─── Clip badge tracking ──────────────────────────────────────────────────
 const _lastClipCount = new Map();
 
 function _updateClip(clipData) {
-  Object.entries(clipData).forEach(([id, count]) => {
+  for (const [id, count] of Object.entries(clipData)) {
     const prev = _lastClipCount.get(id);
     if (prev !== undefined && count > prev) {
       const badge = document.getElementById(`clip-badge-${id}`);
@@ -155,12 +147,12 @@ function _updateClip(clipData) {
       }
     }
     _lastClipCount.set(id, count);
-  });
+  }
 }
 
-// GR meter update (called from _flush or directly)
+// ─── GR meters (no interpolation needed — slow-moving) ───────────────────
 function _updateGR(grData) {
-  Object.entries(grData).forEach(([key, db]) => {
+  for (const [key, db] of Object.entries(grData)) {
     const bar   = document.getElementById(`gr-bar-${key}`);
     const label = document.getElementById(`gr-label-${key}`);
     if (bar) {
@@ -170,74 +162,42 @@ function _updateGR(grData) {
     if (label) {
       label.textContent = db >= 0 ? '0.0 dB' : db.toFixed(1) + ' dB';
     }
-  });
-}
-
-/**
- * Set ballistics preset for all meters (affects active filtering).
- * @param {BallisticsPreset} ballistics - Preset (default: Digital)
- */
-export function setGlobalBallistics(ballistics = BALLISTICS_PRESETS.Digital) {
-  _meterState.forEach((st) => {
-    st.ballistics = ballistics;
-  });
-}
-
-// ── Main update (called from ws.js on every metering frame) ───────────────
-/**
- * Update all meters on WS metering frame.
- * @param {Object} msg - Metering frame { rx, tx, gr, bus, peak, clip }
- * @param {BallisticsPreset} [ballistics] - Optional ballistics preset (default: Digital)
- */
-export function updateAll(msg, ballistics = BALLISTICS_PRESETS.Digital) {
-  const { rx, tx, gr, bus, peak, clip } = msg;
-
-  if (rx) _updateGroup(rx, 'rx', ballistics);
-  if (tx) _updateGroup(tx, 'tx', ballistics);
-  if (bus) _updateGroup(bus, 'bus', ballistics);
-  // Server-side true peak overrides JS-computed peak hold
-  if (peak) Object.entries(peak).forEach(([id, db]) => updatePeakHold(id, db, ballistics));
-  if (gr) _updateGR(gr);
-  if (clip) _updateClip(clip);
-
-  if (!_pending) {
-    _pending = true;
-    requestAnimationFrame(_flush);
   }
 }
 
-function _updateGroup(data, prefix, ballistics) {
-  Object.entries(data).forEach(([id, rawDb]) => {
-    const db = _smooth(id, rawDb, ballistics);
-    updatePeakHold(id, db, ballistics);
-    _queue.set(`vu-bar-${id}`, { db, isPeak: false });
-    // Also update matrix mini-vu (rx channels only)
-    _queue.set(`vu-fill-${id}`, { db, isPeak: false, isMini: true });
-    const ph = state.peakHold.get(id);
-    if (ph) {
-      _queue.set(`vu-peak-${id}`, { db: ph.level, isPeak: true });
-      _queue.set(`vu-hold-${id}`, { db: ph.level, isPeak: true });
-    }
-  });
+// ─── Public API ───────────────────────────────────────────────────────────
+
+export function setGlobalBallistics(ballistics = BALLISTICS_PRESETS.Digital) {
+  _ballistics = ballistics;
 }
 
-function _flush() {
-  _pending = false;
-  _queue.forEach(({ db, isPeak, isMini, isZone }, elId) => {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    const pct = dbToPercent(db);
-    if (isMini) {
-      // Matrix mini-VU: vertical fill (height %)
-      el.style.height = pct + '%';
-      el.style.background = dbToColour(db);
-    } else if (isPeak) {
-      el.style.bottom = pct + '%';
-      el.style.background = dbToColour(db);
-    } else {
-      el.style.height = pct + '%';
-      el.style.background = dbToColour(db);
-    }
-  });
-  _queue.clear();
+/** Legacy compat: peak hold access. Now driven by the animation loop. */
+export function updatePeakHold(id, db) {
+  const a = _getAnim(id);
+  if (db > a.peakLevel) {
+    a.peakLevel = db;
+    a.peakTime = performance.now();
+  }
+}
+
+/**
+ * Main entry: called from ws.js on every metering frame.
+ * Cheap — just stores target values, no DOM work.
+ */
+export function updateAll(msg, ballistics = BALLISTICS_PRESETS.Digital) {
+  _ballistics = ballistics;
+
+  const { rx, tx, gr, bus, peak, clip } = msg;
+
+  if (rx)   for (const [id, db] of Object.entries(rx))   _getAnim(id).targetDb = db;
+  if (tx)   for (const [id, db] of Object.entries(tx))   _getAnim(id).targetDb = db;
+  if (bus)  for (const [id, db] of Object.entries(bus))  _getAnim(id).targetDb = db;
+  if (peak) for (const [id, db] of Object.entries(peak)) {
+    const a = _getAnim(id);
+    if (db > a.peakLevel) { a.peakLevel = db; a.peakTime = performance.now(); }
+  }
+  if (gr)   _updateGR(gr);
+  if (clip) _updateClip(clip);
+
+  _ensureLoop();
 }

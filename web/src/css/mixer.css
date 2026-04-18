@@ -139,7 +139,6 @@
   right: 0;
   background: var(--vu-green);
   border-radius: 1px;
-  transition: height 0.12s linear;
   height: 0%;
 }
 
@@ -149,7 +148,6 @@
   right: 0;
   height: 2px;
   background: var(--vu-amber);
-  transition: bottom 0.05s;
   bottom: 0%;
 }
 
@@ -511,7 +509,6 @@
   left: 0;
   right: 0;
   background: var(--vu-green);
-  transition: height 0.05s linear;
 }
 
 .mixer-strip-peak {
@@ -766,7 +763,6 @@
   height: 2px;
   background: var(--vu-green);
   opacity: 0.6;
-  transition: bottom 0.05s linear;
   bottom: 0%;
   pointer-events: none;
 }
