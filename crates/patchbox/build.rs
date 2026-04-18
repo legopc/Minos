@@ -13,8 +13,20 @@ fn main() {
         .expect("libpam.so.0 not found — install pam");
     println!("cargo:rustc-link-arg={path}");
 
+    track_web_assets();
     build_docs();
 }
+
+fn track_web_assets() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let web_dir = std::path::Path::new(&manifest_dir)
+        .join("../../web")
+        .canonicalize()
+        .expect("web/ directory not found relative to crates/patchbox/");
+
+    println!("cargo:rerun-if-changed={}", web_dir.join("src").display());
+}
+
 fn build_docs() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let docs_dir = std::path::Path::new(&manifest_dir)

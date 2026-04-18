@@ -233,7 +233,7 @@ pub async fn put_input_gain(
         }
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
