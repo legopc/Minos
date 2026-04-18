@@ -77,6 +77,44 @@
   min-height: 0;
 }
 
+.mixer-strip-pair {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  height: 100%;
+  align-self: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mixer-strip-pair-header {
+  flex: 0 0 auto;
+  min-height: 36px;
+  display: flex;
+  align-items: stretch;
+}
+
+.mixer-strip-pair-header.empty {
+  visibility: hidden;
+}
+
+.mixer-strip-pair-row {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  gap: 1px;
+  min-height: 0;
+}
+
+.mixer-strip-pair-row > .mixer-strip,
+.mixer-strip-pair-row > .mixer-output-strip {
+  flex: 1 1 0;
+  min-width: 60px;
+  max-width: 130px;
+  height: 100%;
+  min-height: 0;
+}
+
 .mixer-zone-masters {
   display: flex;
   gap: 1px;
@@ -770,14 +808,68 @@
 
 .bus-strip {
   flex: 1 1 0;
-  min-width: 50px;
-  max-width: 90px;
+  min-width: 60px;
+  max-width: 100px;
   border-top: 2px solid var(--accent-gold);
   background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-gold) 8%);
 }
 
 .bus-strip .strip-name {
   color: var(--accent-gold);
+}
+
+.strip-menu-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.strip-menu-btn:hover,
+.strip-menu-btn:focus-visible {
+  color: var(--text-primary);
+}
+
+.strip-action-menu {
+  position: fixed;
+  z-index: 1001;
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-panel, #1e1e2e);
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.strip-action-menu-item {
+  min-height: 36px;
+  padding: 6px 10px;
+  text-align: left;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.strip-action-menu-item:hover,
+.strip-action-menu-item:focus-visible {
+  background: var(--bg-row-hover);
+}
+
+.strip-action-menu-item.destructive {
+  color: #f85149;
 }
 
 .bus-sources-badge {
@@ -1024,7 +1116,7 @@
   opacity: 1;
 }
 
-/* ── Stereo Link button ─────────────────────────────────────────────────────── */
+/* ── Stereo pair controls ───────────────────────────────────────────────────── */
 .strip-name-row {
   display: flex;
   align-items: center;
@@ -1037,7 +1129,7 @@
   min-width: 0;
 }
 
-.strip-stereo-btn {
+.stereo-pair-btn {
   width: 100%;
   min-height: 36px;
   font-size: 11px;
@@ -1053,19 +1145,19 @@
   transition: all 0.15s;
 }
 
-.strip-stereo-btn:hover {
+.stereo-pair-btn:hover {
   border-color: #58a6ff;
   color: var(--text-primary);
 }
 
-.strip-stereo-btn.linked {
+.stereo-pair-btn.linked {
   border-color: #58a6ff;
   color: #58a6ff;
   background: rgba(88,166,255,0.12);
 }
 
 @media (pointer: coarse) {
-  .strip-stereo-btn {
+  .stereo-pair-btn {
     min-height: 44px;
   }
 }
@@ -1336,6 +1428,11 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  .mixer-strip-pair {
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+  }
+
   .mixer-strip,
   .mixer-zone-master {
     flex: 0 0 100px;
@@ -1359,6 +1456,14 @@
       width: 100%;
       height: auto;
       gap: 1px;
+    }
+
+    .mixer-strip-pair {
+      width: 100%;
+    }
+
+    .mixer-strip-pair-row {
+      width: 100%;
     }
 
     .mixer-strip,

@@ -235,6 +235,7 @@ function _buildWarningBanner(warnings) {
 // ── Public render entry point ──────────────────────────────────────────────
 export function render(container) {
   _container = container;
+  const wasActive = container.classList.contains('active');
 
   // Preserve scroll position across re-renders
   const vp = container.querySelector('.matrix-viewport');
@@ -242,7 +243,7 @@ export function render(container) {
   const prevScrollY = vp?.scrollTop  ?? 0;
 
   _container.innerHTML = '';
-  _container.className = 'tab-content active';
+  _container.className = `tab-content${wasActive ? ' active' : ''}`;
   _container.id = 'tab-matrix';
 
 

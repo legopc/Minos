@@ -316,12 +316,135 @@ test.describe('Minos UI smoke', () => {
     expect(mirrored?.rightVolume).toBe(4);
   });
 
-  test('bus strip exposes delete control', async ({ page }) => {
+  test('stereo links render as pair controls instead of strip buttons', async ({ page }) => {
     await page.locator('.tab-btn[data-tab="mixer"]').click();
 
-    const hasDelete = await page.evaluate(async () => {
+    const layout = await page.evaluate(async () => {
       const st = await import('/js/state.js');
       const mixer = await import('/js/mixer.js');
+      const channels = st.channelList();
+      const outputs = st.outputList();
+      if (channels.length < 2 || outputs.length < 2) return null;
+
+      const [leftIn, rightIn] = channels;
+      const [leftOut, rightOut] = outputs;
+      const leftInIdx = parseInt(leftIn.id.replace('rx_', ''), 10);
+      const rightInIdx = parseInt(rightIn.id.replace('rx_', ''), 10);
+      const leftOutIdx = parseInt(leftOut.id.replace('tx_', ''), 10);
+      const rightOutIdx = parseInt(rightOut.id.replace('tx_', ''), 10);
+
+      st.setStereoLinks([{ left_channel: leftInIdx, right_channel: rightInIdx, linked: true, pan: 0.0 }]);
+      st.setOutputStereoLinks([{ left_channel: leftOutIdx, right_channel: rightOutIdx, linked: true, pan: 0.0 }]);
+      mixer.render(document.getElementById('tab-mixer'));
+
+      const inputPair = document.querySelector('.mixer-strips .mixer-strip-pair .stereo-pair-btn');
+      const outputPair = document.querySelector('.mixer-zone-masters .mixer-strip-pair .stereo-pair-btn');
+      const inputStrip = document.getElementById(`strip-${leftIn.id}`);
+      const outputStrip = document.getElementById(`strip-${leftOut.id}`);
+
+      return {
+        inputPairLabel: inputPair?.textContent ?? null,
+        outputPairLabel: outputPair?.textContent ?? null,
+        inputButtonInsideStrip: !!document.querySelector(`#strip-${leftIn.id} .stereo-pair-btn`),
+        outputButtonInsideStrip: !!document.querySelector(`#strip-${leftOut.id} .stereo-pair-btn`),
+        inputMaxWidth: inputStrip ? getComputedStyle(inputStrip).maxWidth : null,
+        outputMaxWidth: outputStrip ? getComputedStyle(outputStrip).maxWidth : null,
+      };
+    });
+
+    expect(layout).toBeTruthy();
+    expect(layout?.inputPairLabel).toBeTruthy();
+    expect(layout?.outputPairLabel).toBeTruthy();
+    expect(layout?.inputButtonInsideStrip).toBeFalsy();
+    expect(layout?.outputButtonInsideStrip).toBeFalsy();
+    expect(layout?.inputMaxWidth).toBe(layout?.outputMaxWidth);
+  });
+
+  test('stereo pair toggle does not activate matrix tab', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+
+    const stayedHidden = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const mixer = await import('/js/mixer.js');
+      const channels = st.channelList();
+      if (channels.length < 2) return null;
+
+      const [left, right] = channels;
+      const leftIdx = parseInt(left.id.replace('rx_', ''), 10);
+      const rightIdx = parseInt(right.id.replace('rx_', ''), 10);
+      st.setStereoLinks([]);
+      mixer.render(document.getElementById('tab-mixer'));
+
+      const matrixTab = document.getElementById('tab-matrix');
+      const pairBtn = document.querySelector('.mixer-strip-pair .stereo-pair-btn');
+      if (!matrixTab || !pairBtn) return { error: 'missing-elements' };
+
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.includes('/stereo-links') && (init?.method === 'POST' || init?.method === 'PUT')) {
+          return new Response(JSON.stringify({
+            left_channel: leftIdx,
+            right_channel: rightIdx,
+            linked: true,
+            pan: 0.0,
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return originalFetch(input, init);
+      };
+
+      try {
+        pairBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return {
+          matrixActive: matrixTab.classList.contains('active'),
+          mixerActive: document.getElementById('tab-mixer')?.classList.contains('active') ?? false,
+        };
+      } finally {
+        window.fetch = originalFetch;
+      }
+    });
+
+    expect(stayedHidden).toBeTruthy();
+    expect(stayedHidden?.error).toBeUndefined();
+    expect(stayedHidden?.matrixActive).toBeFalsy();
+    expect(stayedHidden?.mixerActive).toBeTruthy();
+  });
+
+  test('utility strips expose delete action in utility menu', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+
+    const menuState = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const mixer = await import('/js/mixer.js');
+      st.setVcaGroups([{
+        id: 'vca_smoke',
+        name: 'Smoke VCA',
+        group_type: 'input',
+        members: [],
+        gain_db: 0,
+        muted: false,
+      }]);
+      st.setAutomixerGroups([{
+        id: 'am_smoke',
+        name: 'Smoke AXM',
+        enabled: true,
+        gating_enabled: false,
+        gate_threshold_db: -40,
+        off_attenuation_db: -60,
+        hold_ms: 300,
+      }]);
+      st.setGenerators([{
+        id: 'gen_smoke',
+        name: 'Smoke generator',
+        gen_type: 'sine',
+        freq_hz: 1000,
+        level_db: -20,
+        enabled: false,
+      }]);
       st.setBus({
         id: 'bus_smoke',
         name: 'Smoke bus',
@@ -337,10 +460,25 @@ test.describe('Minos UI smoke', () => {
         muted: false,
       });
       mixer.render(document.getElementById('tab-mixer'));
-      return !!document.querySelector('#strip-bus_smoke .vca-delete-btn');
+
+      const destructiveLabelFor = (selector) => {
+        const menuBtn = document.querySelector(selector);
+        menuBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return document.querySelector('.strip-action-menu-item.destructive')?.textContent ?? null;
+      };
+
+      return {
+        busLabel: destructiveLabelFor('#strip-bus_smoke .strip-menu-btn'),
+        vcaLabel: destructiveLabelFor('#vca-strip-vca_smoke .strip-menu-btn'),
+        amLabel: destructiveLabelFor('#am-strip-am_smoke .strip-menu-btn'),
+        genLabel: destructiveLabelFor('#gen-strip-gen_smoke .strip-menu-btn'),
+      };
     });
 
-    expect(hasDelete).toBeTruthy();
+    expect(menuState?.busLabel).toBe('Delete bus');
+    expect(menuState?.vcaLabel).toBe('Delete VCA group');
+    expect(menuState?.amLabel).toBe('Delete automixer group');
+    expect(menuState?.genLabel).toBe('Delete generator');
   });
 
   test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {

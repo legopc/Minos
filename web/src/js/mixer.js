@@ -89,9 +89,16 @@ function _replaceStereoLink(links, leftIdx, rightIdx, linked) {
   return [...filtered, { left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }];
 }
 
-function _buildStereoToggleButton(leftIdx, rightIdx, linked, titleLinked, titleUnlinked, onToggle) {
+async function _refreshMatrixIfVisible() {
+  const matrixTab = document.getElementById('tab-matrix');
+  if (!matrixTab?.classList.contains('active')) return;
+  const { render } = await import('./matrix.js');
+  render(matrixTab);
+}
+
+function _buildStereoPairButton(leftIdx, rightIdx, linked, titleLinked, titleUnlinked, onToggle) {
   const btn = document.createElement('button');
-  btn.className = 'strip-stereo-btn' + (linked ? ' linked' : '');
+  btn.className = 'stereo-pair-btn' + (linked ? ' linked' : '');
   btn.textContent = `ST ${leftIdx + 1}/${rightIdx + 1}`;
   btn.setAttribute('aria-pressed', linked ? 'true' : 'false');
   btn.type = 'button';
@@ -110,11 +117,74 @@ function _buildStereoToggleButton(leftIdx, rightIdx, linked, titleLinked, titleU
       await onToggle(!wasLinked);
       btn.classList.toggle('linked', !wasLinked);
       sync();
+      await _refreshMatrixIfVisible();
     } catch (err) {
       toast(err.message, true);
     }
   };
   return btn;
+}
+
+function _buildStereoPairGroup(leftStrip, rightStrip, pairButton) {
+  const group = document.createElement('div');
+  group.className = 'mixer-strip-pair';
+
+  const header = document.createElement('div');
+  header.className = 'mixer-strip-pair-header' + (pairButton ? '' : ' empty');
+  if (pairButton) header.appendChild(pairButton);
+
+  const row = document.createElement('div');
+  row.className = 'mixer-strip-pair-row';
+  row.appendChild(leftStrip);
+  if (rightStrip) row.appendChild(rightStrip);
+
+  group.appendChild(header);
+  group.appendChild(row);
+  return group;
+}
+
+function _buildStripActionMenu(anchor, actions) {
+  document.querySelectorAll('.strip-action-menu').forEach(menu => menu.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'strip-action-menu';
+
+  actions.forEach(action => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'strip-action-menu-item' + (action.destructive ? ' destructive' : '');
+    item.textContent = action.label;
+    item.onclick = async (e) => {
+      e.stopPropagation();
+      menu.remove();
+      await action.onSelect();
+    };
+    menu.appendChild(item);
+  });
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, rect.right - 140)}px`;
+  document.body.appendChild(menu);
+
+  const close = (e) => {
+    if (menu.contains(e.target) || anchor.contains(e.target)) return;
+    menu.remove();
+    document.removeEventListener('click', close);
+  };
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function _buildStripMenuButton(title, actions) {
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'strip-menu-btn';
+  menuBtn.textContent = '⋯';
+  menuBtn.title = title;
+  menuBtn.onclick = (e) => {
+    e.stopPropagation();
+    _buildStripActionMenu(menuBtn, actions);
+  };
+  return menuBtn;
 }
 
 export function render(container) {
@@ -247,11 +317,35 @@ function _renderStrips(strips, masters) {
   const channels = st.channelList();
   const outputs  = st.outputList();
 
-  // Input strips — stereo link indicator lives inside even-indexed strips
-  channels.forEach((ch, idx) => {
-    const s = _buildInputStrip(ch, idx < channels.length - 1 ? channels[idx + 1] : null);
-    strips.appendChild(s);
-  });
+  for (let idx = 0; idx < channels.length; idx += 2) {
+    const leftCh = channels[idx];
+    const rightCh = idx < channels.length - 1 ? channels[idx + 1] : null;
+    const leftStrip = _buildInputStrip(leftCh);
+    const rightStrip = rightCh ? _buildInputStrip(rightCh) : null;
+    let pairButton = null;
+    if (rightCh) {
+      const leftIdx = parseInt(leftCh.id.replace('rx_', ''), 10);
+      const rightIdx = parseInt(rightCh.id.replace('rx_', ''), 10);
+      const link = st.getStereoLink(leftIdx);
+      const linked = !!(link?.linked);
+      pairButton = _buildStereoPairButton(
+        leftIdx,
+        rightIdx,
+        linked,
+        `Unlink stereo pair ${leftIdx + 1}/${rightIdx + 1}`,
+        `Link as stereo ${leftIdx + 1}/${rightIdx + 1}`,
+        async (shouldLink) => {
+          if (shouldLink) {
+            await api.postStereoLink(leftIdx, rightIdx);
+          } else {
+            await api.deleteStereoLink(leftIdx);
+          }
+          st.setStereoLinks(_replaceStereoLink(st.state.stereoLinks, leftIdx, rightIdx, shouldLink));
+        }
+      );
+    }
+    strips.appendChild(_buildStereoPairGroup(leftStrip, rightStrip, pairButton));
+  }
 
   try {
     // Bus strips (in masters, before output strips — buses are outputs not inputs)
@@ -355,10 +449,35 @@ function _renderStrips(strips, masters) {
     outSep.className = 'mixer-output-separator';
     outSep.textContent = 'OUTPUTS';
     masters.appendChild(outSep);
-    outputs.forEach((out, idx) => {
-      const m = _buildOutputMaster(out, idx < outputs.length - 1 ? outputs[idx + 1] : null);
-      masters.appendChild(m);
-    });
+    for (let idx = 0; idx < outputs.length; idx += 2) {
+      const leftOut = outputs[idx];
+      const rightOut = idx < outputs.length - 1 ? outputs[idx + 1] : null;
+      const leftStrip = _buildOutputMaster(leftOut);
+      const rightStrip = rightOut ? _buildOutputMaster(rightOut) : null;
+      let pairButton = null;
+      if (rightOut) {
+        const leftIdx = parseInt(leftOut.id.replace('tx_', ''), 10);
+        const rightIdx = parseInt(rightOut.id.replace('tx_', ''), 10);
+        const link = st.getOutputStereoLink(leftIdx);
+        const linked = !!(link?.linked);
+        pairButton = _buildStereoPairButton(
+          leftIdx,
+          rightIdx,
+          linked,
+          `Unlink stereo pair ${leftIdx + 1}/${rightIdx + 1}`,
+          `Link outputs ${leftIdx + 1}/${rightIdx + 1} as stereo`,
+          async (shouldLink) => {
+            if (shouldLink) {
+              await api.postOutputStereoLink(leftIdx, rightIdx);
+            } else {
+              await api.deleteOutputStereoLink(leftIdx);
+            }
+            st.setOutputStereoLinks(_replaceStereoLink(st.state.outputStereoLinks, leftIdx, rightIdx, shouldLink));
+          }
+        );
+      }
+      masters.appendChild(_buildStereoPairGroup(leftStrip, rightStrip, pairButton));
+    }
   } catch (err) {
     console.error('[mixer] _renderStrips masters section failed:', err);
     const errEl = document.createElement('div');
@@ -366,49 +485,6 @@ function _renderStrips(strips, masters) {
     errEl.textContent = 'Mixer render error: ' + (err?.message ?? String(err));
     masters.appendChild(errEl);
   }
-}
-
-function _buildStereoLinkBtn(leftCh, rightCh) {
-  const leftIdx  = parseInt(leftCh.id.replace('rx_', ''), 10);
-  const rightIdx = parseInt(rightCh.id.replace('rx_', ''), 10);
-  const link     = st.getStereoLink(leftIdx);
-  const linked   = !!(link?.linked);
-
-  const wrap = document.createElement('div');
-  wrap.className = 'stereo-link-connector' + (linked ? ' linked' : '');
-  wrap.id = `stereo-link-${leftIdx}`;
-
-  const btn = document.createElement('button');
-  btn.className = 'stereo-link-btn';
-  btn.textContent = linked ? '⛓ UNLINK' : '⛓ LINK';
-  btn.title = linked
-    ? `Unlink stereo pair ${leftIdx + 1}/${rightIdx + 1}`
-    : `Link as stereo pair ${leftIdx + 1}/${rightIdx + 1}`;
-  wrap.appendChild(btn);
-
-  wrap.onclick = async (e) => {
-    e.stopPropagation();
-    try {
-      if (linked) {
-        await api.deleteStereoLink(leftIdx);
-        st.setStereoLinks(st.state.stereoLinks.filter(sl => sl.left_channel !== leftIdx));
-        wrap.classList.remove('linked');
-        btn.textContent = '⛓ LINK';
-      } else {
-        await api.postStereoLink(leftIdx, rightIdx);
-        const sl = { left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 };
-        const existing = st.state.stereoLinks.filter(s => s.left_channel !== leftIdx);
-        st.setStereoLinks([...existing, sl]);
-        wrap.classList.add('linked');
-        btn.textContent = '⛓ UNLINK';
-      }
-      // Trigger matrix re-render to update L/R badges
-      const matCont = document.getElementById('tab-matrix');
-      if (matCont) { const { render } = await import('./matrix.js'); render(matCont); }
-    } catch(e) { toast(e.message, true); }
-  };
-
-  return wrap;
 }
 
 function _buildVcaStrip(vca) {
@@ -486,19 +562,18 @@ function _buildVcaStrip(vca) {
   strip.appendChild(muteBtn);
 
   // Delete button
-  const delBtn = document.createElement('button');
-  delBtn.className = 'vca-delete-btn';
-  delBtn.textContent = '✕';
-  delBtn.title = 'Delete VCA group';
-  delBtn.onclick = async () => {
-    if (!confirm(`Delete VCA group "${vca.name}"?`)) return;
-    try {
-      await api.deleteVcaGroup(vca.id);
-      st.removeVcaGroup(vca.id);
-      strip.remove();
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(delBtn);
+  strip.appendChild(_buildStripMenuButton('VCA actions', [{
+    label: 'Delete VCA group',
+    destructive: true,
+    onSelect: async () => {
+      if (!confirm(`Delete VCA group "${vca.name}"?`)) return;
+      try {
+        await api.deleteVcaGroup(vca.id);
+        st.removeVcaGroup(vca.id);
+        strip.remove();
+      } catch(e) { toast(e.message, true); }
+    },
+  }]));
 
   return strip;
 }
@@ -660,21 +735,20 @@ function _buildAmGroupStrip(g) {
   strip.appendChild(cfgBtn);
 
   // Delete
-  const delBtn = document.createElement('button');
-  delBtn.className = 'vca-delete-btn';
-  delBtn.textContent = '✕';
-  delBtn.title = 'Delete automixer group';
-  delBtn.onclick = async () => {
-    if (!confirm(`Delete automixer group "${g.name}"?`)) return;
-    try {
-      await api.deleteAutomixerGroup(g.id);
-      st.setAutomixerGroups(st.state.automixerGroups.filter(x => x.id !== g.id));
-      const masters = document.getElementById('mixer-masters');
-      const strips  = document.querySelector('.mixer-strips');
-      if (strips && masters) _renderStrips(strips, masters);
-    } catch(e) { toast(e.message, true); }
-  };
-  strip.appendChild(delBtn);
+  strip.appendChild(_buildStripMenuButton('Automixer actions', [{
+    label: 'Delete automixer group',
+    destructive: true,
+    onSelect: async () => {
+      if (!confirm(`Delete automixer group "${g.name}"?`)) return;
+      try {
+        await api.deleteAutomixerGroup(g.id);
+        st.setAutomixerGroups(st.state.automixerGroups.filter(x => x.id !== g.id));
+        const masters = document.getElementById('mixer-masters');
+        const strips  = document.querySelector('.mixer-strips');
+        if (strips && masters) _renderStrips(strips, masters);
+      } catch(e) { toast(e.message, true); }
+    },
+  }]));
 
   return strip;
 }
@@ -914,17 +988,16 @@ function _buildGenStrip(gen) {
 
   // Routing is handled in the matrix tab (generator rows)
 
-  const delBtn = document.createElement('button');
-  delBtn.className = 'vca-delete-btn gen-delete-btn';
-  delBtn.textContent = '×';
-  delBtn.title = 'Delete generator';
-  delBtn.onclick = async () => {
-    if (!confirm(`Delete generator "${gen.name}"?`)) return;
-    await api.deleteGenerator(gen.id);
-    st.removeGenerator(gen.id);
-    strip.remove();
-  };
-  strip.appendChild(delBtn);
+  strip.appendChild(_buildStripMenuButton('Generator actions', [{
+    label: 'Delete generator',
+    destructive: true,
+    onSelect: async () => {
+      if (!confirm(`Delete generator "${gen.name}"?`)) return;
+      await api.deleteGenerator(gen.id);
+      st.removeGenerator(gen.id);
+      strip.remove();
+    },
+  }]));
 
   return strip;
 }
@@ -1000,7 +1073,7 @@ function _showGenRoutingPopover(gen, genIdx, anchor, evt) {
   setTimeout(() => document.addEventListener('click', close), 0);
 }
 
-function _buildInputStrip(ch, nextCh) {
+function _buildInputStrip(ch) {
   const chIdx = parseInt(ch.id.replace('rx_', ''), 10);
 
   const strip = createStrip({
@@ -1140,28 +1213,6 @@ function _buildInputStrip(ch, nextCh) {
   };
   nameRow.appendChild(colourBtn);
 
-  if (nextCh && chIdx % 2 === 0) {
-    const nextIdx = parseInt(nextCh.id.replace('rx_', ''), 10);
-    const link    = st.getStereoLink(chIdx);
-    const linked  = !!(link?.linked);
-    const btn = _buildStereoToggleButton(
-      chIdx,
-      nextIdx,
-      linked,
-      `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`,
-      `Link as stereo ${chIdx + 1}/${nextIdx + 1}`,
-      async (shouldLink) => {
-        if (shouldLink) {
-          await api.postStereoLink(chIdx, nextIdx);
-        } else {
-          await api.deleteStereoLink(chIdx);
-        }
-        st.setStereoLinks(_replaceStereoLink(st.state.stereoLinks, chIdx, nextIdx, shouldLink));
-      }
-    );
-    strip.insertBefore(btn, strip.querySelector(`#mute-${ch.id}`));
-  }
-
   // ── Polarity invert (Ø) ───────────────────────────────────────────────────
   const initInvert = !!(ch.dsp?.polarity?.invert);
   const polBtn = document.createElement('button');
@@ -1242,22 +1293,20 @@ function _buildBusStrip(bus) {
     },
     onDspOpen: (blk, btn) => openPanel(blk, bus.id, btn),
   });
-  const delBtn = document.createElement('button');
-  delBtn.className = 'vca-delete-btn';
-  delBtn.textContent = '✕';
-  delBtn.title = 'Delete internal bus';
-  delBtn.onclick = async (e) => {
-    e.stopPropagation();
-    if (!confirm(`Delete internal bus "${bus.name ?? bus.id}"?`)) return;
-    try {
-      await api.deleteBus(bus.id);
-      st.removeBus(bus.id);
-      window.dispatchEvent(new CustomEvent('pb:buses-changed'));
-    } catch (err) {
-      toast(err.message, true);
-    }
-  };
-  strip.appendChild(delBtn);
+  strip.appendChild(_buildStripMenuButton('Bus actions', [{
+    label: 'Delete bus',
+    destructive: true,
+    onSelect: async () => {
+      if (!confirm(`Delete internal bus "${bus.name ?? bus.id}"?`)) return;
+      try {
+        await api.deleteBus(bus.id);
+        st.removeBus(bus.id);
+        window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+      } catch (err) {
+        toast(err.message, true);
+      }
+    },
+  }]));
   return strip;
 }
 
@@ -1291,7 +1340,7 @@ function _openBusRoutingPanel(bus) {
   document.body.appendChild(panel);
 }
 
-function _buildOutputMaster(out, nextOut) {
+function _buildOutputMaster(out) {
   const txIdx  = parseInt(out.id.replace('tx_', ''), 10);
   const color  = st.getZoneColour(out.zone_colour_index ?? 0);
   const curOut = st.state.outputs.get(out.id);
@@ -1355,27 +1404,6 @@ function _buildOutputMaster(out, nextOut) {
   });
 
   strip.style.setProperty('--zone-card-color', color);
-  if (nextOut && txIdx % 2 === 0) {
-    const nextIdx = parseInt(nextOut.id.replace('tx_', ''), 10);
-    const link = st.getOutputStereoLink(txIdx);
-    const linked = !!(link?.linked);
-    const btn = _buildStereoToggleButton(
-      txIdx,
-      nextIdx,
-      linked,
-      `Unlink stereo pair ${txIdx + 1}/${nextIdx + 1}`,
-      `Link outputs ${txIdx + 1}/${nextIdx + 1} as stereo`,
-      async (shouldLink) => {
-        if (shouldLink) {
-          await api.postOutputStereoLink(txIdx, nextIdx);
-        } else {
-          await api.deleteOutputStereoLink(txIdx);
-        }
-        st.setOutputStereoLinks(_replaceStereoLink(st.state.outputStereoLinks, txIdx, nextIdx, shouldLink));
-      }
-    );
-    strip.insertBefore(btn, strip.querySelector(`#mute-${out.id}`));
-  }
   return strip;
 }
 
