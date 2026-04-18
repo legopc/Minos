@@ -188,7 +188,7 @@ pub async fn put_channel(
         cfg.input_colours[i] = colour_index.map(|c| (c % 10) as i8).unwrap_or(-1);
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -249,7 +249,7 @@ pub async fn put_input_polarity(
     };
     dsp.polarity = body.invert;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -267,7 +267,7 @@ pub async fn put_input_hpf(
     params.enabled = body.enabled;
     dsp.hpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -285,7 +285,7 @@ pub async fn put_input_lpf(
     params.enabled = body.enabled;
     dsp.lpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -303,7 +303,7 @@ pub async fn put_input_eq(
     params.enabled = body.enabled;
     dsp.eq = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -319,7 +319,7 @@ pub async fn put_input_eq_enabled(
     };
     dsp.eq.enabled = body.enabled;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -337,7 +337,7 @@ pub async fn put_input_gate(
     params.enabled = body.enabled;
     dsp.gate = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -355,7 +355,7 @@ pub async fn put_input_compressor(
     params.enabled = body.enabled;
     dsp.compressor = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -382,7 +382,7 @@ pub async fn put_input_aec(
     params.enabled = body.enabled;
     dsp.aec = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -416,7 +416,7 @@ pub async fn put_input_enabled(
         }
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -440,7 +440,7 @@ pub async fn put_input_automixer(
         dsp.automixer.weight = w.clamp(0.01, 10.0);
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -500,11 +500,11 @@ pub async fn put_input_feedback(
             d.feedback.enabled = was;
         }
         drop(cfg2);
-        crate::persist_or_500!(s);
+        s.schedule_persist().await;
         return StatusCode::NO_CONTENT.into_response();
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -531,6 +531,6 @@ pub async fn put_input_deq(
     params.enabled = body.enabled;
     dsp.deq = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }

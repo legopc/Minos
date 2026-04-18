@@ -251,7 +251,7 @@ pub async fn put_bus_gain(
     bus.dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
     let ev = serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"am","params":{"gain_db":bus.dsp.gain_db}});
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(&s, ev.to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -271,7 +271,7 @@ pub async fn put_bus_polarity(
     };
     bus.dsp.polarity = body.invert;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"am","params":{"invert_polarity":body.invert}}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -293,7 +293,7 @@ pub async fn put_bus_hpf(
     params.enabled = body.enabled;
     bus.dsp.hpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"flt"}).to_string(),
@@ -318,7 +318,7 @@ pub async fn put_bus_lpf(
     params.enabled = body.enabled;
     bus.dsp.lpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"flt"}).to_string(),
@@ -343,7 +343,7 @@ pub async fn put_bus_eq(
     params.enabled = body.enabled;
     bus.dsp.eq = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"peq"}).to_string(),
@@ -366,7 +366,7 @@ pub async fn put_bus_eq_enabled(
     };
     bus.dsp.eq.enabled = body.enabled;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(&s, serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"peq","params":{"enabled":body.enabled}}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -388,7 +388,7 @@ pub async fn put_bus_gate(
     params.enabled = body.enabled;
     bus.dsp.gate = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"gte"}).to_string(),
@@ -413,7 +413,7 @@ pub async fn put_bus_compressor(
     params.enabled = body.enabled;
     bus.dsp.compressor = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_dsp_update","id":&id,"block":"cmp"}).to_string(),
@@ -436,7 +436,7 @@ pub async fn put_bus_mute(
     };
     bus.muted = body.muted;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_update","id":&id,"muted":body.muted}).to_string(),
@@ -462,7 +462,7 @@ pub async fn put_bus_routing(
     routing.resize(rx_channels, false);
     cfg.internal_buses[i].routing = routing.clone();
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_routing_update","id":&id,"routing":routing}).to_string(),
@@ -489,7 +489,7 @@ pub async fn put_bus_input_gain(
     let clamped = body.gain_db.clamp(-40.0, 12.0);
     cfg.internal_buses[i].routing_gain[body.rx] = clamped;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -508,7 +508,7 @@ pub async fn put_bus_matrix(
     }
     cfg.bus_matrix = Some(matrix.clone());
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_matrix_update","matrix":matrix}).to_string(),
@@ -552,7 +552,7 @@ pub async fn put_bus_feed(
     fm[dst][src] = body.active;
     let matrix = fm.clone();
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(
         &s,
         serde_json::json!({"type":"bus_feed_update","matrix":matrix}).to_string(),

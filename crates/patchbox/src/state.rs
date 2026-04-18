@@ -6,7 +6,9 @@ pub use patchbox_core::metrics::DspMetrics;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::task::JoinHandle;
+use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,6 +39,8 @@ pub struct AppState {
     /// (Reserved for future monitor thread restart API; not currently read from AppState)
     #[allow(dead_code)]
     pub monitor_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    /// Debounced config persist task for high-frequency control changes.
+    pub persist_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl AppState {
@@ -61,6 +65,7 @@ impl AppState {
             dsp_metrics: Arc::new(DspMetrics::new()),
             monitor_shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             monitor_thread: Arc::new(std::sync::Mutex::new(None)),
+            persist_task: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -93,5 +98,20 @@ impl AppState {
     pub async fn persist_scenes(&self) -> Result<(), String> {
         let store = self.scenes.read().await;
         store.save(&self.scenes_path)
+    }
+
+    pub async fn schedule_persist(&self) {
+        let mut task = self.persist_task.lock().await;
+        if let Some(handle) = task.take() {
+            handle.abort();
+        }
+
+        let state = self.clone();
+        *task = Some(tokio::spawn(async move {
+            sleep(Duration::from_millis(350)).await;
+            if let Err(e) = state.persist().await {
+                tracing::error!(error = %e, "debounced config persist failed");
+            }
+        }));
     }
 }

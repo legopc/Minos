@@ -210,7 +210,7 @@ pub async fn put_output_resource(
         }
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     ws_broadcast(&s, serde_json::json!({"type":"output_update","id":&id,"volume_db":body.volume_db,"muted":body.muted}).to_string());
     StatusCode::NO_CONTENT.into_response()
 }
@@ -246,7 +246,7 @@ pub(crate) async fn put_output_gain(
         }
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -264,7 +264,7 @@ pub(crate) async fn put_output_hpf(
     params.enabled = body.enabled;
     dsp.hpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -282,7 +282,7 @@ pub(crate) async fn put_output_lpf(
     params.enabled = body.enabled;
     dsp.lpf = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -300,7 +300,7 @@ pub(crate) async fn put_output_eq(
     params.enabled = body.enabled;
     dsp.eq = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -316,7 +316,7 @@ pub(crate) async fn put_output_eq_enabled(
     };
     dsp.eq.enabled = body.enabled;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -334,7 +334,7 @@ pub(crate) async fn put_output_compressor(
     params.enabled = body.enabled;
     dsp.compressor = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -352,7 +352,7 @@ pub(crate) async fn put_output_limiter(
     params.enabled = body.enabled;
     dsp.limiter = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -370,7 +370,7 @@ pub(crate) async fn put_output_delay(
     params.enabled = body.enabled;
     dsp.delay = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -389,7 +389,7 @@ pub(crate) async fn put_output_dither(
     };
     dsp.dither_bits = body.bits;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -411,7 +411,7 @@ pub(crate) async fn put_output_enabled(
         }
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -439,7 +439,7 @@ pub(crate) async fn put_output_mute(
         *m = body.muted;
     }
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -469,6 +469,6 @@ pub(crate) async fn put_output_deq(
     params.enabled = body.enabled;
     dsp.deq = params;
     drop(cfg);
-    crate::persist_or_500!(s);
+    s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
 }
