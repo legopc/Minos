@@ -32,6 +32,26 @@ function _getCh(channelId) {
   return state.outputs.get(channelId);
 }
 
+function _setAmState(channelId, params) {
+  const ch = _getCh(channelId);
+  if (!ch) return;
+  if (!ch.dsp) ch.dsp = {};
+  const gain_db = Number(params?.gain_db ?? 0);
+  const invert_polarity = !!params?.invert_polarity;
+  if ('gain_db' in ch) ch.gain_db = gain_db;
+  const prev = ch.dsp.am ?? {};
+  ch.dsp.am = {
+    ...prev,
+    enabled: true,
+    bypassed: gain_db === 0 && !invert_polarity,
+    params: {
+      ...(prev.params ?? {}),
+      gain_db,
+      invert_polarity,
+    },
+  };
+}
+
 /**
  * Open a DSP processor panel for an audio channel.
  * @param {DspKind} blockKey - DSP processor kind (peq, cmp, gte, etc.)
@@ -273,6 +293,47 @@ function _onParamChange(channelId, block, newParams) {
           return;
         }
 
+        if (block === 'am') {
+          const afterAm = {
+            gain_db: Number(after?.gain_db ?? before.params?.gain_db ?? 0),
+            invert_polarity: !!(after?.invert_polarity ?? before.params?.invert_polarity),
+          };
+          const beforeAm = {
+            gain_db: Number(before.params?.gain_db ?? 0),
+            invert_polarity: !!before.params?.invert_polarity,
+          };
+
+          const applyAm = async (params) => {
+            if (isBus) {
+              await Promise.all([
+                api.setBusGain(channelId, params.gain_db),
+                api.putBusPolarity(channelId, params.invert_polarity),
+              ]);
+            } else if (isRx) {
+              await Promise.all([
+                api.putInputGain(idx, params.gain_db),
+                api.putInputPolarity(idx, params.invert_polarity),
+              ]);
+            } else {
+              throw new Error('AM block is not supported on outputs');
+            }
+
+            _setAmState(channelId, params);
+            syncBadges(channelId, block);
+          };
+
+          await applyAm(afterAm);
+
+          undo.push({
+            label: `DSP am: ${channelId}`,
+            apply: async () => applyAm(afterAm),
+            revert: async () => applyAm(beforeAm),
+          });
+
+          paramChangeDebounce.delete(key);
+          return;
+        }
+
         const mappedBlock = dspBlockMap[block] || block;
         const endpoint = `${base}/${mappedBlock}`;
         const afterEnabled = after?.enabled ?? false;
@@ -342,6 +403,37 @@ async function _onBypass(channelId, block, bypassed) {
         label: `${bypassed ? 'Bypass' : 'Enable'} DSP flt: ${channelId}`,
         apply: async () => applyFltByp(bypassed),
         revert: async () => applyFltByp(beforeByp),
+      });
+      return;
+    }
+
+    if (block === 'am') {
+      const beforeParams = _clone(ch0?.dsp?.am?.params ?? { gain_db: 0, invert_polarity: false });
+      const applyAmByp = async (byp) => {
+        const params = byp ? { gain_db: 0, invert_polarity: false } : beforeParams;
+        if (isBus) {
+          await Promise.all([
+            api.setBusGain(channelId, params.gain_db),
+            api.putBusPolarity(channelId, params.invert_polarity),
+          ]);
+        } else if (isRx) {
+          await Promise.all([
+            api.putInputGain(idx, params.gain_db),
+            api.putInputPolarity(idx, params.invert_polarity),
+          ]);
+        } else {
+          throw new Error('AM block is not supported on outputs');
+        }
+        _setAmState(channelId, params);
+        syncBadges(channelId, block);
+      };
+
+      await applyAmByp(bypassed);
+
+      undo.push({
+        label: `${bypassed ? 'Bypass' : 'Enable'} DSP am: ${channelId}`,
+        apply: async () => applyAmByp(bypassed),
+        revert: async () => applyAmByp(beforeByp),
       });
       return;
     }

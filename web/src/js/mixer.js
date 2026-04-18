@@ -1090,39 +1090,6 @@ function _buildInputStrip(ch, nextCh) {
   const dbLabel = strip.querySelector(`#mix-lbl-${ch.id}`);
   strip.insertBefore(polBtn, dbLabel);
 
-  // ── Zone route buttons ────────────────────────────────────────────────────
-  const zoneRow = document.createElement('div');
-  zoneRow.className = 'strip-zone-row';
-  st.zoneList().forEach((zone, zi) => {
-    const color = st.getZoneColour(zone.colour_index ?? zi);
-    const btn = document.createElement('button');
-    btn.className = 'strip-zone-btn';
-    btn.style.setProperty('--zone-card-color', color);
-    btn.textContent = zone.name ?? zone.id;
-    btn.dataset.active = _hasZoneRoute(ch.id, zone) ? '1' : '0';
-    if (btn.dataset.active === '1') btn.classList.add('active');
-    btn.onclick = async () => {
-      const active = btn.dataset.active === '1';
-      try {
-        if (active) {
-          for (const txId of (zone.tx_ids ?? [])) {
-            await api.deleteRoute(`${ch.id}|${txId}`);
-            st.removeRoute(ch.id, txId);
-          }
-        } else {
-          for (const txId of (zone.tx_ids ?? [])) {
-            const r = await api.postRoute(ch.id, txId, 'local');
-            st.setRoute({ route_type: 'dante', ...r });
-          }
-        }
-        btn.dataset.active = active ? '0' : '1';
-        btn.classList.toggle('active', btn.dataset.active === '1');
-      } catch(e) { toast(e.message, true); }
-    };
-    zoneRow.appendChild(btn);
-  });
-  strip.appendChild(zoneRow);
-
   return strip;
 }
 
@@ -1314,10 +1281,6 @@ export function updateMetering(rx, tx, bus) {
   update(bus);
 }
 
-function _hasZoneRoute(rxId, zone) {
-  return (zone.tx_ids ?? []).some(txId => st.hasRoute(rxId, txId));
-}
-
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
 
 function _refreshSoloButtons() {
@@ -1368,4 +1331,3 @@ window.addEventListener('pb:solo-update', () => {
   _applySoloVisual();
   _updateSoloIndicator();
 });
-

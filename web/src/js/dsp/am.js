@@ -1,24 +1,43 @@
-// dsp/am.js — Polarity / Auto-Mix panel
-import { DSP_COLOURS } from './colours.js';
+// dsp/am.js — Polarity / Gain trim panel
 const BK = 'am';
 
 export function buildContent(channelId, params, accentColor, { onChange, onBypass }) {
   const p = Object.assign({ invert_polarity: false, gain_db: 0.0, bypassed: false }, params);
   const el = document.createElement('div');
+  let bypBtn;
+  let polarityBtn;
 
-  function emit() { onChange(BK, { ...p }); }
+  function sync() {
+    p.bypassed = _isBypassed(p);
+    gainVal.textContent = _db(p.gain_db);
+    _syncByp(bypBtn, el, p.bypassed);
+  }
+
+  function emit() {
+    sync();
+    onChange(BK, { ...p });
+  }
 
   // Polarity invert
-  el.appendChild(_row('Polarity', _toggle(p.invert_polarity, v => { p.invert_polarity = v; emit(); })));
+  polarityBtn = _toggle(p.invert_polarity, v => { p.invert_polarity = v; emit(); });
+  el.appendChild(_row('Polarity', polarityBtn));
 
   // Gain trim
   const gainVal = _val(_db(p.gain_db));
   const gainS   = _slider(-20, 20, 0.5, p.gain_db, v => { p.gain_db = +v; gainVal.textContent = _db(v); emit(); });
   el.appendChild(_row('Gain', gainS, gainVal));
 
-  // Bypass
-  const bypBtn = _bypBtn(p.bypassed, v => { p.bypassed = v; onBypass(BK, v); _syncByp(bypBtn, el, v); });
+  // Neutral trim/polarity is effectively bypassed for AM.
+  bypBtn = _bypBtn(p.bypassed, () => {
+    p.invert_polarity = false;
+    p.gain_db = 0;
+    polarityBtn.setState(false);
+    gainS.value = '0';
+    emit();
+  });
   el.appendChild(_row('', bypBtn));
+
+  sync();
 
   return el;
 }
@@ -35,11 +54,17 @@ function _slider(min, max, step, val, cb) {
 function _val(t)  { const s=document.createElement('span'); s.className='dsp-value'; s.textContent=t; return s; }
 function _toggle(on, cb) {
   const b=document.createElement('button'); b.className='dsp-toggle-btn'+(on?' active':'');
-  b.textContent=on?'INV':'NORM'; b.onclick=()=>{ const v=!b.classList.contains('active'); b.classList.toggle('active',v); b.textContent=v?'INV':'NORM'; cb(v); }; return b;
+  b.setState = (v) => {
+    b.classList.toggle('active', !!v);
+    b.textContent = v ? 'INV' : 'NORM';
+  };
+  b.setState(on);
+  b.onclick=()=>{ const v=!b.classList.contains('active'); b.setState(v); cb(v); }; return b;
 }
 function _bypBtn(on, cb) {
   const b=document.createElement('button'); b.className='dsp-byp-btn'+(on?' active':'');
-  b.textContent='BYP'; b.onclick=()=>{ const v=!b.classList.contains('active'); b.classList.toggle('active',v); cb(v); }; return b;
+  b.textContent='BYP'; b.onclick=()=>cb(); return b;
 }
 function _syncByp(btn, el, v) { btn.classList.toggle('active',v); el.style.opacity=v?'0.22':'1'; }
+function _isBypassed(p) { return Number(p.gain_db ?? 0) === 0 && !p.invert_polarity; }
 function _db(v)  { return (v>=0?'+':'')+Number(v).toFixed(1)+' dB'; }

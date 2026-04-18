@@ -503,6 +503,14 @@ export const setBusInputGain  = (busId, rxIdx, gain_db) => reqWithRetry('PUT', `
 export const setBusGain    = (id, gain_db)  => reqWithRetry('PUT', `/buses/${id}/gain`, { gain_db });
 
 /**
+ * Set bus polarity invert.
+ * @param {string} id - Bus ID
+ * @param {boolean} invert - Invert polarity
+ * @returns {Promise<null>}
+ */
+export const putBusPolarity = (id, invert) => reqWithRetry('PUT', `/buses/${id}/polarity`, { invert });
+
+/**
  * Mute/unmute bus.
  * @param {string} id - Bus ID
  * @param {boolean} muted - Mute state

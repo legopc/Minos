@@ -301,36 +301,6 @@
   border-color: var(--color-accent);
 }
 
-/* Zone route toggle buttons */
-.strip-zone-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1px;
-  justify-content: center;
-  width: 100%;
-}
-
-.strip-zone-btn {
-  font-size: 13px;
-  padding: 6px 10px;
-  min-height: 44px;
-  background: var(--bg-dark);
-  border: 1px solid var(--border-primary);
-  color: var(--text-muted);
-  border-radius: 2px;
-  cursor: pointer;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.strip-zone-btn:hover { background: var(--bg-row-hover); }
-.strip-zone-btn.active {
-  border-color: var(--zone-card-color, #444);
-  color: var(--zone-card-color, #888);
-  background: var(--bg-surface);
-}
-
 /* Mute button */
 .strip-mute-btn {
   width: 100%;

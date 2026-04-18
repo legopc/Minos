@@ -133,7 +133,22 @@ function _dispatch(msg) {
         const bus = st.state.buses.get(msg.id);
         if (bus && msg.block && msg.params) {
           if (!bus.dsp) bus.dsp = {};
-          bus.dsp[msg.block] = msg.params;
+          const prev = bus.dsp[msg.block] ?? {};
+          const params = { ...(prev.params ?? {}), ...msg.params };
+          if (msg.block === 'am') {
+            bus.dsp[msg.block] = {
+              ...prev,
+              enabled: true,
+              bypassed: Number(params.gain_db ?? 0) === 0 && !params.invert_polarity,
+              params,
+            };
+          } else {
+            bus.dsp[msg.block] = {
+              ...prev,
+              enabled: msg.params.enabled ?? prev.enabled,
+              params,
+            };
+          }
         }
       }
       break;

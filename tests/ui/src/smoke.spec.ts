@@ -80,6 +80,82 @@ test.describe('Minos UI smoke', () => {
     await expect(filter).toHaveValue('');
   });
 
+  test('matrix disabled DSP badges stay dim after re-render', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="matrix"]').click();
+
+    const channelId = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const matrix = await import('/js/matrix.js');
+      const first = st.channelList()[0];
+      if (!first) return null;
+
+      st.setChannel({
+        ...first,
+        dsp: {
+          ...(first.dsp ?? {}),
+          cmp: {
+            ...(first.dsp?.cmp ?? {}),
+            enabled: false,
+            bypassed: false,
+          },
+        },
+      });
+
+      matrix.render(document.getElementById('tab-matrix'));
+      return first.id;
+    });
+
+    expect(channelId).toBeTruthy();
+
+    const badge = page.locator(
+      `#tab-matrix .ch-label[data-ch-id="${channelId}"] .ch-dsp-badge[data-block="cmp"]`
+    ).first();
+
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveClass(/byp/);
+    await expect(badge).toHaveAttribute('title', /disabled/);
+  });
+
+  test('AM panel resets to neutral state and marks itself bypassed', async ({ page }) => {
+    const state = await page.evaluate(async () => {
+      const { buildContent } = await import('/js/dsp/am.js');
+      const host = document.createElement('div');
+      host.id = 'ui-smoke-am';
+      document.body.appendChild(host);
+
+      let last = null;
+      const panel = buildContent('rx_0', {
+        gain_db: 3.0,
+        invert_polarity: true,
+        bypassed: false,
+      }, '#888', {
+        onChange: (_block, params) => { last = params; },
+        onBypass: () => {},
+      });
+      host.appendChild(panel);
+
+      panel.querySelector('.dsp-byp-btn')?.click();
+
+      return {
+        opacity: panel.style.opacity,
+        bypActive: panel.querySelector('.dsp-byp-btn')?.classList.contains('active'),
+        polarityLabel: panel.querySelector('.dsp-toggle-btn')?.textContent,
+        gainValue: panel.querySelector('.dsp-slider')?.value,
+        last,
+      };
+    });
+
+    expect(state.opacity).toBe('0.22');
+    expect(state.bypActive).toBeTruthy();
+    expect(state.polarityLabel).toBe('NORM');
+    expect(state.gainValue).toBe('0');
+    expect(state.last).toMatchObject({
+      gain_db: 0,
+      invert_polarity: false,
+      bypassed: true,
+    });
+  });
+
   test('mixer fader updates aria-valuenow on input', async ({ page }) => {
     await page.locator('.tab-btn[data-tab="mixer"]').click();
 
@@ -95,6 +171,11 @@ test.describe('Minos UI smoke', () => {
     const after = await fader.getAttribute('aria-valuenow');
 
     expect(after).not.toBe(before);
+  });
+
+  test('mixer inputs do not render zone route buttons', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+    await expect(page.locator('#tab-mixer .strip-zone-btn')).toHaveCount(0);
   });
 
   test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {

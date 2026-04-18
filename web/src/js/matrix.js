@@ -644,12 +644,13 @@ function _buildHdrRow(outputs, txZoneMap, buses) {
     Object.keys(outDsp).forEach(blk => {
       const block = outDsp[blk];
       const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+      const badgeState = _getDspBadgeState(block);
       const badge = document.createElement('button');
-      badge.className = 'ch-dsp-badge out-dsp-badge' + ((!block.enabled || block.bypassed) ? ' byp' : '');
+      badge.className = 'ch-dsp-badge out-dsp-badge' + (badgeState.isByp ? ' byp' : '');
       badge.dataset.block = blk;
       badge.dataset.ch = out.id;
       badge.textContent = colour.label ?? blk.toUpperCase();
-      badge.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+      badge.title = blk + badgeState.titleSuffix;
       badge.style.background = colour.bg;
       badge.style.color = colour.fg;
       badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, out.id, badge); };
@@ -742,12 +743,13 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     const block = dsp[blk];
 
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const badgeState = _getDspBadgeState(block);
     const badge = document.createElement('button');
-    badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');
+    badge.className = 'ch-dsp-badge' + (badgeState.isByp ? ' byp' : '');
     badge.dataset.block = blk;
     badge.dataset.ch = ch.id;
     badge.textContent = colour.label ?? blk.toUpperCase();
-    badge.title = blk + (block.bypassed ? ' (bypassed)' : ' (active)');
+    badge.title = blk + badgeState.titleSuffix;
     badge.style.background = colour.bg;
     badge.style.color = colour.fg;
     badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, ch.id, badge); };
@@ -931,12 +933,13 @@ function _buildBusRow(bus, busIdx, outputs, buses) {
     const block = dsp[blk];
 
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const badgeState = _getDspBadgeState(block);
     const badge = document.createElement('button');
-    badge.className = 'ch-dsp-badge' + (block.bypassed ? ' byp' : '');
+    badge.className = 'ch-dsp-badge' + (badgeState.isByp ? ' byp' : '');
     badge.dataset.block = blk;
     badge.dataset.busId = bus.id;
     badge.textContent = colour.label ?? blk.toUpperCase();
-    badge.title = blk + (block.bypassed ? ' (bypassed)' : ' (active)');
+    badge.title = blk + badgeState.titleSuffix;
     badge.style.background = colour.bg;
     badge.style.color = colour.fg;
     badge.onclick = (e) => { e.stopPropagation(); openPanel(blk, bus.id, badge); };
@@ -1441,13 +1444,13 @@ function _toggleDspPicker(btn, ch) {
   blocks.forEach(blk => {
     const block = dsp[blk];
     const colour = DSP_COLOURS[blk] ?? { bg: '#333', fg: '#fff', label: blk.toUpperCase() };
+    const badgeState = _getDspBadgeState(block);
     const b = document.createElement('button');
     b.className = 'dsp-picker-btn';
     b.style.background = colour.bg;
     b.style.color = colour.fg;
-    const active = block.enabled && !block.bypassed;
-    b.textContent = (colour.label ?? blk.toUpperCase()) + (active ? ' ●' : '');
-    b.title = blk + (block.enabled ? (block.bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)');
+    b.textContent = (colour.label ?? blk.toUpperCase()) + (badgeState.isActive ? ' ●' : '');
+    b.title = blk + badgeState.titleSuffix;
     b.onclick = (e) => {
       e.stopPropagation();
       picker.remove();
@@ -1474,6 +1477,16 @@ function _toggleDspPicker(btn, ch) {
     }
   };
   setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+function _getDspBadgeState(block) {
+  const enabled = !!block?.enabled;
+  const bypassed = !!block?.bypassed;
+  return {
+    isByp: bypassed || !enabled,
+    isActive: enabled && !bypassed,
+    titleSuffix: enabled ? (bypassed ? ' (bypassed)' : ' (active)') : ' (disabled)',
+  };
 }
 
 let _lastBtn = null;
