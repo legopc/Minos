@@ -36,6 +36,87 @@ function _mirrorLinkedInputFader(channelId, db) {
   if (linkedStrip) updateStripFader(linkedStrip, db);
 }
 
+function _setOutputState(outputId, patch) {
+  const liveOut = st.state.outputs.get(outputId);
+  if (!liveOut) return;
+  st.setOutput({ ...liveOut, ...patch });
+}
+
+function _getLinkedOutputId(outputId) {
+  const txIdx = parseInt(outputId.replace('tx_', ''), 10);
+  const link = st.getOutputStereoLink(txIdx);
+  if (!link?.linked) return null;
+  const linkedIdx = link.left_channel === txIdx ? link.right_channel : link.left_channel;
+  return Number.isInteger(linkedIdx) ? `tx_${linkedIdx}` : null;
+}
+
+function _setOutputMuteButton(outputId, muted) {
+  const btn = document.getElementById(`mute-${outputId}`);
+  if (!btn) return;
+  btn.classList.toggle('active', muted);
+  btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  btn.textContent = muted ? 'MUTE' : 'mute';
+}
+
+function _mirrorLinkedOutputFader(outputId, db) {
+  _setOutputState(outputId, { volume_db: db });
+  const strip = document.getElementById(`strip-${outputId}`);
+  if (strip) updateStripFader(strip, db);
+  const linkedId = _getLinkedOutputId(outputId);
+  if (!linkedId) return;
+  _setOutputState(linkedId, { volume_db: db });
+  const linkedStrip = document.getElementById(`strip-${linkedId}`);
+  if (linkedStrip) updateStripFader(linkedStrip, db);
+}
+
+function _mirrorLinkedOutputMute(outputId, muted) {
+  _setOutputState(outputId, { muted });
+  _setOutputMuteButton(outputId, muted);
+  const linkedId = _getLinkedOutputId(outputId);
+  if (!linkedId) return;
+  _setOutputState(linkedId, { muted });
+  _setOutputMuteButton(linkedId, muted);
+}
+
+function _replaceStereoLink(links, leftIdx, rightIdx, linked) {
+  const filtered = (links ?? []).filter(sl =>
+    sl.left_channel !== leftIdx &&
+    sl.right_channel !== leftIdx &&
+    sl.left_channel !== rightIdx &&
+    sl.right_channel !== rightIdx
+  );
+  if (!linked) return filtered;
+  return [...filtered, { left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }];
+}
+
+function _buildStereoToggleButton(leftIdx, rightIdx, linked, titleLinked, titleUnlinked, onToggle) {
+  const btn = document.createElement('button');
+  btn.className = 'strip-stereo-btn' + (linked ? ' linked' : '');
+  btn.textContent = `ST ${leftIdx + 1}/${rightIdx + 1}`;
+  btn.setAttribute('aria-pressed', linked ? 'true' : 'false');
+  btn.type = 'button';
+
+  const sync = () => {
+    const isLinked = btn.classList.contains('linked');
+    btn.title = isLinked ? titleLinked : titleUnlinked;
+    btn.setAttribute('aria-pressed', isLinked ? 'true' : 'false');
+  };
+
+  sync();
+  btn.onclick = async (e) => {
+    e.stopPropagation();
+    const wasLinked = btn.classList.contains('linked');
+    try {
+      await onToggle(!wasLinked);
+      btn.classList.toggle('linked', !wasLinked);
+      sync();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
+  return btn;
+}
+
 export function render(container) {
   container.innerHTML = '';
   container.id = 'tab-mixer';
@@ -274,8 +355,8 @@ function _renderStrips(strips, masters) {
     outSep.className = 'mixer-output-separator';
     outSep.textContent = 'OUTPUTS';
     masters.appendChild(outSep);
-    outputs.forEach(out => {
-      const m = _buildOutputMaster(out);
+    outputs.forEach((out, idx) => {
+      const m = _buildOutputMaster(out, idx < outputs.length - 1 ? outputs[idx + 1] : null);
       masters.appendChild(m);
     });
   } catch (err) {
@@ -1063,31 +1144,22 @@ function _buildInputStrip(ch, nextCh) {
     const nextIdx = parseInt(nextCh.id.replace('rx_', ''), 10);
     const link    = st.getStereoLink(chIdx);
     const linked  = !!(link?.linked);
-
-    const btn = document.createElement('button');
-    btn.className = 'strip-stereo-btn' + (linked ? ' linked' : '');
-    btn.title = linked
-      ? `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`
-      : `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
-    btn.textContent = '⛓';
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      try {
-        if (linked) {
-          await api.deleteStereoLink(chIdx);
-          st.setStereoLinks(st.state.stereoLinks.filter(sl => sl.left_channel !== chIdx));
-          btn.classList.remove('linked');
-          btn.title = `Link as stereo ${chIdx + 1}/${nextIdx + 1}`;
-        } else {
+    const btn = _buildStereoToggleButton(
+      chIdx,
+      nextIdx,
+      linked,
+      `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`,
+      `Link as stereo ${chIdx + 1}/${nextIdx + 1}`,
+      async (shouldLink) => {
+        if (shouldLink) {
           await api.postStereoLink(chIdx, nextIdx);
-          const sl = { left_channel: chIdx, right_channel: nextIdx, linked: true, pan: 0.0 };
-          st.setStereoLinks([...st.state.stereoLinks.filter(s => s.left_channel !== chIdx), sl]);
-          btn.classList.add('linked');
-          btn.title = `Unlink stereo pair ${chIdx + 1}/${nextIdx + 1}`;
+        } else {
+          await api.deleteStereoLink(chIdx);
         }
-      } catch(e) { toast(e.message, true); }
-    };
-    nameRow.appendChild(btn);
+        st.setStereoLinks(_replaceStereoLink(st.state.stereoLinks, chIdx, nextIdx, shouldLink));
+      }
+    );
+    strip.insertBefore(btn, strip.querySelector(`#mute-${ch.id}`));
   }
 
   // ── Polarity invert (Ø) ───────────────────────────────────────────────────
@@ -1170,6 +1242,22 @@ function _buildBusStrip(bus) {
     },
     onDspOpen: (blk, btn) => openPanel(blk, bus.id, btn),
   });
+  const delBtn = document.createElement('button');
+  delBtn.className = 'vca-delete-btn';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete internal bus';
+  delBtn.onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete internal bus "${bus.name ?? bus.id}"?`)) return;
+    try {
+      await api.deleteBus(bus.id);
+      st.removeBus(bus.id);
+      window.dispatchEvent(new CustomEvent('pb:buses-changed'));
+    } catch (err) {
+      toast(err.message, true);
+    }
+  };
+  strip.appendChild(delBtn);
   return strip;
 }
 
@@ -1203,7 +1291,7 @@ function _openBusRoutingPanel(bus) {
   document.body.appendChild(panel);
 }
 
-function _buildOutputMaster(out) {
+function _buildOutputMaster(out, nextOut) {
   const txIdx  = parseInt(out.id.replace('tx_', ''), 10);
   const color  = st.getZoneColour(out.zone_colour_index ?? 0);
   const curOut = st.state.outputs.get(out.id);
@@ -1220,28 +1308,24 @@ function _buildOutputMaster(out) {
     dsp:        out.dsp ?? curOut?.dsp ?? {},
     onFader: async (db) => {
       try {
+        _mirrorLinkedOutputFader(out.id, db);
         await api.putOutputGain(txIdx, db);
-        const liveOut = st.state.outputs.get(out.id);
-        if (liveOut) st.setOutput({ ...liveOut, volume_db: db });
       } catch(e) { toast(e.message, true); }
     },
     onFaderCommit: (fromDb, toDb) => {
       (async () => {
         try {
           await api.putOutputGain(txIdx, toDb);
-          const liveOut = st.state.outputs.get(out.id);
-          if (liveOut) st.setOutput({ ...liveOut, volume_db: toDb });
+          _mirrorLinkedOutputFader(out.id, toDb);
           undo.push({
             label: `Output level: ${out.name ?? out.id}`,
             apply: async () => {
-              const o = st.state.outputs.get(out.id);
+              _mirrorLinkedOutputFader(out.id, toDb);
               await api.putOutputGain(txIdx, toDb);
-              if (o) st.setOutput({ ...o, volume_db: toDb });
             },
             revert: async () => {
-              const o = st.state.outputs.get(out.id);
+              _mirrorLinkedOutputFader(out.id, fromDb);
               await api.putOutputGain(txIdx, fromDb);
-              if (o) st.setOutput({ ...o, volume_db: fromDb });
             },
           });
         } catch (e) {
@@ -1250,23 +1334,20 @@ function _buildOutputMaster(out) {
       })();
     },
     onMute: async (nowMuted) => {
-      const liveOut = st.state.outputs.get(out.id);
       const newMuted = !nowMuted;
       await api.putOutputMute(txIdx, newMuted);
-      if (liveOut) st.setOutput({ ...liveOut, muted: newMuted });
+      _mirrorLinkedOutputMute(out.id, newMuted);
     },
     onMuteCommit: (fromMuted, toMuted) => {
       undo.push({
         label: `${toMuted ? 'Mute' : 'Unmute'} output: ${out.name ?? out.id}`,
         apply: async () => {
-          const o = st.state.outputs.get(out.id);
           await api.putOutputMute(txIdx, toMuted);
-          if (o) st.setOutput({ ...o, muted: toMuted });
+          _mirrorLinkedOutputMute(out.id, toMuted);
         },
         revert: async () => {
-          const o = st.state.outputs.get(out.id);
           await api.putOutputMute(txIdx, fromMuted);
-          if (o) st.setOutput({ ...o, muted: fromMuted });
+          _mirrorLinkedOutputMute(out.id, fromMuted);
         },
       });
     },
@@ -1274,6 +1355,27 @@ function _buildOutputMaster(out) {
   });
 
   strip.style.setProperty('--zone-card-color', color);
+  if (nextOut && txIdx % 2 === 0) {
+    const nextIdx = parseInt(nextOut.id.replace('tx_', ''), 10);
+    const link = st.getOutputStereoLink(txIdx);
+    const linked = !!(link?.linked);
+    const btn = _buildStereoToggleButton(
+      txIdx,
+      nextIdx,
+      linked,
+      `Unlink stereo pair ${txIdx + 1}/${nextIdx + 1}`,
+      `Link outputs ${txIdx + 1}/${nextIdx + 1} as stereo`,
+      async (shouldLink) => {
+        if (shouldLink) {
+          await api.postOutputStereoLink(txIdx, nextIdx);
+        } else {
+          await api.deleteOutputStereoLink(txIdx);
+        }
+        st.setOutputStereoLinks(_replaceStereoLink(st.state.outputStereoLinks, txIdx, nextIdx, shouldLink));
+      }
+    );
+    strip.insertBefore(btn, strip.querySelector(`#mute-${out.id}`));
+  }
   return strip;
 }
 

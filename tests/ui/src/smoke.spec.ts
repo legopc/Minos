@@ -253,6 +253,96 @@ test.describe('Minos UI smoke', () => {
     expect(mirrored?.rightGain).toBe(6);
   });
 
+  test('linked output fader mirrors paired strip slider', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+
+    const mirrored = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const mixer = await import('/js/mixer.js');
+      const outputs = st.outputList();
+      if (outputs.length < 2) return null;
+
+      const [left, right] = outputs;
+      const leftIdx = parseInt(left.id.replace('tx_', ''), 10);
+      const rightIdx = parseInt(right.id.replace('tx_', ''), 10);
+
+      st.setOutput({ ...left, volume_db: 0, muted: false });
+      st.setOutput({ ...right, volume_db: 0, muted: false });
+      st.setOutputStereoLinks([{ left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }]);
+      mixer.render(document.getElementById('tab-mixer'));
+
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input.url;
+        if (url.includes(`/outputs/${leftIdx}/gain`)) {
+          return new Response(null, { status: 204 });
+        }
+        return originalFetch(input, init);
+      };
+
+      try {
+        const targetDb = 4;
+        const targetSlider = String(st.dbToSlider(targetDb));
+        const leftStrip = document.getElementById(`strip-${left.id}`);
+        const rightStrip = document.getElementById(`strip-${right.id}`);
+        const leftFader = leftStrip?.querySelector('.strip-fader');
+        const rightFader = rightStrip?.querySelector('.strip-fader');
+        const rightLabel = rightStrip?.querySelector('.strip-fader-label');
+
+        if (!leftFader || !rightFader || !rightLabel) return { error: 'missing-strip' };
+
+        leftFader.value = targetSlider;
+        leftFader.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise(resolve => setTimeout(resolve, 140));
+
+        return {
+          targetSlider,
+          targetLabel: '+4.0',
+          rightValue: rightFader.value,
+          rightLabel: rightLabel.textContent,
+          rightAria: rightFader.getAttribute('aria-valuenow'),
+          rightVolume: st.state.outputs.get(right.id)?.volume_db,
+        };
+      } finally {
+        window.fetch = originalFetch;
+      }
+    });
+
+    expect(mirrored).toBeTruthy();
+    expect(mirrored?.error).toBeUndefined();
+    expect(mirrored?.rightValue).toBe(mirrored?.targetSlider);
+    expect(mirrored?.rightLabel).toBe(mirrored?.targetLabel);
+    expect(mirrored?.rightAria).toBe(mirrored?.targetLabel);
+    expect(mirrored?.rightVolume).toBe(4);
+  });
+
+  test('bus strip exposes delete control', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="mixer"]').click();
+
+    const hasDelete = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const mixer = await import('/js/mixer.js');
+      st.setBus({
+        id: 'bus_smoke',
+        name: 'Smoke bus',
+        routing: [],
+        routing_gain: [],
+        dsp: {
+          am: {
+            enabled: true,
+            bypassed: true,
+            params: { gain_db: 0, invert_polarity: false },
+          },
+        },
+        muted: false,
+      });
+      mixer.render(document.getElementById('tab-mixer'));
+      return !!document.querySelector('#strip-bus_smoke .vca-delete-btn');
+    });
+
+    expect(hasDelete).toBeTruthy();
+  });
+
   test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {
     await expect(page.locator('#tb-undo')).toBeDisabled();
     await expect(page.locator('#tb-redo')).toBeDisabled();

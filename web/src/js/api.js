@@ -837,6 +837,35 @@ export const putStereoLink    = (left_ch, body) => put(`/stereo-links/${left_ch}
  */
 export const deleteStereoLink = (left_ch)       => del(`/stereo-links/${left_ch}`);
 
+/**
+ * Fetch all output stereo links.
+ * @returns {Promise<Array>} Output stereo link list
+ */
+export const getOutputStereoLinks   = ()              => get('/output-stereo-links');
+
+/**
+ * Create a stereo link between two output channels.
+ * @param {number} left - Left output index
+ * @param {number} right - Right output index
+ * @returns {Promise<null>}
+ */
+export const postOutputStereoLink   = (left, right)   => post('/output-stereo-links', { left_channel: left, right_channel: right });
+
+/**
+ * Update an output stereo link.
+ * @param {number} left_ch - Left output index
+ * @param {Object} body - Update payload
+ * @returns {Promise<null>}
+ */
+export const putOutputStereoLink    = (left_ch, body) => put(`/output-stereo-links/${left_ch}`, body);
+
+/**
+ * Delete an output stereo link.
+ * @param {number} left_ch - Left output index
+ * @returns {Promise<null>}
+ */
+export const deleteOutputStereoLink = (left_ch)       => del(`/output-stereo-links/${left_ch}`);
+
 // ── Signal Generators ─────────────────────────────────────────────────────────
 export async function getGenerators() {
   return req('GET', '/signal-generators');

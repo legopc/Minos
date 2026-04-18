@@ -996,7 +996,9 @@
   transition: opacity 0.15s;
 }
 
-.vca-strip:hover .vca-delete-btn {
+.vca-strip:hover .vca-delete-btn,
+.bus-strip:hover .vca-delete-btn,
+.vca-delete-btn:focus-visible {
   opacity: 1;
 }
 
@@ -1022,7 +1024,7 @@
   opacity: 1;
 }
 
-/* ── Stereo Link inline button (inside strip name row) ─────────────────────── */
+/* ── Stereo Link button ─────────────────────────────────────────────────────── */
 .strip-name-row {
   display: flex;
   align-items: center;
@@ -1036,27 +1038,36 @@
 }
 
 .strip-stereo-btn {
-  flex-shrink: 0;
-  font-size: 10px;
-  padding: 1px 3px;
-  border: 1px solid transparent;
+  width: 100%;
+  min-height: 36px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 4px 6px;
+  border: 1px solid var(--border-primary);
   border-radius: 3px;
-  background: transparent;
-  color: #3d4451;
+  background: var(--bg-input);
+  color: var(--text-muted);
   cursor: pointer;
-  line-height: 1;
+  line-height: 1.1;
   transition: all 0.15s;
 }
 
 .strip-stereo-btn:hover {
   border-color: #58a6ff;
-  color: #58a6ff;
+  color: var(--text-primary);
 }
 
 .strip-stereo-btn.linked {
   border-color: #58a6ff;
   color: #58a6ff;
   background: rgba(88,166,255,0.12);
+}
+
+@media (pointer: coarse) {
+  .strip-stereo-btn {
+    min-height: 44px;
+  }
 }
 
 .strip-colour-btn {

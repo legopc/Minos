@@ -607,6 +607,14 @@ pub fn router(state: AppState) -> Router {
             put(put_stereo_link).delete(delete_stereo_link),
         )
         .route(
+            "/api/v1/output-stereo-links",
+            get(get_output_stereo_links).post(post_output_stereo_link),
+        )
+        .route(
+            "/api/v1/output-stereo-links/:left_ch",
+            put(put_output_stereo_link).delete(delete_output_stereo_link),
+        )
+        .route(
             "/api/v1/inputs/:ch/aec",
             get(get_input_aec).put(put_input_aec),
         )

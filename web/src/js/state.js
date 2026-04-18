@@ -29,7 +29,8 @@ const _state = {
   },
   vcaGroups:     [],    // VcaGroupConfig[]
   automixerGroups: [],  // AutomixerGroupConfig[]
-  stereoLinks:   [],    // StereoLinkConfig[]
+  stereoLinks:   [],    // input StereoLinkConfig[]
+  outputStereoLinks: [], // output StereoLinkConfig[]
   generators:    [],    // SignalGeneratorConfig[]
   generatorBusMatrix: [], // generator_bus_matrix[gen_idx][tx_idx]
 };
@@ -94,10 +95,15 @@ export function setVcaGroup(vca)           {
 export function removeVcaGroup(id)         { _state.vcaGroups = _state.vcaGroups.filter(v => v.id !== id); }
 export function setAutomixerGroups(arr)    { _state.automixerGroups = arr ?? []; }
 export function setStereoLinks(arr)        { _state.stereoLinks = arr ?? []; }
+export function setOutputStereoLinks(arr)  { _state.outputStereoLinks = arr ?? []; }
 export function getStereoLink(rxIdx)       {
   return _state.stereoLinks.find(sl => sl.left_channel === rxIdx || sl.right_channel === rxIdx) ?? null;
 }
 export function isStereoLinked(rxIdx)      { return !!getStereoLink(rxIdx)?.linked; }
+export function getOutputStereoLink(txIdx) {
+  return _state.outputStereoLinks.find(sl => sl.left_channel === txIdx || sl.right_channel === txIdx) ?? null;
+}
+export function isOutputStereoLinked(txIdx) { return !!getOutputStereoLink(txIdx)?.linked; }
 
 export function setGenerators(list)        { _state.generators = list ?? []; }
 export function setGenerator(gen)          {

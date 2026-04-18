@@ -636,6 +636,12 @@ pub async fn get_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
     Json(serde_json::json!({"stereo_links": cfg.stereo_links})).into_response()
 }
 
+// GET /api/v1/output-stereo-links
+pub async fn get_output_stereo_links(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(serde_json::json!({"stereo_links": cfg.output_stereo_links})).into_response()
+}
+
 // POST /api/v1/stereo-links
 pub async fn post_stereo_link(
     State(s): State<AppState>,
@@ -691,6 +697,71 @@ pub async fn delete_stereo_link(
     let before = cfg.stereo_links.len();
     cfg.stereo_links.retain(|sl| sl.left_channel != left_ch);
     if cfg.stereo_links.len() == before {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// POST /api/v1/output-stereo-links
+pub async fn post_output_stereo_link(
+    State(s): State<AppState>,
+    Json(body): Json<CreateStereoLinkRequest>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    cfg.output_stereo_links.retain(|sl| {
+        sl.left_channel != body.left_channel
+            && sl.right_channel != body.right_channel
+            && sl.left_channel != body.right_channel
+            && sl.right_channel != body.left_channel
+    });
+    cfg.output_stereo_links
+        .push(patchbox_core::config::StereoLinkConfig {
+            left_channel: body.left_channel,
+            right_channel: body.right_channel,
+            linked: true,
+            pan: 0.0,
+        });
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::CREATED.into_response()
+}
+
+// PUT /api/v1/output-stereo-links/:left_ch
+pub async fn put_output_stereo_link(
+    State(s): State<AppState>,
+    Path(left_ch): Path<usize>,
+    Json(body): Json<UpdateStereoLinkRequest>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let Some(sl) = cfg
+        .output_stereo_links
+        .iter_mut()
+        .find(|sl| sl.left_channel == left_ch)
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Some(l) = body.linked {
+        sl.linked = l;
+    }
+    if let Some(p) = body.pan {
+        sl.pan = p.clamp(-1.0, 1.0);
+    }
+    drop(cfg);
+    crate::persist_or_500!(s);
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// DELETE /api/v1/output-stereo-links/:left_ch
+pub async fn delete_output_stereo_link(
+    State(s): State<AppState>,
+    Path(left_ch): Path<usize>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    let before = cfg.output_stereo_links.len();
+    cfg.output_stereo_links.retain(|sl| sl.left_channel != left_ch);
+    if cfg.output_stereo_links.len() == before {
         return StatusCode::NOT_FOUND.into_response();
     }
     drop(cfg);

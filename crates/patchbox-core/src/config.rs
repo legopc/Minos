@@ -777,9 +777,9 @@ pub struct VcaGroupConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StereoLinkConfig {
-    /// Left channel index (0-based rx index, should be even)
+    /// Left channel index in the linked pair (0-based, should be even)
     pub left_channel: usize,
-    /// Right channel index (0-based rx index, = left + 1)
+    /// Right channel index in the linked pair (= left + 1)
     pub right_channel: usize,
     #[serde(default = "default_true")]
     pub linked: bool,
@@ -958,6 +958,9 @@ pub struct PatchboxConfig {
     /// Stereo linked input pairs
     #[serde(default)]
     pub stereo_links: Vec<StereoLinkConfig>,
+    /// Stereo linked output pairs
+    #[serde(default)]
+    pub output_stereo_links: Vec<StereoLinkConfig>,
     /// Built-in signal generators
     #[serde(default)]
     pub signal_generators: Vec<SignalGeneratorConfig>,
@@ -1012,6 +1015,7 @@ impl Default for PatchboxConfig {
             xp_ramp_ms: 0.0,
             vca_groups: vec![],
             stereo_links: vec![],
+            output_stereo_links: vec![],
             signal_generators: vec![],
             generator_bus_matrix: vec![],
             automixer_groups: vec![],
@@ -1176,6 +1180,34 @@ impl PatchboxConfig {
                 return Err(format!("output_gain_db[{i}] = {g} is not finite"));
             }
         }
+        for (i, link) in self.stereo_links.iter().enumerate() {
+            if link.left_channel >= self.rx_channels || link.right_channel >= self.rx_channels {
+                return Err(format!(
+                    "stereo_links[{i}] out of range for rx_channels {}",
+                    self.rx_channels
+                ));
+            }
+            if link.right_channel != link.left_channel + 1 {
+                return Err(format!(
+                    "stereo_links[{i}] must link adjacent channels, got {} and {}",
+                    link.left_channel, link.right_channel
+                ));
+            }
+        }
+        for (i, link) in self.output_stereo_links.iter().enumerate() {
+            if link.left_channel >= self.tx_channels || link.right_channel >= self.tx_channels {
+                return Err(format!(
+                    "output_stereo_links[{i}] out of range for tx_channels {}",
+                    self.tx_channels
+                ));
+            }
+            if link.right_channel != link.left_channel + 1 {
+                return Err(format!(
+                    "output_stereo_links[{i}] must link adjacent channels, got {} and {}",
+                    link.left_channel, link.right_channel
+                ));
+            }
+        }
         if self.port == 0 {
             return Err("port must be > 0".into());
         }
@@ -1253,6 +1285,26 @@ impl PatchboxConfig {
                 return Some(r);
             }
             if rx == r {
+                return Some(l);
+            }
+        }
+        None
+    }
+
+    pub fn output_stereo_peer(&self, tx: usize) -> Option<usize> {
+        for link in &self.output_stereo_links {
+            if !link.linked {
+                continue;
+            }
+            let l = link.left_channel;
+            let r = link.right_channel;
+            if l >= self.tx_channels || r >= self.tx_channels {
+                continue;
+            }
+            if tx == l {
+                return Some(r);
+            }
+            if tx == r {
                 return Some(l);
             }
         }

@@ -164,7 +164,7 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, gens, amGroups, busFeedMatrix] = await Promise.all([
+    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, outputStereoLinks, gens, amGroups, busFeedMatrix] = await Promise.all([
       api.getChannels(),
       api.getOutputs(),
       api.getZones(),
@@ -175,6 +175,7 @@ async function loadAll() {
       api.getMatrix().catch(() => null),
       api.getVcaGroups().catch(() => []),
       api.getStereoLinks().catch(() => []),
+      api.getOutputStereoLinks().catch(() => []),
       api.getGenerators().catch(() => ({ signal_generators: [], generator_bus_matrix: [] })),
       api.getAutomixerGroups().catch(() => []),
       api.getBusFeedMatrix().catch(() => []),
@@ -193,6 +194,7 @@ async function loadAll() {
     }
     st.setVcaGroups(Array.isArray(vcaGroups) ? vcaGroups : (vcaGroups?.vca_groups ?? []));
     st.setStereoLinks(Array.isArray(stereoLinks) ? stereoLinks : (stereoLinks?.stereo_links ?? []));
+    st.setOutputStereoLinks(Array.isArray(outputStereoLinks) ? outputStereoLinks : (outputStereoLinks?.stereo_links ?? []));
     st.setGenerators(gens.signal_generators ?? []);
     st.setGeneratorMatrix(gens.generator_bus_matrix ?? []);
     st.setAutomixerGroups(Array.isArray(amGroups) ? amGroups : (amGroups?.automixer_groups ?? []));

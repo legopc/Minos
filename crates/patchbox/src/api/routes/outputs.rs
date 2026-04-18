@@ -173,6 +173,7 @@ pub async fn put_output_resource(
     if i >= cfg.tx_channels {
         return StatusCode::NOT_FOUND.into_response();
     }
+    let pair_ch = cfg.output_stereo_peer(i);
     if let Some(ref name) = body.name {
         if i < cfg.zones.len() {
             cfg.zones[i] = name.clone();
@@ -182,8 +183,14 @@ pub async fn put_output_resource(
         }
     }
     if let Some(vol) = body.volume_db {
+        let clamped = vol.clamp(-60.0, 24.0);
         if i < cfg.output_dsp.len() {
-            cfg.output_dsp[i].gain_db = vol.clamp(-60.0, 24.0);
+            cfg.output_dsp[i].gain_db = clamped;
+        }
+        if let Some(p) = pair_ch {
+            if p < cfg.output_dsp.len() {
+                cfg.output_dsp[p].gain_db = clamped;
+            }
         }
     }
     if let Some(muted) = body.muted {
@@ -192,6 +199,14 @@ pub async fn put_output_resource(
         }
         if i < cfg.output_muted.len() {
             cfg.output_muted[i] = muted;
+        }
+        if let Some(p) = pair_ch {
+            if p < cfg.output_dsp.len() {
+                cfg.output_dsp[p].muted = muted;
+            }
+            if p < cfg.output_muted.len() {
+                cfg.output_muted[p] = muted;
+            }
         }
     }
     drop(cfg);
@@ -219,10 +234,17 @@ pub(crate) async fn put_output_gain(
     Json(body): Json<GainBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    let pair_ch = cfg.output_stereo_peer(ch);
+    let clamped = body.gain_db.clamp(-60.0, 24.0);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    dsp.gain_db = body.gain_db.clamp(-60.0, 24.0);
+    dsp.gain_db = clamped;
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.output_dsp.get_mut(p) {
+            pdsp.gain_db = clamped;
+        }
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -378,10 +400,16 @@ pub(crate) async fn put_output_enabled(
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    let pair_ch = cfg.output_stereo_peer(ch);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     dsp.enabled = body.enabled;
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.output_dsp.get_mut(p) {
+            pdsp.enabled = body.enabled;
+        }
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -394,10 +422,22 @@ pub(crate) async fn put_output_mute(
     Json(body): Json<MutedBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    let pair_ch = cfg.output_stereo_peer(ch);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     dsp.muted = body.muted;
+    if let Some(p) = pair_ch {
+        if let Some(pdsp) = cfg.output_dsp.get_mut(p) {
+            pdsp.muted = body.muted;
+        }
+        if let Some(pm) = cfg.output_muted.get_mut(p) {
+            *pm = body.muted;
+        }
+    }
+    if let Some(m) = cfg.output_muted.get_mut(ch) {
+        *m = body.muted;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
