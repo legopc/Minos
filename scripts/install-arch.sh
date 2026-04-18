@@ -181,7 +181,7 @@ After=network.target statime.service
 [Service]
 ExecStart=$PATCHBOX_BINARY --config $PATCHBOX_CONFIG_DIR/config.toml
 Restart=on-failure
-RestartSec=3
+RestartSec=0.5
 AmbientCapabilities=CAP_NET_RAW CAP_SYS_NICE
 StandardOutput=journal
 StandardError=journal
