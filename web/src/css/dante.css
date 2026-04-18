@@ -26,3 +26,315 @@
 .dante-info-table td:last-child {
   color: var(--text-primary);
 }
+
+.dante-wrap {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dante-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dante-diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  max-width: 980px;
+}
+
+.dante-diag-card {
+  border: 1px solid var(--border-subtle);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--bg-panel, var(--bg));
+  padding: 10px 12px;
+}
+
+.dante-diag-ok {
+  border-left-color: var(--dot-live);
+}
+
+.dante-diag-warn {
+  border-left-color: var(--dot-warn, #d8b000);
+}
+
+.dante-diag-error {
+  border-left-color: var(--dot-error);
+}
+
+.dante-diag-card-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.dante-diag-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dante-diag-card-level {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.dante-diag-card-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.dante-diag-items {
+  display: grid;
+  gap: 6px;
+}
+
+.dante-diag-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.dante-diag-item .k {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.dante-diag-item .v {
+  color: var(--text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.dante-diag-loading {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dante-diag-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dante-ptp-history {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dante-ptp-stats {
+  display: grid;
+  gap: 4px;
+}
+
+.dante-ptp-stats .k {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 6px;
+}
+
+.dante-ptp-stats .v {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.dante-ptp-spark {
+  flex: 0 0 auto;
+}
+
+.ptp-spark {
+  width: 240px;
+  height: 48px;
+}
+
+.ptp-spark path {
+  stroke: var(--dot-live);
+  stroke-width: 2;
+  fill: none;
+}
+
+.ptp-spark .zero {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.dante-recovery-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dante-recovery-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.dante-recovery-btn {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary);
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.dante-recovery-btn:hover:not(:disabled) {
+  border-color: var(--accent, var(--dot-live));
+}
+
+.dante-recovery-btn:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.dante-recovery-btn .label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dante-recovery-btn .desc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dante-recovery-btn.is-busy {
+  border-color: var(--accent, var(--dot-live));
+}
+
+.dante-eventlog-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dante-eventlog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dante-eventlog-export {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 10px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.dante-eventlog-export:hover:not(:disabled) {
+  border-color: var(--accent, var(--dot-live));
+}
+
+.dante-eventlog-export:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dante-eventlog-items {
+  max-height: 260px;
+  overflow: auto;
+}
+
+.dante-task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dante-task-items {
+  gap: 8px;
+}
+
+.dante-task-item {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+}
+
+.dante-task-queued {
+  border-left: 3px solid var(--dot-warn, #d8b000);
+}
+
+.dante-task-running {
+  border-left: 3px solid var(--accent, var(--dot-live));
+}
+
+.dante-task-succeeded {
+  border-left: 3px solid var(--dot-live);
+}
+
+.dante-task-failed {
+  border-left: 3px solid var(--dot-error);
+}
+
+.dante-task-row,
+.dante-task-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dante-task-label,
+.dante-task-state {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dante-task-state {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dante-task-message,
+.dante-task-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.ev-level {
+  display: inline-block;
+  min-width: 3.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ev-info {
+  color: var(--dot-live);
+}
+
+.ev-warn {
+  color: var(--dot-warn, #d8b000);
+}
+
+.ev-error {
+  color: var(--dot-error);
+}

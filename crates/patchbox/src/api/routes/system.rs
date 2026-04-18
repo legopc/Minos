@@ -1,16 +1,19 @@
-use crate::api::{linear_to_dbfs, ws_broadcast};
-use crate::state::AppState;
+use crate::api::{linear_to_dbfs, parse_tx_id, parse_zone_id, ws_broadcast};
+use crate::ptp::{is_ptp_locked_state, query_ptp_offset, query_ptp_state};
+use crate::state::{
+    AppState, EventActor, EventLogEntry, EventResource, PtpHistorySample, TaskEvent, TaskStatus,
+};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
 use patchbox_core::config::{InputChannelDsp, InternalBusConfig, PatchboxConfig};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::os::unix::fs::FileTypeExt;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::atomic::Ordering as AOrdering;
-use tokio::time::Duration;
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct HealthDante {
@@ -98,6 +101,57 @@ pub struct MeteringResponse {
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsDante {
+    pub connected: bool,
+    pub rx_channels: usize,
+    pub tx_channels: usize,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsPtp {
+    pub synced: bool,
+    pub offset_ns: Option<i64>,
+    pub state: Option<String>,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsAudio {
+    pub active_routes: usize,
+    pub callbacks_total: u64,
+    pub resyncs: u64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsDsp {
+    #[schema(value_type = String)]
+    pub status: &'static str,
+    pub cpu_percent: f32,
+    pub cpu_percent_avg: f32,
+    pub xruns: u64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsStorage {
+    pub free_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct MetricsResponse {
+    #[schema(value_type = String)]
+    pub status: &'static str,
+    #[schema(value_type = String)]
+    pub version: &'static str,
+    pub uptime_secs: u64,
+    pub clients_connected: usize,
+    pub dante: MetricsDante,
+    pub ptp: MetricsPtp,
+    pub audio: MetricsAudio,
+    pub dsp: MetricsDsp,
+    pub storage: MetricsStorage,
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct SystemResponse {
     #[schema(value_type = String)]
     version: &'static str,
@@ -114,6 +168,63 @@ pub struct SystemResponse {
     show_buses_in_mixer: bool,
     monitor_device: Option<String>,
     monitor_volume_db: f32,
+}
+
+// Sprint 6 Phase 1 foundation — Dante diagnostics endpoint
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticLevel {
+    Ok,
+    Warn,
+    Error,
+    Unknown,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DiagnosticItem {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DiagnosticCard {
+    pub level: DiagnosticLevel,
+    pub summary: String,
+    pub items: Vec<DiagnosticItem>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DanteDiagnosticsResponse {
+    pub event_log: Vec<crate::state::EventLogEntry>,
+    pub generated_at: String,
+    pub device: DiagnosticCard,
+    pub network: DiagnosticCard,
+    pub ptp: DiagnosticCard,
+    pub ptp_history: Vec<PtpHistorySample>,
+    pub recovery_actions: Vec<DanteRecoveryAction>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DanteRecoveryActionId {
+    Rescan,
+    Rebind,
+    Restart,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DanteRecoveryAction {
+    pub id: DanteRecoveryActionId,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DanteRecoveryActionResponse {
+    pub ok: bool,
+    pub action: DanteRecoveryActionId,
+    pub message: String,
+    pub restarting: bool,
 }
 
 #[derive(serde::Deserialize, utoipa::ToSchema)]
@@ -154,6 +265,108 @@ pub struct MonitorResponse {
     volume_db: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigDiffKind {
+    Added,
+    Removed,
+    Changed,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct ConfigDiffEntry {
+    pub path: String,
+    pub kind: ConfigDiffKind,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, utoipa::ToSchema)]
+pub struct ConfigDiffSummary {
+    pub description: String,
+    pub total_changes: usize,
+    pub changed: usize,
+    pub added: usize,
+    pub removed: usize,
+    pub top_level_fields: Vec<String>,
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, utoipa::ToSchema)]
+pub struct ConfigValidateResponse {
+    pub valid: bool,
+    pub normalized: bool,
+    pub errors: Vec<String>,
+    pub summary: ConfigDiffSummary,
+    pub changes: Vec<ConfigDiffEntry>,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    utoipa::ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupSource {
+    Import,
+    Restore,
+    BackupRestore,
+    #[default]
+    Unknown,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct BackupMetadata {
+    pub has_metadata: bool,
+    pub created_at: Option<String>,
+    pub source: BackupSource,
+    pub version: Option<String>,
+    pub requested_by: Option<String>,
+    pub note: Option<String>,
+    pub summary: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct BackupListEntry {
+    pub name: String,
+    pub timestamp: u64,
+    pub metadata: BackupMetadata,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct AuditLogResponse {
+    pub total: usize,
+    pub entries: Vec<EventLogEntry>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct AuditExportResponse {
+    pub exported_at: String,
+    pub total: usize,
+    pub entries: Vec<EventLogEntry>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, utoipa::ToSchema)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum BulkMutationRequest {
+    SetAllOutputsMuted { muted: bool },
+    ClearZoneRoutes { zone_id: String },
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct BulkMutationResponse {
+    pub ok: bool,
+    pub operation: String,
+    pub affected: usize,
+    pub task_id: String,
+}
+
 fn linear_to_db(v: f32) -> f32 {
     if v <= 0.0 {
         return -60.0;
@@ -161,53 +374,7 @@ fn linear_to_db(v: f32) -> f32 {
     (20.0 * v.log10()).max(-60.0)
 }
 
-async fn query_ptp_offset(socket_path: &str) -> Option<i64> {
-    use tokio::io::AsyncReadExt;
-    let connect = tokio::net::UnixStream::connect(socket_path);
-    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect)
-        .await
-        .ok()?
-        .ok()?;
-    let mut buf = String::new();
-    let read =
-        tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
-    if read.is_err() {
-        return None;
-    }
-    for line in buf.lines() {
-        if line.starts_with("statime_offset_from_master") && !line.starts_with('#') {
-            if let Some(val_str) = line.split_whitespace().last() {
-                if let Ok(secs) = val_str.parse::<f64>() {
-                    return Some((secs * 1_000_000_000.0) as i64);
-                }
-            }
-        }
-    }
-    None
-}
-
-async fn query_ptp_state(socket_path: &str) -> Option<String> {
-    use tokio::io::AsyncReadExt;
-    let connect = tokio::net::UnixStream::connect(socket_path);
-    let mut stream = tokio::time::timeout(Duration::from_millis(100), connect)
-        .await
-        .ok()?
-        .ok()?;
-    let mut buf = String::new();
-    let read =
-        tokio::time::timeout(Duration::from_millis(200), stream.read_to_string(&mut buf)).await;
-    if read.is_err() {
-        return None;
-    }
-    for line in buf.lines() {
-        if line.starts_with("state") && !line.starts_with('#') {
-            if let Some(val_str) = line.split_whitespace().last() {
-                return Some(val_str.to_string());
-            }
-        }
-    }
-    None
-}
+const MAX_CONFIG_DIFF_ENTRIES: usize = 64;
 
 fn get_hostname() -> String {
     std::fs::read_to_string("/etc/hostname")
@@ -216,11 +383,411 @@ fn get_hostname() -> String {
         .to_string()
 }
 
-async fn _create_backup(s: &AppState) -> Result<String, String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
+fn dante_recovery_actions() -> Vec<DanteRecoveryAction> {
+    vec![
+        DanteRecoveryAction {
+            id: DanteRecoveryActionId::Rescan,
+            label: "Rescan now".to_string(),
+            description: "Capture a fresh Dante/PTP sample and append it to history.".to_string(),
+        },
+        DanteRecoveryAction {
+            id: DanteRecoveryActionId::Rebind,
+            label: "Rebind runtime".to_string(),
+            description: "Reload config from disk without a full restart.".to_string(),
+        },
+        DanteRecoveryAction {
+            id: DanteRecoveryActionId::Restart,
+            label: "Restart Minos".to_string(),
+            description: "Persist config and restart the service.".to_string(),
+        },
+    ]
+}
+
+#[derive(Default)]
+struct ConfigDiffCollector {
+    entries: Vec<ConfigDiffEntry>,
+    top_level_fields: BTreeSet<String>,
+    added: usize,
+    removed: usize,
+    changed: usize,
+    total_changes: usize,
+    truncated: bool,
+}
+
+struct CreateBackupRequest<'a> {
+    source: BackupSource,
+    requested_by: Option<&'a str>,
+    note: Option<String>,
+    target_config: Option<&'a PatchboxConfig>,
+}
+
+fn summarize_json_value(value: &serde_json::Value) -> String {
+    let mut text = match value {
+        serde_json::Value::String(s) => s.clone(),
+        _ => serde_json::to_string(value).unwrap_or_else(|_| value.to_string()),
+    };
+    if text.len() > 120 {
+        text.truncate(117);
+        text.push_str("...");
+    }
+    text
+}
+
+fn diff_top_level_field(path: &str) -> String {
+    path.split(['.', '['])
+        .find(|part| !part.is_empty())
+        .unwrap_or("<root>")
+        .to_string()
+}
+
+fn record_config_diff(
+    collector: &mut ConfigDiffCollector,
+    path: String,
+    kind: ConfigDiffKind,
+    before: Option<&serde_json::Value>,
+    after: Option<&serde_json::Value>,
+) {
+    collector.total_changes += 1;
+    collector
+        .top_level_fields
+        .insert(diff_top_level_field(&path));
+    match kind {
+        ConfigDiffKind::Added => collector.added += 1,
+        ConfigDiffKind::Removed => collector.removed += 1,
+        ConfigDiffKind::Changed => collector.changed += 1,
+    }
+    if collector.entries.len() < MAX_CONFIG_DIFF_ENTRIES {
+        collector.entries.push(ConfigDiffEntry {
+            path,
+            kind,
+            before: before.map(summarize_json_value),
+            after: after.map(summarize_json_value),
+        });
+    } else {
+        collector.truncated = true;
+    }
+}
+
+fn collect_config_diff(
+    collector: &mut ConfigDiffCollector,
+    path: String,
+    current: &serde_json::Value,
+    candidate: &serde_json::Value,
+) {
+    if current == candidate {
+        return;
+    }
+
+    match (current, candidate) {
+        (serde_json::Value::Object(current_obj), serde_json::Value::Object(candidate_obj)) => {
+            let mut keys = BTreeSet::new();
+            keys.extend(current_obj.keys().cloned());
+            keys.extend(candidate_obj.keys().cloned());
+            for key in keys {
+                let child_path = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                match (current_obj.get(&key), candidate_obj.get(&key)) {
+                    (Some(before), Some(after)) => {
+                        collect_config_diff(collector, child_path, before, after);
+                    }
+                    (Some(before), None) => {
+                        record_config_diff(
+                            collector,
+                            child_path,
+                            ConfigDiffKind::Removed,
+                            Some(before),
+                            None,
+                        );
+                    }
+                    (None, Some(after)) => {
+                        record_config_diff(
+                            collector,
+                            child_path,
+                            ConfigDiffKind::Added,
+                            None,
+                            Some(after),
+                        );
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+        (serde_json::Value::Array(current_arr), serde_json::Value::Array(candidate_arr)) => {
+            let max_len = current_arr.len().max(candidate_arr.len());
+            for idx in 0..max_len {
+                let child_path = if path.is_empty() {
+                    format!("[{idx}]")
+                } else {
+                    format!("{path}[{idx}]")
+                };
+                match (current_arr.get(idx), candidate_arr.get(idx)) {
+                    (Some(before), Some(after)) => {
+                        collect_config_diff(collector, child_path, before, after);
+                    }
+                    (Some(before), None) => {
+                        record_config_diff(
+                            collector,
+                            child_path,
+                            ConfigDiffKind::Removed,
+                            Some(before),
+                            None,
+                        );
+                    }
+                    (None, Some(after)) => {
+                        record_config_diff(
+                            collector,
+                            child_path,
+                            ConfigDiffKind::Added,
+                            None,
+                            Some(after),
+                        );
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+        _ => {
+            let path = if path.is_empty() {
+                "<root>".to_string()
+            } else {
+                path
+            };
+            record_config_diff(
+                collector,
+                path,
+                ConfigDiffKind::Changed,
+                Some(current),
+                Some(candidate),
+            );
+        }
+    }
+}
+
+fn build_config_diff_summary(
+    current: &PatchboxConfig,
+    candidate: &PatchboxConfig,
+) -> (ConfigDiffSummary, Vec<ConfigDiffEntry>) {
+    let current_json = serde_json::to_value(current).unwrap_or(serde_json::Value::Null);
+    let candidate_json = serde_json::to_value(candidate).unwrap_or(serde_json::Value::Null);
+    let mut collector = ConfigDiffCollector::default();
+    collect_config_diff(
+        &mut collector,
+        String::new(),
+        &current_json,
+        &candidate_json,
+    );
+
+    let top_level_fields: Vec<_> = collector.top_level_fields.iter().cloned().collect();
+    let description = if collector.total_changes == 0 {
+        "No config changes.".to_string()
+    } else {
+        let preview = top_level_fields
+            .iter()
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let extra = top_level_fields.len().saturating_sub(4);
+        if extra > 0 {
+            format!(
+                "{} change(s) across {} field group(s): {} (+{} more)",
+                collector.total_changes,
+                top_level_fields.len(),
+                preview,
+                extra
+            )
+        } else {
+            format!(
+                "{} change(s) across {} field group(s): {}",
+                collector.total_changes,
+                top_level_fields.len(),
+                preview
+            )
+        }
+    };
+
+    (
+        ConfigDiffSummary {
+            description,
+            total_changes: collector.total_changes,
+            changed: collector.changed,
+            added: collector.added,
+            removed: collector.removed,
+            top_level_fields,
+            truncated: collector.truncated,
+        },
+        collector.entries,
+    )
+}
+
+fn parse_config_candidate(toml_str: &str) -> Result<(PatchboxConfig, bool), String> {
+    let mut cfg: PatchboxConfig = toml::from_str(toml_str).map_err(|e| e.to_string())?;
+    let before_normalize = serde_json::to_value(&cfg).ok();
+    cfg.normalize();
+    let normalized = before_normalize
+        .and_then(|before| serde_json::to_value(&cfg).ok().map(|after| before != after))
+        .unwrap_or(false);
+    Ok((cfg, normalized))
+}
+
+fn backup_metadata_path(path: &FsPath) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("backup.toml");
+    path.with_file_name(format!("{file_name}.meta.json"))
+}
+
+fn timestamp_to_rfc3339(timestamp: u64) -> Option<String> {
+    chrono::DateTime::from_timestamp(timestamp as i64, 0).map(|dt| dt.to_rfc3339())
+}
+
+fn read_backup_metadata(path: &FsPath, timestamp: u64) -> BackupMetadata {
+    let metadata_path = backup_metadata_path(path);
+    if let Ok(bytes) = std::fs::read(&metadata_path) {
+        if let Ok(mut metadata) = serde_json::from_slice::<BackupMetadata>(&bytes) {
+            metadata.has_metadata = true;
+            if metadata.created_at.is_none() {
+                metadata.created_at = timestamp_to_rfc3339(timestamp);
+            }
+            return metadata;
+        }
+    }
+
+    BackupMetadata {
+        has_metadata: false,
+        created_at: timestamp_to_rfc3339(timestamp),
+        source: BackupSource::Unknown,
+        version: None,
+        requested_by: None,
+        note: None,
+        summary: None,
+    }
+}
+
+async fn sample_ptp_history_now(s: &AppState) -> PtpHistorySample {
     let cfg = s.config.read().await;
-    let toml_str = toml::to_string_pretty(&*cfg).map_err(|e| e.to_string())?;
+    let obs_path = cfg.statime_observation_path.clone();
+    let clock_path = cfg.dante_clock_path.clone();
     drop(cfg);
+
+    let offset_ns = if let Some(path) = obs_path.as_deref() {
+        query_ptp_offset(path).await
+    } else {
+        None
+    };
+    let state = if let Some(path) = obs_path.as_deref() {
+        query_ptp_state(path).await
+    } else {
+        None
+    };
+
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+    let ptp_synced = std::fs::metadata(&clock_path)
+        .map(|m| m.file_type().is_socket())
+        .unwrap_or(false);
+    let locked = state
+        .as_deref()
+        .map(is_ptp_locked_state)
+        .unwrap_or(dante_connected && ptp_synced);
+
+    PtpHistorySample {
+        ts_ms: chrono::Utc::now().timestamp_millis(),
+        locked,
+        offset_ns,
+        state,
+    }
+}
+
+async fn reload_runtime_config(s: &AppState) -> Result<(), String> {
+    let text = std::fs::read_to_string(&s.config_path).map_err(|e| e.to_string())?;
+    let mut new_cfg: PatchboxConfig = toml::from_str(&text).map_err(|e| e.to_string())?;
+    new_cfg.normalize();
+    new_cfg.validate().map_err(|e| e.to_string())?;
+
+    {
+        let old = s.config.read().await;
+        new_cfg.rx_channels = old.rx_channels;
+        new_cfg.tx_channels = old.tx_channels;
+        new_cfg.dante_name = old.dante_name.clone();
+        new_cfg.port = old.port;
+    }
+
+    *s.config.write().await = new_cfg;
+    Ok(())
+}
+
+fn schedule_process_restart(state: &AppState) {
+    if !state.exit_on_restart {
+        return;
+    }
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        std::process::exit(0);
+    });
+}
+
+async fn log_dante_event(state: &AppState, level: &str, message: &str, details: Option<String>) {
+    state
+        .push_event_log(EventLogEntry::runtime(level, message, details))
+        .await;
+}
+
+fn claims_actor(claims: Option<&Extension<crate::jwt::Claims>>) -> Option<EventActor> {
+    claims.map(|Extension(claims)| EventActor::from_claims(claims))
+}
+
+async fn log_audit_event(
+    state: &AppState,
+    claims: Option<&Extension<crate::jwt::Claims>>,
+    action: &str,
+    message: impl Into<String>,
+    details: Option<String>,
+    resource: Option<EventResource>,
+    context: Option<serde_json::Value>,
+) {
+    state
+        .push_audit_log(
+            action,
+            message,
+            details,
+            claims_actor(claims),
+            resource,
+            context,
+        )
+        .await;
+}
+
+fn emit_task_event(
+    state: &AppState,
+    claims: Option<&Extension<crate::jwt::Claims>>,
+    task_id: impl Into<String>,
+    status: TaskStatus,
+    label: impl Into<String>,
+    message: Option<String>,
+    action: Option<&str>,
+    resource: Option<EventResource>,
+    context: Option<serde_json::Value>,
+) {
+    state.emit_task_event(TaskEvent::new(
+        task_id,
+        status,
+        label,
+        message,
+        action.map(str::to_string),
+        claims_actor(claims),
+        resource,
+        context,
+    ));
+}
+
+async fn _create_backup(s: &AppState, request: CreateBackupRequest<'_>) -> Result<String, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let current_cfg = s.config.read().await.clone();
+    let toml_str = toml::to_string_pretty(&current_cfg).map_err(|e| e.to_string())?;
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -234,6 +801,26 @@ async fn _create_backup(s: &AppState) -> Result<String, String> {
         ts
     ));
     std::fs::write(&bak_path, &toml_str).map_err(|e| e.to_string())?;
+    let summary = request.target_config.map(|target| {
+        let mut current = current_cfg.clone();
+        current.normalize();
+        let mut candidate = target.clone();
+        candidate.normalize();
+        build_config_diff_summary(&current, &candidate)
+            .0
+            .description
+    });
+    let metadata = BackupMetadata {
+        has_metadata: true,
+        created_at: timestamp_to_rfc3339(ts),
+        source: request.source,
+        version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        requested_by: request.requested_by.map(|value| value.to_string()),
+        note: request.note,
+        summary,
+    };
+    let metadata_bytes = serde_json::to_vec_pretty(&metadata).map_err(|e| e.to_string())?;
+    std::fs::write(backup_metadata_path(&bak_path), metadata_bytes).map_err(|e| e.to_string())?;
     if let Some(dir) = s.config_path.parent() {
         let stem = s
             .config_path
@@ -255,27 +842,26 @@ async fn _create_backup(s: &AppState) -> Result<String, String> {
         baks.sort_by_key(|e| e.file_name());
         if baks.len() > 10 {
             for old in &baks[..baks.len() - 10] {
-                let _ = std::fs::remove_file(old.path());
+                let old_path = old.path();
+                let _ = std::fs::remove_file(&old_path);
+                let _ = std::fs::remove_file(backup_metadata_path(&old_path));
             }
         }
     }
     Ok(bak_path.to_string_lossy().into_owned())
 }
 
-// GET /api/v1/health
-#[utoipa::path(
-    get,
-    path = "/api/v1/health",
-    tag = "health",
-    responses(
-        (status = 200, description = "Health status", body = HealthResponse)
-    )
-)]
-pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
+fn escape_prometheus_label(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('"', "\\\"")
+}
+
+async fn build_health_response(s: &AppState) -> HealthResponse {
     let cfg = s.config.read().await;
     let meters = s.meters.read().await;
 
-    // PTP checks
     let ptp_socket_path = cfg.dante_clock_path.clone();
     let ptp_synced = std::fs::metadata(&ptp_socket_path)
         .map(|m| m.file_type().is_socket())
@@ -291,7 +877,6 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
         None
     };
 
-    // Config checks
     let config_loaded = true;
     let config_path_str = s.config_path.to_string_lossy().to_string();
     let config_last_modified = std::fs::metadata(&s.config_path)
@@ -307,7 +892,6 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             Some(datetime.to_rfc3339())
         });
 
-    // Storage checks (/opt/patchbox)
     let storage_path = "/opt/patchbox";
     let (storage_free_bytes, storage_total_bytes) =
         if let Ok(stat) = nix::sys::statvfs::statvfs(storage_path) {
@@ -319,7 +903,6 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             (0, 0)
         };
 
-    // DSP metrics from shared atomic state
     let dsp_cpu_avg = s.dsp_metrics.cpu_percent_avg();
     let dsp = HealthDsp {
         status: s.dsp_metrics.status().as_str(),
@@ -328,20 +911,15 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
         xruns: s.dsp_metrics.xruns(),
     };
 
-    // WS clients count - count active broadcast subscribers
     let clients_connected = s.ws_tx.receiver_count();
-
-    // Dante info
     let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
     let dante_rx_channels = cfg.rx_channels;
     let dante_tx_channels = cfg.tx_channels;
 
-    // Audio info
     let active_routes = cfg.matrix.iter().flatten().filter(|&&v| v).count();
     let rx_levels_rms_db = meters.rx_rms.iter().map(|&v| linear_to_db(v)).collect();
     let tx_levels_rms_db = meters.tx_rms.iter().map(|&v| linear_to_db(v)).collect();
 
-    // Zones
     let zones = (0..cfg.tx_channels)
         .map(|tx| {
             let active_sources = (0..cfg.rx_channels)
@@ -383,11 +961,10 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
         })
         .collect();
 
-    // Determine health status
     let is_ptp_locked =
         ptp_state.as_deref() == Some("SLAVE") || ptp_state.as_deref() == Some("MASTER");
     let cpu_load_ok = dsp_cpu_avg < 90.0;
-    let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024; // 50 MiB
+    let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024;
 
     let status = if !dante_connected || !config_loaded || !storage_free_ok {
         "unhealthy"
@@ -397,7 +974,7 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
         "healthy"
     };
 
-    Json(HealthResponse {
+    HealthResponse {
         status,
         version: env!("CARGO_PKG_VERSION"),
         uptime_secs: s.started_at.elapsed().as_secs(),
@@ -435,7 +1012,188 @@ pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
             total_bytes: storage_total_bytes,
         },
         clients_connected,
-    })
+    }
+}
+
+fn build_metrics_response(health: &HealthResponse) -> MetricsResponse {
+    MetricsResponse {
+        status: health.status,
+        version: health.version,
+        uptime_secs: health.uptime_secs,
+        clients_connected: health.clients_connected,
+        dante: MetricsDante {
+            connected: health.dante.connected,
+            rx_channels: health.dante.rx_channels,
+            tx_channels: health.dante.tx_channels,
+        },
+        ptp: MetricsPtp {
+            synced: health.ptp.synced,
+            offset_ns: health.ptp.offset_ns,
+            state: health.ptp.state.clone(),
+        },
+        audio: MetricsAudio {
+            active_routes: health.audio.active_routes,
+            callbacks_total: health.audio.callbacks_total,
+            resyncs: health.audio.resyncs,
+        },
+        dsp: MetricsDsp {
+            status: health.dsp.status,
+            cpu_percent: health.dsp.cpu_percent,
+            cpu_percent_avg: health.dsp.cpu_percent_avg,
+            xruns: health.dsp.xruns,
+        },
+        storage: MetricsStorage {
+            free_bytes: health.storage.free_bytes,
+            total_bytes: health.storage.total_bytes,
+        },
+    }
+}
+
+fn render_prometheus_metrics(metrics: &MetricsResponse) -> String {
+    let mut body = String::new();
+
+    body.push_str("# HELP patchbox_info Patchbox build and service status.\n");
+    body.push_str("# TYPE patchbox_info gauge\n");
+    body.push_str(&format!(
+        "patchbox_info{{version=\"{}\",status=\"{}\"}} 1\n",
+        escape_prometheus_label(metrics.version),
+        escape_prometheus_label(metrics.status),
+    ));
+
+    body.push_str("# HELP patchbox_uptime_seconds Process uptime in seconds.\n");
+    body.push_str("# TYPE patchbox_uptime_seconds gauge\n");
+    body.push_str(&format!(
+        "patchbox_uptime_seconds {}\n",
+        metrics.uptime_secs
+    ));
+
+    body.push_str("# HELP patchbox_ws_clients_connected Active websocket clients.\n");
+    body.push_str("# TYPE patchbox_ws_clients_connected gauge\n");
+    body.push_str(&format!(
+        "patchbox_ws_clients_connected {}\n",
+        metrics.clients_connected
+    ));
+
+    body.push_str("# HELP patchbox_dante_connected Dante runtime connectivity state.\n");
+    body.push_str("# TYPE patchbox_dante_connected gauge\n");
+    body.push_str(&format!(
+        "patchbox_dante_connected {}\n",
+        u8::from(metrics.dante.connected)
+    ));
+    body.push_str("# TYPE patchbox_dante_rx_channels gauge\n");
+    body.push_str(&format!(
+        "patchbox_dante_rx_channels {}\n",
+        metrics.dante.rx_channels
+    ));
+    body.push_str("# TYPE patchbox_dante_tx_channels gauge\n");
+    body.push_str(&format!(
+        "patchbox_dante_tx_channels {}\n",
+        metrics.dante.tx_channels
+    ));
+
+    body.push_str("# HELP patchbox_ptp_synced PTP clock socket availability.\n");
+    body.push_str("# TYPE patchbox_ptp_synced gauge\n");
+    body.push_str(&format!(
+        "patchbox_ptp_synced {}\n",
+        u8::from(metrics.ptp.synced)
+    ));
+    if let Some(offset_ns) = metrics.ptp.offset_ns {
+        body.push_str("# TYPE patchbox_ptp_offset_nanoseconds gauge\n");
+        body.push_str(&format!("patchbox_ptp_offset_nanoseconds {}\n", offset_ns));
+    }
+    if let Some(state) = &metrics.ptp.state {
+        body.push_str("# TYPE patchbox_ptp_state gauge\n");
+        body.push_str(&format!(
+            "patchbox_ptp_state{{state=\"{}\"}} 1\n",
+            escape_prometheus_label(state)
+        ));
+    }
+
+    body.push_str("# HELP patchbox_audio_active_routes Active route count.\n");
+    body.push_str("# TYPE patchbox_audio_active_routes gauge\n");
+    body.push_str(&format!(
+        "patchbox_audio_active_routes {}\n",
+        metrics.audio.active_routes
+    ));
+    body.push_str(
+        "# HELP patchbox_audio_callbacks_total Total RT audio callbacks since startup.\n",
+    );
+    body.push_str("# TYPE patchbox_audio_callbacks_total counter\n");
+    body.push_str(&format!(
+        "patchbox_audio_callbacks_total {}\n",
+        metrics.audio.callbacks_total
+    ));
+    body.push_str("# HELP patchbox_audio_resyncs_total Total resyncs since startup.\n");
+    body.push_str("# TYPE patchbox_audio_resyncs_total counter\n");
+    body.push_str(&format!(
+        "patchbox_audio_resyncs_total {}\n",
+        metrics.audio.resyncs
+    ));
+
+    body.push_str("# HELP patchbox_dsp_status DSP subsystem status.\n");
+    body.push_str("# TYPE patchbox_dsp_status gauge\n");
+    body.push_str(&format!(
+        "patchbox_dsp_status{{status=\"{}\"}} 1\n",
+        escape_prometheus_label(metrics.dsp.status)
+    ));
+    body.push_str("# TYPE patchbox_dsp_cpu_percent gauge\n");
+    body.push_str(&format!(
+        "patchbox_dsp_cpu_percent {}\n",
+        metrics.dsp.cpu_percent
+    ));
+    body.push_str("# TYPE patchbox_dsp_cpu_percent_avg gauge\n");
+    body.push_str(&format!(
+        "patchbox_dsp_cpu_percent_avg {}\n",
+        metrics.dsp.cpu_percent_avg
+    ));
+    body.push_str("# TYPE patchbox_dsp_xruns_total counter\n");
+    body.push_str(&format!("patchbox_dsp_xruns_total {}\n", metrics.dsp.xruns));
+
+    body.push_str("# TYPE patchbox_storage_free_bytes gauge\n");
+    body.push_str(&format!(
+        "patchbox_storage_free_bytes {}\n",
+        metrics.storage.free_bytes
+    ));
+    body.push_str("# TYPE patchbox_storage_total_bytes gauge\n");
+    body.push_str(&format!(
+        "patchbox_storage_total_bytes {}\n",
+        metrics.storage.total_bytes
+    ));
+
+    body
+}
+
+// GET /api/v1/health
+#[utoipa::path(
+    get,
+    path = "/api/v1/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Health status", body = HealthResponse)
+    )
+)]
+pub async fn get_health(State(s): State<AppState>) -> impl IntoResponse {
+    Json(build_health_response(&s).await)
+}
+
+// GET /api/v1/metrics
+pub async fn get_metrics(State(s): State<AppState>) -> impl IntoResponse {
+    let health = build_health_response(&s).await;
+    Json(build_metrics_response(&health))
+}
+
+// GET /api/v1/metrics/prometheus
+pub async fn get_metrics_prometheus(State(s): State<AppState>) -> impl IntoResponse {
+    let health = build_health_response(&s).await;
+    let metrics = build_metrics_response(&health);
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        render_prometheus_metrics(&metrics),
+    )
+        .into_response()
 }
 
 // GET /api/v1/metering
@@ -480,6 +1238,404 @@ pub async fn get_metering(State(s): State<AppState>) -> impl IntoResponse {
         })
         .collect();
     Json(MeteringResponse { rx, tx, gr })
+}
+
+// GET /api/v1/system/dante/diagnostics
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/dante/diagnostics",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Dante diagnostics", body = DanteDiagnosticsResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn get_dante_diagnostics(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    let dante_name = cfg.dante_name.clone();
+    let dante_nic = cfg.dante_nic.clone();
+    let rx_channels = cfg.rx_channels;
+    let tx_channels = cfg.tx_channels;
+    let clock_path = cfg.dante_clock_path.clone();
+    let obs_path = cfg.statime_observation_path.clone();
+    drop(cfg);
+
+    let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
+
+    let device = DiagnosticCard {
+        level: if dante_connected {
+            DiagnosticLevel::Ok
+        } else {
+            DiagnosticLevel::Warn
+        },
+        summary: if dante_connected {
+            "Dante connected".to_string()
+        } else {
+            "Dante disconnected".to_string()
+        },
+        items: vec![
+            DiagnosticItem {
+                label: "Device".to_string(),
+                value: dante_name,
+            },
+            DiagnosticItem {
+                label: "NIC".to_string(),
+                value: dante_nic.clone(),
+            },
+            DiagnosticItem {
+                label: "RX".to_string(),
+                value: rx_channels.to_string(),
+            },
+            DiagnosticItem {
+                label: "TX".to_string(),
+                value: tx_channels.to_string(),
+            },
+        ],
+    };
+
+    let network = DiagnosticCard {
+        level: DiagnosticLevel::Unknown,
+        summary: "Network".to_string(),
+        items: vec![DiagnosticItem {
+            label: "NIC".to_string(),
+            value: dante_nic,
+        }],
+    };
+
+    let ptp_synced = std::fs::metadata(&clock_path)
+        .map(|m| m.file_type().is_socket())
+        .unwrap_or(false);
+
+    let ptp_offset_ns = if let Some(path) = obs_path.as_deref() {
+        query_ptp_offset(path).await
+    } else {
+        None
+    };
+    let ptp_state = if let Some(path) = obs_path.as_deref() {
+        query_ptp_state(path).await
+    } else {
+        None
+    };
+
+    let ptp_locked = ptp_state
+        .as_deref()
+        .map(is_ptp_locked_state)
+        .unwrap_or(dante_connected && ptp_synced);
+
+    let ptp_level = if ptp_locked {
+        DiagnosticLevel::Ok
+    } else if dante_connected {
+        DiagnosticLevel::Warn
+    } else {
+        DiagnosticLevel::Unknown
+    };
+
+    let ptp_summary = if ptp_locked {
+        "PTP locked".to_string()
+    } else {
+        "PTP not locked".to_string()
+    };
+
+    let mut ptp_items = vec![
+        DiagnosticItem {
+            label: "Clock socket".to_string(),
+            value: if ptp_synced {
+                format!("{} (present)", clock_path)
+            } else {
+                format!("{} (missing)", clock_path)
+            },
+        },
+        DiagnosticItem {
+            label: "Observation socket".to_string(),
+            value: obs_path
+                .clone()
+                .unwrap_or_else(|| "(not configured)".to_string()),
+        },
+    ];
+
+    if let Some(state) = &ptp_state {
+        ptp_items.push(DiagnosticItem {
+            label: "State".to_string(),
+            value: state.clone(),
+        });
+    }
+    if let Some(offset) = ptp_offset_ns {
+        ptp_items.push(DiagnosticItem {
+            label: "Offset".to_string(),
+            value: format!("{offset} ns"),
+        });
+    }
+
+    let ptp = DiagnosticCard {
+        level: ptp_level,
+        summary: ptp_summary,
+        items: ptp_items,
+    };
+
+    let ptp_history = s.ptp_history.read().await.iter().cloned().collect();
+
+    Json(DanteDiagnosticsResponse {
+        event_log: s.event_log.read().await.iter().cloned().collect(),
+        generated_at: chrono::Utc::now().to_rfc3339(),
+        device,
+        network,
+        ptp,
+        ptp_history,
+        recovery_actions: dante_recovery_actions(),
+    })
+}
+
+// POST /api/v1/system/dante/recovery-actions/:action
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/dante/recovery-actions/{action}",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    params(
+        ("action" = String, Path, description = "Recovery action id: rescan, rebind, restart")
+    ),
+    responses(
+        (status = 200, description = "Recovery action accepted", body = DanteRecoveryActionResponse),
+        (status = 400, description = "Unsupported action", body = crate::api::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 500, description = "Action failed", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn post_dante_recovery_action(
+    State(state): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(action): Path<String>,
+) -> impl IntoResponse {
+    let task_id = format!("recovery:{action}");
+    let action_label = match action.as_str() {
+        "rescan" => "Running recovery rescan",
+        "rebind" => "Reloading runtime config",
+        "restart" => "Restarting Minos",
+        _ => "Running recovery action",
+    };
+    emit_task_event(
+        &state,
+        claims.as_ref(),
+        task_id.clone(),
+        TaskStatus::Started,
+        action_label,
+        None,
+        Some("system.recovery"),
+        Some(EventResource::new(
+            "recovery_action",
+            Some(action.clone()),
+            Some(action.clone()),
+        )),
+        None,
+    );
+    match action.as_str() {
+        "rescan" => {
+            let sample = sample_ptp_history_now(&state).await;
+            state.push_ptp_history(sample).await;
+            log_dante_event(
+                &state,
+                "info",
+                "Recovery action: rescan",
+                Some("Captured fresh Dante/PTP sample".to_string()),
+            )
+            .await;
+            log_audit_event(
+                &state,
+                claims.as_ref(),
+                "system.recovery",
+                "Executed recovery rescan.",
+                None,
+                Some(EventResource::new(
+                    "recovery_action",
+                    Some(action.clone()),
+                    Some(action.clone()),
+                )),
+                Some(serde_json::json!({ "action": action })),
+            )
+            .await;
+            emit_task_event(
+                &state,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Succeeded,
+                action_label,
+                Some("Captured fresh Dante/PTP sample.".to_string()),
+                Some("system.recovery"),
+                Some(EventResource::new(
+                    "recovery_action",
+                    Some(action.clone()),
+                    Some(action.clone()),
+                )),
+                None,
+            );
+            Json(DanteRecoveryActionResponse {
+                ok: true,
+                action: DanteRecoveryActionId::Rescan,
+                message: "Captured fresh Dante/PTP sample.".to_string(),
+                restarting: false,
+            })
+            .into_response()
+        }
+        "rebind" => match reload_runtime_config(&state).await {
+            Ok(()) => {
+                log_dante_event(
+                    &state,
+                    "info",
+                    "Recovery action: rebind",
+                    Some("Runtime config reloaded from disk".to_string()),
+                )
+                .await;
+                log_audit_event(
+                    &state,
+                    claims.as_ref(),
+                    "system.recovery",
+                    "Reloaded runtime config from disk.",
+                    None,
+                    Some(EventResource::new(
+                        "recovery_action",
+                        Some(action.clone()),
+                        Some(action.clone()),
+                    )),
+                    Some(serde_json::json!({ "action": action })),
+                )
+                .await;
+                emit_task_event(
+                    &state,
+                    claims.as_ref(),
+                    task_id,
+                    TaskStatus::Succeeded,
+                    action_label,
+                    Some("Runtime config reloaded from disk.".to_string()),
+                    Some("system.recovery"),
+                    Some(EventResource::new(
+                        "recovery_action",
+                        Some(action.clone()),
+                        Some(action.clone()),
+                    )),
+                    None,
+                );
+                Json(DanteRecoveryActionResponse {
+                    ok: true,
+                    action: DanteRecoveryActionId::Rebind,
+                    message: "Runtime config reloaded from disk.".to_string(),
+                    restarting: false,
+                })
+                .into_response()
+            }
+            Err(error) => {
+                log_dante_event(
+                    &state,
+                    "error",
+                    "Recovery action failed: rebind",
+                    Some(error.clone()),
+                )
+                .await;
+                emit_task_event(
+                    &state,
+                    claims.as_ref(),
+                    task_id,
+                    TaskStatus::Failed,
+                    action_label,
+                    Some(error.clone()),
+                    Some("system.recovery"),
+                    Some(EventResource::new(
+                        "recovery_action",
+                        Some(action.clone()),
+                        Some(action.clone()),
+                    )),
+                    None,
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(crate::api::ErrorResponse {
+                        error,
+                        in_memory: None,
+                    }),
+                )
+                    .into_response()
+            }
+        },
+        "restart" => {
+            let _ = state.persist().await;
+            log_dante_event(
+                &state,
+                "warn",
+                "Recovery action: restart",
+                Some("Restart requested from Dante diagnostics".to_string()),
+            )
+            .await;
+            log_audit_event(
+                &state,
+                claims.as_ref(),
+                "system.recovery",
+                "Requested Minos restart from diagnostics.",
+                None,
+                Some(EventResource::new(
+                    "recovery_action",
+                    Some(action.clone()),
+                    Some(action.clone()),
+                )),
+                Some(serde_json::json!({ "action": action })),
+            )
+            .await;
+            emit_task_event(
+                &state,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Succeeded,
+                action_label,
+                Some("Restarting Minos.".to_string()),
+                Some("system.recovery"),
+                Some(EventResource::new(
+                    "recovery_action",
+                    Some(action.clone()),
+                    Some(action.clone()),
+                )),
+                Some(serde_json::json!({ "restarting": true })),
+            );
+            schedule_process_restart(&state);
+            Json(DanteRecoveryActionResponse {
+                ok: true,
+                action: DanteRecoveryActionId::Restart,
+                message: "Restarting Minos.".to_string(),
+                restarting: true,
+            })
+            .into_response()
+        }
+        _ => {
+            log_dante_event(
+                &state,
+                "warn",
+                "Unsupported recovery action",
+                Some(action.clone()),
+            )
+            .await;
+            emit_task_event(
+                &state,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Failed,
+                action_label,
+                Some(format!("unsupported recovery action: {action}")),
+                Some("system.recovery"),
+                Some(EventResource::new(
+                    "recovery_action",
+                    Some(action.clone()),
+                    Some(action.clone()),
+                )),
+                None,
+            );
+            (
+                StatusCode::BAD_REQUEST,
+                Json(crate::api::ErrorResponse {
+                    error: format!("unsupported recovery action: {action}"),
+                    in_memory: None,
+                }),
+            )
+                .into_response()
+        }
+    }
 }
 
 // GET /api/v1/system
@@ -529,11 +1685,316 @@ pub async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     })
 }
 
+// GET /api/v1/system/audit
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/audit",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Audit entries", body = AuditLogResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn get_audit_log(State(s): State<AppState>) -> impl IntoResponse {
+    let entries: Vec<EventLogEntry> = s
+        .event_log
+        .read()
+        .await
+        .iter()
+        .filter(|entry| entry.category == "audit")
+        .cloned()
+        .collect();
+    Json(AuditLogResponse {
+        total: entries.len(),
+        entries,
+    })
+}
+
+// GET /api/v1/system/audit/export
+#[utoipa::path(
+    get,
+    path = "/api/v1/system/audit/export",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Audit export download", body = AuditExportResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn export_audit_log(State(s): State<AppState>) -> impl IntoResponse {
+    let entries: Vec<EventLogEntry> = s
+        .event_log
+        .read()
+        .await
+        .iter()
+        .filter(|entry| entry.category == "audit")
+        .cloned()
+        .collect();
+    let payload = AuditExportResponse {
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        total: entries.len(),
+        entries,
+    };
+    let filename = format!(
+        "patchbox-audit-{}.json",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    (
+        [
+            (header::CONTENT_TYPE, "application/json".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+        ],
+        Json(payload),
+    )
+        .into_response()
+}
+
+// POST /api/v1/bulk
+#[utoipa::path(
+    post,
+    path = "/api/v1/bulk",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    request_body = BulkMutationRequest,
+    responses(
+        (status = 200, description = "Bulk mutation applied", body = BulkMutationResponse),
+        (status = 400, description = "Invalid bulk mutation", body = crate::api::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 404, description = "Target not found", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn post_bulk_mutation(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Json(body): Json<BulkMutationRequest>,
+) -> impl IntoResponse {
+    match body {
+        BulkMutationRequest::SetAllOutputsMuted { muted } => {
+            let operation = if muted {
+                "set_all_outputs_muted"
+            } else {
+                "clear_all_output_mutes"
+            };
+            let task_id = format!("bulk:{operation}");
+            let label = if muted {
+                "Muting all outputs"
+            } else {
+                "Unmuting all outputs"
+            };
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Started,
+                label,
+                None,
+                Some("bulk.outputs_mute"),
+                Some(EventResource::new(
+                    "output",
+                    None,
+                    Some("All outputs".to_string()),
+                )),
+                Some(serde_json::json!({ "muted": muted })),
+            );
+
+            let affected = {
+                let mut cfg = s.config.write().await;
+                let mut changed = 0usize;
+                for value in &mut cfg.output_muted {
+                    if *value != muted {
+                        *value = muted;
+                        changed += 1;
+                    }
+                }
+                changed
+            };
+            crate::persist_or_500!(s);
+            log_audit_event(
+                &s,
+                claims.as_ref(),
+                "bulk.outputs_mute",
+                if muted {
+                    "Muted all outputs."
+                } else {
+                    "Cleared all output mutes."
+                },
+                None,
+                Some(EventResource::new(
+                    "output",
+                    None,
+                    Some("All outputs".to_string()),
+                )),
+                Some(serde_json::json!({ "muted": muted, "affected": affected })),
+            )
+            .await;
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Succeeded,
+                label,
+                Some(format!("Updated {affected} outputs.")),
+                Some("bulk.outputs_mute"),
+                Some(EventResource::new(
+                    "output",
+                    None,
+                    Some("All outputs".to_string()),
+                )),
+                Some(serde_json::json!({ "muted": muted, "affected": affected })),
+            );
+            Json(BulkMutationResponse {
+                ok: true,
+                operation: operation.to_string(),
+                affected,
+                task_id,
+            })
+            .into_response()
+        }
+        BulkMutationRequest::ClearZoneRoutes { zone_id } => {
+            if parse_zone_id(&zone_id).is_none() {
+                emit_task_event(
+                    &s,
+                    claims.as_ref(),
+                    format!("bulk:clear_zone_routes:{zone_id}"),
+                    TaskStatus::Failed,
+                    "Clearing zone routes",
+                    Some("Invalid zone id.".to_string()),
+                    Some("bulk.clear_zone_routes"),
+                    Some(EventResource::new(
+                        "zone",
+                        Some(zone_id.clone()),
+                        Some(zone_id.clone()),
+                    )),
+                    None,
+                );
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(crate::api::ErrorResponse {
+                        error: "invalid zone id (expected zone_N)".to_string(),
+                        in_memory: None,
+                    }),
+                )
+                    .into_response();
+            }
+
+            let task_id = format!("bulk:clear_zone_routes:{zone_id}");
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Started,
+                "Clearing zone routes",
+                None,
+                Some("bulk.clear_zone_routes"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_id.clone()),
+                )),
+                None,
+            );
+
+            let affected = {
+                let mut cfg = s.config.write().await;
+                let Some(zone) = cfg.zone_config.iter().find(|zone| zone.id == zone_id) else {
+                    emit_task_event(
+                        &s,
+                        claims.as_ref(),
+                        task_id.clone(),
+                        TaskStatus::Failed,
+                        "Clearing zone routes",
+                        Some("Zone not found.".to_string()),
+                        Some("bulk.clear_zone_routes"),
+                        Some(EventResource::new(
+                            "zone",
+                            Some(zone_id.clone()),
+                            Some(zone_id.clone()),
+                        )),
+                        None,
+                    );
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(crate::api::ErrorResponse {
+                            error: "zone not found".to_string(),
+                            in_memory: None,
+                        }),
+                    )
+                        .into_response();
+                };
+
+                let tx_ids = zone.tx_ids.clone();
+                let mut changed = 0usize;
+                for tx_id in tx_ids {
+                    let Some(tx) = parse_tx_id(&tx_id) else {
+                        continue;
+                    };
+                    if let Some(row) = cfg.matrix.get_mut(tx) {
+                        for cell in row {
+                            if *cell {
+                                *cell = false;
+                                changed += 1;
+                            }
+                        }
+                    }
+                }
+                changed
+            };
+            crate::persist_or_500!(s);
+            log_audit_event(
+                &s,
+                claims.as_ref(),
+                "bulk.clear_zone_routes",
+                format!("Cleared routes for zone {zone_id}."),
+                None,
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_id.clone()),
+                )),
+                Some(serde_json::json!({ "affected": affected })),
+            )
+            .await;
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Succeeded,
+                "Clearing zone routes",
+                Some(format!("Cleared {affected} routes.")),
+                Some("bulk.clear_zone_routes"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_id.clone()),
+                )),
+                Some(serde_json::json!({ "affected": affected })),
+            );
+            Json(BulkMutationResponse {
+                ok: true,
+                operation: "clear_zone_routes".to_string(),
+                affected,
+                task_id,
+            })
+            .into_response()
+        }
+    }
+}
+
 // PUT /api/v1/system/config
 pub async fn put_system_config(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<UpdateSystemConfig>,
 ) -> impl IntoResponse {
+    let context = serde_json::json!({
+        "scene_crossfade_ms": body.scene_crossfade_ms,
+        "gain_ramp_ms": body.gain_ramp_ms,
+        "show_buses_in_mixer": body.show_buses_in_mixer,
+    });
     let mut cfg = s.config.write().await;
     if let Some(v) = body.scene_crossfade_ms {
         cfg.scene_crossfade_ms = v.max(0.0);
@@ -546,6 +2007,20 @@ pub async fn put_system_config(
     }
     drop(cfg);
     crate::persist_or_500!(s);
+    log_audit_event(
+        &s,
+        claims.as_ref(),
+        "system.config.update",
+        "Updated system config settings.",
+        None,
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox system config".to_string()),
+        )),
+        Some(context),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -571,20 +2046,113 @@ pub async fn get_system_config_export(State(s): State<AppState>) -> impl IntoRes
 // POST /api/v1/system/config/import
 pub async fn post_system_config_import(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    let task_id = "config:import".to_string();
+    let body_len = body.len();
+    emit_task_event(
+        &s,
+        claims.as_ref(),
+        task_id.clone(),
+        TaskStatus::Started,
+        "Importing system config",
+        None,
+        Some("system.config.import"),
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({ "bytes": body_len })),
+    );
     let toml_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
-        Err(_) => return (StatusCode::BAD_REQUEST, "body is not valid UTF-8").into_response(),
+        Err(_) => {
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Failed,
+                "Importing system config",
+                Some("Body is not valid UTF-8.".to_string()),
+                Some("system.config.import"),
+                Some(EventResource::new(
+                    "config",
+                    Some("system".to_string()),
+                    Some("Patchbox config".to_string()),
+                )),
+                Some(serde_json::json!({ "bytes": body_len })),
+            );
+            return (StatusCode::BAD_REQUEST, "body is not valid UTF-8").into_response();
+        }
     };
-    let mut new_cfg: PatchboxConfig = match toml::from_str(toml_str) {
-        Ok(c) => c,
-        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    let (new_cfg, _) = match parse_config_candidate(toml_str) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Failed,
+                "Importing system config",
+                Some(e.clone()),
+                Some("system.config.import"),
+                Some(EventResource::new(
+                    "config",
+                    Some("system".to_string()),
+                    Some("Patchbox config".to_string()),
+                )),
+                Some(serde_json::json!({ "bytes": body_len })),
+            );
+            return (StatusCode::BAD_REQUEST, e).into_response();
+        }
     };
-    let _ = _create_backup(&s).await;
-    new_cfg.normalize();
+    let requested_by = claims.as_ref().map(|Extension(claims)| claims.sub.as_str());
+    let _ = _create_backup(
+        &s,
+        CreateBackupRequest {
+            source: BackupSource::Import,
+            requested_by,
+            note: Some("Created before config import.".to_string()),
+            target_config: Some(&new_cfg),
+        },
+    )
+    .await;
     *s.config.write().await = new_cfg;
     crate::persist_or_500!(s);
+    emit_task_event(
+        &s,
+        claims.as_ref(),
+        task_id.clone(),
+        TaskStatus::Succeeded,
+        "Importing system config",
+        Some("Imported system config.".to_string()),
+        Some("system.config.import"),
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({ "bytes": body_len })),
+    );
+    log_audit_event(
+        &s,
+        claims.as_ref(),
+        "system.config.import",
+        "Imported system config.",
+        None,
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({
+            "source": "import",
+            "bytes": body.len(),
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -600,7 +2168,7 @@ pub async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse 
         Some(d) => d,
         None => return Json(serde_json::json!([])).into_response(),
     };
-    let mut baks: Vec<serde_json::Value> = std::fs::read_dir(dir)
+    let mut baks: Vec<BackupListEntry> = std::fs::read_dir(dir)
         .ok()
         .into_iter()
         .flatten()
@@ -617,10 +2185,14 @@ pub async fn get_config_backups(State(s): State<AppState>) -> impl IntoResponse 
                 .and_then(|s| s.strip_suffix(".toml"))
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
-            serde_json::json!({ "name": name, "timestamp": ts })
+            BackupListEntry {
+                name,
+                timestamp: ts,
+                metadata: read_backup_metadata(&e.path(), ts),
+            }
         })
         .collect();
-    baks.sort_by(|a, b| b["timestamp"].as_u64().cmp(&a["timestamp"].as_u64()));
+    baks.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     Json(baks).into_response()
 }
 
@@ -656,6 +2228,7 @@ pub async fn get_config_backup(
 // POST /api/v1/system/config/backups/:name/restore
 pub async fn restore_config_backup(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     if name.contains('/') || name.contains("..") {
@@ -670,14 +2243,40 @@ pub async fn restore_config_backup(
         Ok(s) => s,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
-    let mut new_cfg: PatchboxConfig = match toml::from_str(&toml_str) {
-        Ok(c) => c,
-        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    let (new_cfg, _) = match parse_config_candidate(&toml_str) {
+        Ok(cfg) => cfg,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
     };
-    let _ = _create_backup(&s).await;
-    new_cfg.normalize();
+    let requested_by = claims.as_ref().map(|Extension(claims)| claims.sub.as_str());
+    let _ = _create_backup(
+        &s,
+        CreateBackupRequest {
+            source: BackupSource::BackupRestore,
+            requested_by,
+            note: Some(format!("Created before restoring backup {name}.")),
+            target_config: Some(&new_cfg),
+        },
+    )
+    .await;
     *s.config.write().await = new_cfg;
     crate::persist_or_500!(s);
+    log_audit_event(
+        &s,
+        claims.as_ref(),
+        "system.config.restore_backup",
+        format!("Restored config backup {name}."),
+        None,
+        Some(EventResource::new(
+            "config_backup",
+            Some(name.clone()),
+            Some(name.clone()),
+        )),
+        Some(serde_json::json!({
+            "source": "backup_restore",
+            "backup_name": name,
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -725,6 +2324,70 @@ pub struct RestoreResponse {
     pub message: String,
 }
 
+// POST /api/v1/system/config/validate
+#[utoipa::path(
+    post,
+    path = "/api/v1/system/config/validate",
+    tag = "system",
+    security(("bearer_auth" = [])),
+    request_body(content = String, content_type = "application/toml",
+                 description = "Raw TOML configuration file to validate"),
+    responses(
+        (status = 200, description = "Validation result", body = ConfigValidateResponse),
+        (status = 400, description = "Request body is not valid UTF-8",
+         body = crate::api::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+    )
+)]
+pub async fn post_config_validate(
+    State(s): State<AppState>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let toml_str = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(crate::api::ErrorResponse {
+                    error: "request body is not valid UTF-8".to_string(),
+                    in_memory: None,
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let (candidate, normalized) = match parse_config_candidate(toml_str) {
+        Ok(result) => result,
+        Err(error) => {
+            return Json(ConfigValidateResponse {
+                valid: false,
+                normalized: false,
+                errors: vec![format!("invalid config TOML: {error}")],
+                summary: ConfigDiffSummary::default(),
+                changes: vec![],
+            })
+            .into_response();
+        }
+    };
+
+    let current = {
+        let mut current = s.config.read().await.clone();
+        current.normalize();
+        current
+    };
+    let (summary, changes) = build_config_diff_summary(&current, &candidate);
+
+    Json(ConfigValidateResponse {
+        valid: true,
+        normalized,
+        errors: vec![],
+        summary,
+        changes,
+    })
+    .into_response()
+}
+
 // POST /api/v1/system/config/restore
 #[utoipa::path(
     post,
@@ -743,11 +2406,44 @@ pub struct RestoreResponse {
 )]
 pub async fn post_config_restore(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    let task_id = "config:restore".to_string();
+    let body_len = body.len();
+    emit_task_event(
+        &s,
+        claims.as_ref(),
+        task_id.clone(),
+        TaskStatus::Started,
+        "Restoring system config",
+        None,
+        Some("system.config.restore"),
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({ "bytes": body_len })),
+    );
     let toml_str = match std::str::from_utf8(&body) {
         Ok(s) => s,
         Err(_) => {
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Failed,
+                "Restoring system config",
+                Some("Request body is not valid UTF-8.".to_string()),
+                Some("system.config.restore"),
+                Some(EventResource::new(
+                    "config",
+                    Some("system".to_string()),
+                    Some("Patchbox config".to_string()),
+                )),
+                Some(serde_json::json!({ "bytes": body_len })),
+            );
             return (
                 StatusCode::BAD_REQUEST,
                 Json(crate::api::ErrorResponse {
@@ -758,9 +2454,24 @@ pub async fn post_config_restore(
                 .into_response();
         }
     };
-    let mut new_cfg: PatchboxConfig = match toml::from_str(toml_str) {
-        Ok(c) => c,
+    let (new_cfg, _) = match parse_config_candidate(toml_str) {
+        Ok(cfg) => cfg,
         Err(e) => {
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id,
+                TaskStatus::Failed,
+                "Restoring system config",
+                Some(format!("invalid config TOML: {e}")),
+                Some("system.config.restore"),
+                Some(EventResource::new(
+                    "config",
+                    Some("system".to_string()),
+                    Some("Patchbox config".to_string()),
+                )),
+                Some(serde_json::json!({ "bytes": body_len })),
+            );
             return (
                 StatusCode::BAD_REQUEST,
                 Json(crate::api::ErrorResponse {
@@ -771,11 +2482,51 @@ pub async fn post_config_restore(
                 .into_response();
         }
     };
-    // Snapshot current config as a timestamped backup before overwriting.
-    let _ = _create_backup(&s).await;
-    new_cfg.normalize();
+    let requested_by = claims.as_ref().map(|Extension(claims)| claims.sub.as_str());
+    let _ = _create_backup(
+        &s,
+        CreateBackupRequest {
+            source: BackupSource::Restore,
+            requested_by,
+            note: Some("Created before config restore.".to_string()),
+            target_config: Some(&new_cfg),
+        },
+    )
+    .await;
     *s.config.write().await = new_cfg;
     crate::persist_or_500!(s);
+    emit_task_event(
+        &s,
+        claims.as_ref(),
+        task_id.clone(),
+        TaskStatus::Succeeded,
+        "Restoring system config",
+        Some("Config restored. Restart recommended.".to_string()),
+        Some("system.config.restore"),
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({ "bytes": body_len })),
+    );
+    log_audit_event(
+        &s,
+        claims.as_ref(),
+        "system.config.restore",
+        "Restored system config from uploaded TOML.",
+        None,
+        Some(EventResource::new(
+            "config",
+            Some("system".to_string()),
+            Some("Patchbox config".to_string()),
+        )),
+        Some(serde_json::json!({
+            "source": "restore",
+            "bytes": body.len(),
+        })),
+    )
+    .await;
     Json(RestoreResponse {
         status: "ok".to_string(),
         message: "Config restored. Restart recommended.".to_string(),
@@ -1012,10 +2763,7 @@ pub async fn post_admin_channels(
         )
             .into_response();
     }
-    tokio::spawn(async {
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        std::process::exit(0);
-    });
+    schedule_process_restart(&state);
     (
         StatusCode::OK,
         Json(serde_json::json!({"ok": true, "restarting": true})),
@@ -1026,10 +2774,7 @@ pub async fn post_admin_channels(
 // POST /api/v1/admin/restart
 pub async fn post_admin_restart(State(state): State<AppState>) -> impl IntoResponse {
     let _ = state.persist().await;
-    tokio::spawn(async {
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        std::process::exit(0);
-    });
+    schedule_process_restart(&state);
     (
         StatusCode::OK,
         Json(serde_json::json!({"ok": true, "restarting": true})),

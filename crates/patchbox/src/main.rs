@@ -11,6 +11,7 @@ mod auth_api;
 mod jwt;
 mod openapi;
 mod pam_auth;
+mod ptp;
 mod scenes;
 mod state;
 
@@ -91,7 +92,7 @@ async fn main() {
     // Graceful shutdown: flush config on SIGINT or SIGTERM
     let state_for_shutdown = state.clone();
     tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
+        use tokio::signal::unix::{signal, SignalKind};
         let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {},
@@ -107,7 +108,7 @@ async fn main() {
     let state_for_reload = state.clone();
     let config_path_for_reload = args.config.clone();
     tokio::spawn(async move {
-        use tokio::signal::unix::{SignalKind, signal};
+        use tokio::signal::unix::{signal, SignalKind};
         let mut sigusr1 = match signal(SignalKind::user_defined1()) {
             Ok(s) => s,
             Err(e) => {
@@ -168,6 +169,106 @@ async fn main() {
     state
         .dante_connected
         .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    // Sprint 6 Track A — lightweight in-memory PTP history sampler (1 Hz)
+    {
+        let state_for_ptp = state.clone();
+        tokio::spawn(async move {
+            use std::os::unix::fs::FileTypeExt;
+            use std::time::{SystemTime, UNIX_EPOCH};
+
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+            let mut last_locked: Option<bool> = None;
+            let mut last_state: Option<String> = None;
+            loop {
+                tick.tick().await;
+
+                let cfg = state_for_ptp.config.read().await;
+                let obs_path = cfg.statime_observation_path.clone();
+                let clock_path = cfg.dante_clock_path.clone();
+                drop(cfg);
+
+                let offset_ns = if let Some(path) = obs_path.as_deref() {
+                    crate::ptp::query_ptp_offset(path).await
+                } else {
+                    None
+                };
+                let ptp_state = if let Some(path) = obs_path.as_deref() {
+                    crate::ptp::query_ptp_state(path).await
+                } else {
+                    None
+                };
+
+                let dante_connected = state_for_ptp
+                    .dante_connected
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                let ptp_synced = std::fs::metadata(&clock_path)
+                    .map(|m| m.file_type().is_socket())
+                    .unwrap_or(false);
+                let locked = ptp_state
+                    .as_deref()
+                    .map(crate::ptp::is_ptp_locked_state)
+                    .unwrap_or(dante_connected && ptp_synced);
+
+                let ts_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+
+                state_for_ptp
+                    .push_ptp_history(crate::state::PtpHistorySample {
+                        ts_ms,
+                        locked,
+                        offset_ns,
+                        state: ptp_state.clone(),
+                    })
+                    .await;
+
+                if last_locked != Some(locked) {
+                    state_for_ptp
+                        .push_event_log(crate::state::EventLogEntry {
+                            ts_ms,
+                            category: "runtime".to_string(),
+                            level: if locked {
+                                "info".to_string()
+                            } else {
+                                "warn".to_string()
+                            },
+                            message: if locked {
+                                "PTP lock acquired".to_string()
+                            } else {
+                                "PTP lock lost".to_string()
+                            },
+                            action: None,
+                            details: ptp_state.clone(),
+                            actor: None,
+                            resource: None,
+                            context: None,
+                        })
+                        .await;
+                    last_locked = Some(locked);
+                }
+
+                if ptp_state != last_state {
+                    let next_state = ptp_state.clone();
+                    state_for_ptp
+                        .push_event_log(crate::state::EventLogEntry {
+                            ts_ms,
+                            category: "runtime".to_string(),
+                            level: "info".to_string(),
+                            message: "PTP state changed".to_string(),
+                            action: None,
+                            details: next_state.clone(),
+                            actor: None,
+                            resource: None,
+                            context: None,
+                        })
+                        .await;
+                    last_state = next_state;
+                }
+            }
+        });
+    }
 
     // Simulated meter task — only active when inferno feature is disabled
     #[cfg(not(feature = "inferno"))]

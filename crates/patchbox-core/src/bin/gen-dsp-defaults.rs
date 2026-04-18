@@ -72,12 +72,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&out_dir)?;
 
     let mut defaults: BTreeMap<String, Value> = BTreeMap::new();
-    defaults.insert("flt".to_string(), serde_json::to_value(FltParams::default())?);
+    defaults.insert(
+        "flt".to_string(),
+        serde_json::to_value(FltParams::default())?,
+    );
     defaults.insert("am".to_string(), serde_json::to_value(AmParams::default())?);
-    defaults.insert("peq".to_string(), serde_json::to_value(EqConfig::default())?);
-    defaults.insert("gte".to_string(), serde_json::to_value(GateConfig::default())?);
-    defaults.insert("cmp".to_string(), serde_json::to_value(CompressorConfig::default())?);
-    defaults.insert("aec".to_string(), serde_json::to_value(AecConfig::default())?);
+    defaults.insert(
+        "peq".to_string(),
+        serde_json::to_value(EqConfig::default())?,
+    );
+    defaults.insert(
+        "gte".to_string(),
+        serde_json::to_value(GateConfig::default())?,
+    );
+    defaults.insert(
+        "cmp".to_string(),
+        serde_json::to_value(CompressorConfig::default())?,
+    );
+    defaults.insert(
+        "aec".to_string(),
+        serde_json::to_value(AecConfig::default())?,
+    );
     defaults.insert(
         "axm".to_string(),
         serde_json::to_value(AutomixerChannelConfig::default())?,
@@ -86,9 +101,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "afs".to_string(),
         serde_json::to_value(FeedbackSuppressorConfig::default())?,
     );
-    defaults.insert("deq".to_string(), serde_json::to_value(DynamicEqConfig::default())?);
-    defaults.insert("lim".to_string(), serde_json::to_value(LimiterConfig::default())?);
-    defaults.insert("dly".to_string(), serde_json::to_value(DlyParams::default())?);
+    defaults.insert(
+        "deq".to_string(),
+        serde_json::to_value(DynamicEqConfig::default())?,
+    );
+    defaults.insert(
+        "lim".to_string(),
+        serde_json::to_value(LimiterConfig::default())?,
+    );
+    defaults.insert(
+        "dly".to_string(),
+        serde_json::to_value(DlyParams::default())?,
+    );
 
     let json = serde_json::to_string_pretty(&defaults)? + "\n";
     fs::write(&out_path, json)?;

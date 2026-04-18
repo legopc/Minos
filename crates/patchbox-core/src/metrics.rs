@@ -67,8 +67,7 @@ impl DspMetrics {
         let next = current_f64 + alpha * (new_f64 - current_f64);
         let next_u32 = next.round() as u32;
 
-        self.cpu_percent_avg_x100
-            .store(next_u32, Ordering::Relaxed);
+        self.cpu_percent_avg_x100.store(next_u32, Ordering::Relaxed);
     }
 
     /// Increment xrun counter.
@@ -180,7 +179,11 @@ mod tests {
         // First update at 100%
         metrics.update_block_cpu(1000, budget_us);
         let after_first = metrics.cpu_percent_avg();
-        assert!(after_first > 0.0 && after_first < 1.5, "After 1 sample at 100%, avg should be ~0.2%, got {}", after_first);
+        assert!(
+            after_first > 0.0 && after_first < 1.5,
+            "After 1 sample at 100%, avg should be ~0.2%, got {}",
+            after_first
+        );
 
         // After 10 samples, should be higher
         for _ in 0..9 {

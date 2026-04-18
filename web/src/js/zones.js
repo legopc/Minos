@@ -5,8 +5,13 @@ import { toast } from './toast.js';
 import { buildOutputMaster } from './mixer.js';
 import { makeReorderable, applyOrder, saveOrder } from './reorder.js';
 import { undo } from './undo.js';
+import { confirmModal, inputModal } from './modal.js';
 
 let _container = null;
+let _openZoneId = null;
+let _zoneMetering = new Map();
+let _zoneMeteringReq = null;
+let _zoneMeteringFetchedAt = 0;
 
 export function render(container) {
   _container = container;
@@ -14,12 +19,21 @@ export function render(container) {
 }
 
 function _showGrid() {
+  _openZoneId = null;
   _container.innerHTML = '';
   _container.id = 'tab-zones';
+  _kickZoneMeteringRefresh();
 
   const toolbar = document.createElement('div');
   toolbar.className = 'zones-toolbar';
   toolbar.innerHTML = `<span style="flex:1;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">Zones</span>`;
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'zones-add-btn';
+  addBtn.textContent = 'NEW ZONE';
+  addBtn.onclick = () => _createZone();
+  toolbar.appendChild(addBtn);
+
   _container.appendChild(toolbar);
 
   const grid = document.createElement('div');
@@ -31,8 +45,10 @@ function _showGrid() {
 }
 
 function _showZonePanel(zone) {
+  _openZoneId = zone.id;
   _container.innerHTML = '';
   _container.id = 'tab-zones';
+  _kickZoneMeteringRefresh();
 
   const colour = st.getZoneColour(zone.colour_index ?? 0);
 
@@ -52,7 +68,19 @@ function _showZonePanel(zone) {
   title.textContent = zone.name ?? zone.id;
   header.appendChild(title);
 
-  // Zone-level mute
+  const editBtn = document.createElement('button');
+  editBtn.className = 'zone-card-edit-btn';
+  editBtn.textContent = 'EDIT';
+  editBtn.onclick = (e) => { e.stopPropagation(); _renameZone(zone); };
+  header.appendChild(editBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'zone-card-edit-btn zone-card-del-btn';
+  delBtn.textContent = 'DEL';
+  delBtn.onclick = (e) => { e.stopPropagation(); _deleteZone(zone); };
+  header.appendChild(delBtn);
+
+  // Zone-level mute (uses output PUT so stereo peers mirror correctly)
   const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
   const allMuted = txOutputs.length > 0 && txOutputs.every(o => o.muted === true);
   const muteAll = document.createElement('button');
@@ -62,15 +90,11 @@ function _showZonePanel(zone) {
     const wasMuted = muteAll.classList.contains('active');
     const willMute = !wasMuted;
     const txIds = zone.tx_ids ?? [];
-    const txIndices = txIds.map(id => parseInt(id.replace('tx_', ''), 10));
     try {
-      for (const idx of txIndices) {
-        willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+      for (const txId of txIds) {
+        await api.putOutput(txId, { muted: willMute });
       }
-      txIds.forEach(id => {
-        const o = st.state.outputs.get(id);
-        if (o) st.setOutput({ ...o, muted: willMute });
-      });
+      await _refreshOutputs();
 
       muteAll.classList.toggle('active', willMute);
       muteAll.textContent = willMute ? 'UNMUTE ALL' : 'MUTE ALL';
@@ -78,22 +102,16 @@ function _showZonePanel(zone) {
       undo.push({
         label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
         apply: async () => {
-          for (const idx of txIndices) {
-            willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          for (const txId of txIds) {
+            await api.putOutput(txId, { muted: willMute });
           }
-          txIds.forEach(id => {
-            const o = st.state.outputs.get(id);
-            if (o) st.setOutput({ ...o, muted: willMute });
-          });
+          await _refreshOutputs();
         },
         revert: async () => {
-          for (const idx of txIndices) {
-            wasMuted ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          for (const txId of txIds) {
+            await api.putOutput(txId, { muted: wasMuted });
           }
-          txIds.forEach(id => {
-            const o = st.state.outputs.get(id);
-            if (o) st.setOutput({ ...o, muted: wasMuted });
-          });
+          await _refreshOutputs();
         },
       });
     } catch(e) { toast('Mute error: ' + e.message, true); }
@@ -101,6 +119,16 @@ function _showZonePanel(zone) {
   header.appendChild(muteAll);
 
   _container.appendChild(header);
+
+  const meterCard = document.createElement('div');
+  meterCard.className = 'zone-meter-grid zone-meter-panel';
+  meterCard.innerHTML = _zoneMeterMarkup(_zoneMetering.get(zone.id));
+  _container.appendChild(meterCard);
+
+  const dspSummary = document.createElement('div');
+  dspSummary.className = 'zone-dsp-summary zone-dsp-panel';
+  dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
+  _container.appendChild(dspSummary);
 
   // Strips area — output mixer strips for each tx in this zone
   const stripsWrap = document.createElement('div');
@@ -152,6 +180,20 @@ function _buildCard(zone) {
   nameBtn.onclick = () => _showZonePanel(zone);
   hdr.appendChild(nameBtn);
 
+  const editBtn = document.createElement('button');
+  editBtn.className = 'zone-card-edit-btn';
+  editBtn.textContent = 'EDIT';
+  editBtn.title = 'Rename zone';
+  editBtn.onclick = (e) => { e.stopPropagation(); _renameZone(zone); };
+  hdr.appendChild(editBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'zone-card-edit-btn zone-card-del-btn';
+  delBtn.textContent = 'DEL';
+  delBtn.title = 'Delete zone';
+  delBtn.onclick = (e) => { e.stopPropagation(); _deleteZone(zone); };
+  hdr.appendChild(delBtn);
+
   card.appendChild(hdr);
 
   // Determine initial mute state: muted if ALL tx outputs are muted
@@ -168,15 +210,11 @@ function _buildCard(zone) {
     const wasMuted = muteBtn.classList.contains('active');
     const willMute = !wasMuted;
     const txIds = zone.tx_ids ?? [];
-    const txIndices = txIds.map(id => parseInt(id.replace('tx_', ''), 10));
     try {
-      for (const idx of txIndices) {
-        willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+      for (const txId of txIds) {
+        await api.putOutput(txId, { muted: willMute });
       }
-      txIds.forEach(id => {
-        const o = st.state.outputs.get(id);
-        if (o) st.setOutput({ ...o, muted: willMute });
-      });
+      await _refreshOutputs();
 
       muteBtn.classList.toggle('active', willMute);
       muteBtn.textContent = willMute ? 'UNMUTE' : 'MUTE';
@@ -184,26 +222,30 @@ function _buildCard(zone) {
       undo.push({
         label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
         apply: async () => {
-          for (const idx of txIndices) {
-            willMute ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          for (const txId of txIds) {
+            await api.putOutput(txId, { muted: willMute });
           }
-          txIds.forEach(id => {
-            const o = st.state.outputs.get(id);
-            if (o) st.setOutput({ ...o, muted: willMute });
-          });
+          await _refreshOutputs();
         },
         revert: async () => {
-          for (const idx of txIndices) {
-            wasMuted ? await api.muteZone(idx) : await api.unmuteZone(idx);
+          for (const txId of txIds) {
+            await api.putOutput(txId, { muted: wasMuted });
           }
-          txIds.forEach(id => {
-            const o = st.state.outputs.get(id);
-            if (o) st.setOutput({ ...o, muted: wasMuted });
-          });
+          await _refreshOutputs();
         },
       });
     } catch(e) { toast('Mute error: ' + e.message, true); }
   };
+
+  const meterBlock = document.createElement('div');
+  meterBlock.className = 'zone-meter-grid';
+  meterBlock.innerHTML = _zoneMeterMarkup(_zoneMetering.get(zone.id));
+  card.appendChild(meterBlock);
+
+  const dspSummary = document.createElement('div');
+  dspSummary.className = 'zone-dsp-summary';
+  dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
+  card.appendChild(dspSummary);
 
   // Input selector
   const srcLabel = document.createElement('div');
@@ -311,6 +353,7 @@ function _buildCard(zone) {
         const o = st.state.outputs.get(txId);
         if (o) st.setOutput({ ...o, volume_db: endDb });
       }
+      await _refreshOutputs();
 
       const prev = volStart;
       volStart = null;
@@ -323,6 +366,7 @@ function _buildCard(zone) {
             const o = st.state.outputs.get(txId);
             if (o) st.setOutput({ ...o, volume_db: endDb });
           }
+          await _refreshOutputs();
         },
         revert: async () => {
           for (const p of prev) {
@@ -330,6 +374,7 @@ function _buildCard(zone) {
             const o = st.state.outputs.get(p.id);
             if (o) st.setOutput({ ...o, volume_db: p.volume_db });
           }
+          await _refreshOutputs();
         },
       });
     } catch (e) {
@@ -356,6 +401,184 @@ function _buildCard(zone) {
   }
 
   return card;
+}
+
+async function _refreshOutputs() {
+  const outs = await api.getOutputs();
+  outs.forEach(o => st.setOutput(o));
+}
+
+function _kickZoneMeteringRefresh() {
+  const now = Date.now();
+  if (_zoneMeteringReq || now - _zoneMeteringFetchedAt < 2000) return;
+  _zoneMeteringReq = api.getZoneMetering()
+    .then((rows) => {
+      _zoneMetering = new Map((rows ?? []).map((row) => [row.id, row]));
+      _zoneMeteringFetchedAt = Date.now();
+      if (_container && st.state.activeTab === 'zones') {
+        const zone = _openZoneId ? st.zoneList().find((entry) => entry.id === _openZoneId) : null;
+        if (zone) _showZonePanel(zone);
+        else _showGrid();
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      _zoneMeteringReq = null;
+    });
+}
+
+function _zoneMeterMarkup(metering) {
+  return `
+    <div class="zone-meter-stat">
+      <span class="k">RMS</span>
+      <span class="v">${_meterDb(metering?.rms_db)}</span>
+    </div>
+    <div class="zone-meter-stat">
+      <span class="k">Peak</span>
+      <span class="v">${_meterDb(metering?.peak_db)}</span>
+    </div>
+    <div class="zone-meter-stat">
+      <span class="k">GR</span>
+      <span class="v">${_meterDb(metering?.gr_db)}</span>
+    </div>
+    <div class="zone-meter-stat">
+      <span class="k">Clips</span>
+      <span class="v">${Number(metering?.clip_count ?? 0)}</span>
+    </div>`;
+}
+
+function _zoneDspSummaryMarkup(zone) {
+  const outputs = (zone?.tx_ids ?? []).map((id) => st.state.outputs.get(id)).filter(Boolean);
+  if (!outputs.length) return '<div class="zone-dsp-empty">No outputs assigned.</div>';
+
+  const counts = [
+    ['Filters', outputs.filter((out) => _hasEnabledBlock(out, 'flt')).length],
+    ['EQ', outputs.filter((out) => _hasEnabledBlock(out, 'peq')).length],
+    ['Comp', outputs.filter((out) => _hasEnabledBlock(out, 'cmp')).length],
+    ['Limit', outputs.filter((out) => _hasEnabledBlock(out, 'lim')).length],
+    ['Delay', outputs.filter((out) => _hasEnabledBlock(out, 'dly')).length],
+    ['DynEQ', outputs.filter((out) => _hasEnabledBlock(out, 'deq')).length],
+  ].filter(([, count]) => count > 0);
+
+  const stereoPairs = _zoneStereoPairCount(zone);
+  if (stereoPairs > 0) counts.unshift(['Stereo', stereoPairs]);
+
+  if (!counts.length) return '<div class="zone-dsp-empty">DSP clean</div>';
+
+  return counts.map(([label, count]) => `
+    <span class="zone-dsp-badge">
+      <span class="k">${_e(label)}</span>
+      <span class="v">${Number(count)}</span>
+    </span>
+  `).join('');
+}
+
+async function _createZone() {
+  inputModal({
+    title: 'Create zone',
+    placeholder: 'Zone name',
+    confirmLabel: 'Create',
+    onConfirm: async (name) => {
+      const used = new Set(st.zoneList().flatMap(z => z.tx_ids ?? []));
+      const free = st.outputList().map(o => o.id).filter(id => !used.has(id));
+      const tx_ids = free.length ? [free[0]] : [];
+      if (!tx_ids.length) toast('No free outputs left; zone will be empty', false);
+
+      try {
+        const z = await api.postZone({ name, tx_ids });
+        st.setZone(z);
+        await _refreshOutputs();
+        _showGrid();
+      } catch (e) {
+        toast('Create zone error: ' + e.message, true);
+      }
+    },
+  });
+}
+
+async function _renameZone(zone) {
+  const prev = zone.name ?? zone.id;
+  inputModal({
+    title: 'Rename zone',
+    defaultValue: zone.name ?? zone.id,
+    confirmLabel: 'Save',
+    onConfirm: async (name) => {
+      try {
+        await api.putZone(zone.id, { name });
+        st.setZone({ ...zone, name });
+        await _refreshOutputs();
+        _showGrid();
+
+        undo.push({
+          label: `Rename zone "${zone.name ?? zone.id}"`,
+          apply: async () => {
+            await api.putZone(zone.id, { name });
+            st.setZone({ ...zone, name });
+            await _refreshOutputs();
+            _showGrid();
+          },
+          revert: async () => {
+            await api.putZone(zone.id, { name: prev });
+            st.setZone({ ...zone, name: prev });
+            await _refreshOutputs();
+            _showGrid();
+          },
+        });
+      } catch (e) {
+        toast('Rename error: ' + e.message, true);
+      }
+    },
+  });
+}
+
+function _deleteZone(zone) {
+  confirmModal({
+    title: 'Delete zone',
+    body: `Delete zone "${_e(zone.name ?? zone.id)}"?`,
+    confirmLabel: 'Delete',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await api.deleteRoutesByZone(zone.id);
+        st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
+        await api.deleteZone(zone.id);
+        st.removeZone(zone.id);
+        await _refreshOutputs();
+        _showGrid();
+      } catch (e) {
+        toast('Delete error: ' + e.message, true);
+      }
+    },
+  });
+}
+
+function _meterDb(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return '—';
+  return `${v >= 0 ? '+' : ''}${v.toFixed(1)} dB`;
+}
+
+function _hasEnabledBlock(output, key) {
+  return Boolean(output?.dsp?.[key]?.enabled);
+}
+
+function _zoneStereoPairCount(zone) {
+  const seen = new Set();
+  for (const txId of zone?.tx_ids ?? []) {
+    const txIdx = _txIndex(txId);
+    if (!Number.isInteger(txIdx)) continue;
+    const link = st.getOutputStereoLink(txIdx);
+    if (!link?.linked) continue;
+    const left = Math.min(link.left_channel, link.right_channel);
+    const right = Math.max(link.left_channel, link.right_channel);
+    if (!(zone.tx_ids ?? []).includes(`tx_${left}`) || !(zone.tx_ids ?? []).includes(`tx_${right}`)) continue;
+    seen.add(`${left}:${right}`);
+  }
+  return seen.size;
+}
+
+function _txIndex(txId) {
+  const n = Number(String(txId).replace(/^tx_/, ''));
+  return Number.isInteger(n) ? n : null;
 }
 
 function _e(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

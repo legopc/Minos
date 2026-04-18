@@ -23,6 +23,7 @@ const _state = {
   connState:     'offline',
   ptp:           { locked: null, offset_ns: 0 },
   activeSceneId: null,
+  tasks:         [],    // TaskStatus[]
   system:        {
     monitor_device: null,
     monitor_volume_db: 0,
@@ -42,6 +43,7 @@ export function setOutput(out)             { _state.outputs.set(out.id, out); }
 export function setRoute(r)                { _state.routes.set(`${r.rx_id}|${r.tx_id}`, r); }
 export function removeRoute(rxId, txId)    { _state.routes.delete(`${rxId}|${txId}`); }
 export function setZone(z)                 { _state.zones.set(z.id, z); }
+export function removeZone(id)             { _state.zones.delete(id); }
 export function setBus(bus)                { _state.buses.set(bus.id, bus); }
 export function removeBus(id)              { _state.buses.delete(id); }
 export function setBusMatrix(matrix)       { _state.busMatrix = matrix ?? {}; }
@@ -80,6 +82,7 @@ export function setMetering(rx, tx, gr, bus) {
   if (bus) Object.entries(bus).forEach(([k,v]) => _state.metering.set(k, v));
   if (gr)  Object.entries(gr).forEach(([k,v])  => _state.gr.set(k, v));
 }
+export function taskList()               { return _state.tasks; }
 export function setSystem(sys)             { _state.system = sys; }
 export function setConnState(s)            { _state.connState = s; }
 export function setPtp(locked, offset_ns)  { _state.ptp = { locked, offset_ns }; }
@@ -129,6 +132,58 @@ export function outputList()   { return [..._state.outputs.values()]; }
 export function zoneList()     { return [..._state.zones.values()]; }
 export function routeList()    { return [..._state.routes.values()]; }
 export function busList()      { return [..._state.buses.values()]; }
+
+export function normaliseTaskState(state) {
+  const value = String(state ?? '').trim().toLowerCase();
+  if (['queued', 'pending'].includes(value)) return 'queued';
+  if (['running', 'active', 'started', 'in_progress', 'in-progress'].includes(value)) return 'running';
+  if (['succeeded', 'success', 'done', 'completed', 'ok'].includes(value)) return 'succeeded';
+  if (['failed', 'error'].includes(value)) return 'failed';
+  return value || 'queued';
+}
+
+export function isTerminalTaskState(state) {
+  const value = normaliseTaskState(state);
+  return value === 'succeeded' || value === 'failed';
+}
+
+export function upsertTask(task) {
+  if (!task || typeof task !== 'object') return null;
+
+  const now = Date.now();
+  const updatedAt = Number.isFinite(Number(task.ts_ms)) ? Number(task.ts_ms) : now;
+  const next = {
+    ...task,
+    id: task.id != null ? String(task.id) : null,
+    kind: task.kind != null ? String(task.kind) : '',
+    action: task.action != null ? String(task.action) : '',
+    label: task.label != null ? String(task.label) : '',
+    message: task.message != null ? String(task.message) : '',
+    detail: task.detail != null ? String(task.detail) : '',
+    source: task.source != null ? String(task.source) : '',
+    scope: task.scope != null ? String(task.scope) : '',
+    state: normaliseTaskState(task.state),
+    local: task.local === true,
+    ts_ms: updatedAt,
+  };
+
+  const idx = _state.tasks.findIndex((existing) => {
+    if (next.id && existing.id === next.id) return true;
+    if ((existing.local || next.local) && next.kind && existing.kind === next.kind) return true;
+    if ((existing.local || next.local) && next.action && existing.action === next.action) return true;
+    return false;
+  });
+
+  if (idx >= 0) {
+    _state.tasks[idx] = { ..._state.tasks[idx], ...next };
+  } else {
+    _state.tasks.unshift(next);
+  }
+
+  _state.tasks.sort((a, b) => (b.ts_ms ?? 0) - (a.ts_ms ?? 0));
+  _state.tasks = _state.tasks.slice(0, 12);
+  return next;
+}
 
 export function hasRoute(rxId, txId) {
   return _state.routes.has(`${rxId}|${txId}`);

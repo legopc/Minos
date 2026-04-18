@@ -43,6 +43,28 @@ const post = (path, body)  => req('POST',   path, body);
 export const put  = (path, body)  => req('PUT',    path, body);
 const del  = (path)        => req('DELETE', path);
 
+async function raw(path, init = {}) {
+  const headers = { ...(init.headers ?? {}) };
+  if (_token) headers['Authorization'] = `Bearer ${_token}`;
+  const r = await fetch(BASE + path, { ...init, headers });
+  if (r.status === 401) {
+    clearToken();
+    window.dispatchEvent(new CustomEvent('pb:unauthorized'));
+    throw new Error('401');
+  }
+  return r;
+}
+
+function buildQueryString(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value == null || value === '' || value === 'all') return;
+    query.set(key, String(value));
+  });
+  const str = query.toString();
+  return str ? `?${str}` : '';
+}
+
 // deprecated: use api.put() instead — patch was a misnomer; the actual HTTP method is PUT
 export const patch = (path, body) => {
   console.warn('[deprecated] api.patch → api.put');
@@ -330,6 +352,7 @@ export const putOutputMute       = (ch, muted)   => reqWithRetry('PUT', `/output
  * @returns {Promise<Array<ZoneConfig>>} Array of zone objects
  */
 export const getZones      = ()          => get('/zones');
+export const getZoneMetering = ()        => get('/zones/metering');
 
 /**
  * Create a new zone.
@@ -583,6 +606,14 @@ export const getMetering   = ()          => get('/metering');
 export const getSystem          = ()     => get('/system');
 
 /**
+ * Get Dante diagnostics snapshot.
+ * @returns {Promise<Object>} Diagnostics data
+ */
+export const getDanteDiagnostics = ()    => get('/system/dante/diagnostics');
+export const postDanteRecoveryAction = (action) =>
+  post(`/system/dante/recovery-actions/${encodeURIComponent(action)}`, {});
+
+/**
  * Get system health status.
  * @returns {Promise<HealthResponse>} Health data
  */
@@ -621,6 +652,108 @@ export const postConfigImport   = (tomlStr) => {
     headers: { 'Content-Type': 'application/toml', ...(_token ? { 'Authorization': `Bearer ${_token}` } : {}) },
     body: tomlStr,
   });
+};
+
+/**
+ * Validate configuration from TOML string when the device exposes the endpoint.
+ * Unsupported endpoints resolve with supported=false so callers can fall back.
+ * @param {string} tomlStr - TOML configuration content
+ * @returns {Promise<{supported:boolean,status:number,payload:any}>}
+ */
+export const postConfigValidate = async (tomlStr) => {
+  const r = await raw('/system/config/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/toml' },
+    body: tomlStr,
+  });
+
+  const ct = r.headers.get('content-type') ?? '';
+  const payload = r.status === 204
+    ? null
+    : ct.includes('json')
+      ? await r.json().catch(() => null)
+      : await r.text().catch(() => '');
+
+  if ([404, 405, 501].includes(r.status)) {
+    return { supported: false, status: r.status, payload };
+  }
+
+  if (!r.ok) {
+    const message = typeof payload === 'string'
+      ? payload
+      : payload?.error ?? payload?.message ?? r.statusText;
+    const err = new Error(message || `HTTP ${r.status}`);
+    err.status = r.status;
+    err.body = payload;
+    throw err;
+  }
+
+  return { supported: true, status: r.status, payload };
+};
+
+/**
+ * Fetch system audit log rows when the device exposes the endpoint.
+ * @param {Object} params - Optional filter/query params
+ * @returns {Promise<{supported:boolean,status:number,rows:Array,payload:any}>}
+ */
+export const getSystemAuditLog = async (params = {}) => {
+  const r = await raw(`/system/audit${buildQueryString(params)}`);
+  const ct = r.headers.get('content-type') ?? '';
+  const payload = r.status === 204
+    ? []
+    : ct.includes('json')
+      ? await r.json().catch(() => null)
+      : await r.text().catch(() => '');
+
+  if ([404, 405, 501].includes(r.status)) {
+    return { supported: false, status: r.status, rows: [], payload };
+  }
+
+  if (!r.ok) {
+    const message = typeof payload === 'string'
+      ? payload
+      : payload?.error ?? payload?.message ?? r.statusText;
+    const err = new Error(message || `HTTP ${r.status}`);
+    err.status = r.status;
+    err.body = payload;
+    throw err;
+  }
+
+  const rows = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.events)
+        ? payload.events
+        : Array.isArray(payload?.rows)
+          ? payload.rows
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+
+  return { supported: true, status: r.status, rows, payload };
+};
+
+/**
+ * Download system audit log export when the device exposes the endpoint.
+ * @param {Object} params - Optional export params
+ * @returns {Promise<{supported:boolean,status:number,response:Response}>}
+ */
+export const downloadSystemAuditLog = async (params = {}) => {
+  const r = await raw(`/system/audit/export${buildQueryString(params)}`);
+
+  if ([404, 405, 501].includes(r.status)) {
+    return { supported: false, status: r.status, response: r };
+  }
+
+  if (!r.ok) {
+    const text = await r.text().catch(() => r.statusText);
+    const err = new Error(text || `HTTP ${r.status}`);
+    err.status = r.status;
+    throw err;
+  }
+
+  return { supported: true, status: r.status, response: r };
 };
 
 /**

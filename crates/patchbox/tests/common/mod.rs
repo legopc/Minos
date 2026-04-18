@@ -19,7 +19,12 @@ use tower::ServiceExt;
 const TEST_JWT_SECRET: [u8; 32] = [7u8; 32];
 
 pub fn test_app() -> Router {
+    test_app_with_state().0
+}
+
+pub fn test_app_with_state() -> (Router, AppState) {
     let config = fixture_config();
+    let config_toml = toml::to_string_pretty(&config).expect("serialize config");
 
     let scratch = scratch_dir();
     std::fs::create_dir_all(&scratch).expect("create scratch dir");
@@ -31,15 +36,18 @@ pub fn test_app() -> Router {
 
     let config_path = dir.path().join("config.toml");
     let mut state = AppState::new(config, config_path);
+    std::fs::write(&state.config_path, config_toml).expect("write config");
 
     // Make JWT deterministic and avoid depending on /etc/patchbox/jwt.key.
     state.jwt_secret = Arc::new(RwLock::new(TEST_JWT_SECRET.to_vec()));
+    state.exit_on_restart = false;
 
     // Keep tempdir alive for the router lifetime.
     // Router is 'static; leaking is acceptable in tests.
     std::mem::forget(dir);
 
-    api::router(state)
+    let app = api::router(state.clone());
+    (app, state)
 }
 
 /// Deterministic JWT for protected endpoint tests.

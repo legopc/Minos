@@ -52,29 +52,26 @@ pub async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     let outputs: Vec<OutputResponse> = (0..cfg.tx_channels)
         .map(|i| {
-            let name = cfg
+            let tx_id = format!("tx_{}", i);
+            let zone = cfg
                 .zone_config
-                .get(i)
-                .map(|z| z.name.clone())
-                .unwrap_or_else(|| {
-                    cfg.zones
-                        .get(i)
-                        .cloned()
-                        .unwrap_or_else(|| format!("Zone {}", i + 1))
-                });
-            let zone_id = cfg
-                .zone_config
-                .get(i)
+                .iter()
+                .find(|z| z.tx_ids.iter().any(|t| t == &tx_id));
+
+            let name = zone.map(|z| z.name.clone()).unwrap_or_else(|| {
+                cfg.zones
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Zone {}", i + 1))
+            });
+            let zone_id = zone
                 .map(|z| z.id.clone())
                 .unwrap_or_else(|| format!("zone_{}", i));
-            let zone_colour_index = cfg
-                .zone_config
-                .get(i)
-                .map(|z| z.colour_index)
-                .unwrap_or((i % 10) as u8);
+            let zone_colour_index = zone.map(|z| z.colour_index).unwrap_or((i % 10) as u8);
+
             let dsp = cfg.output_dsp.get(i).cloned().unwrap_or_default();
             OutputResponse {
-                id: format!("tx_{}", i),
+                id: tx_id,
                 name,
                 zone_id,
                 zone_colour_index,
@@ -112,29 +109,27 @@ pub async fn get_output_resource(
     if i >= cfg.tx_channels {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let name = cfg
+
+    let tx_id = format!("tx_{}", i);
+    let zone = cfg
         .zone_config
-        .get(i)
-        .map(|z| z.name.clone())
-        .unwrap_or_else(|| {
-            cfg.zones
-                .get(i)
-                .cloned()
-                .unwrap_or_else(|| format!("Zone {}", i + 1))
-        });
-    let zone_id = cfg
-        .zone_config
-        .get(i)
+        .iter()
+        .find(|z| z.tx_ids.iter().any(|t| t == &tx_id));
+
+    let name = zone.map(|z| z.name.clone()).unwrap_or_else(|| {
+        cfg.zones
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| format!("Zone {}", i + 1))
+    });
+    let zone_id = zone
         .map(|z| z.id.clone())
         .unwrap_or_else(|| format!("zone_{}", i));
-    let zone_colour_index = cfg
-        .zone_config
-        .get(i)
-        .map(|z| z.colour_index)
-        .unwrap_or((i % 10) as u8);
+    let zone_colour_index = zone.map(|z| z.colour_index).unwrap_or((i % 10) as u8);
+
     let dsp = cfg.output_dsp.get(i).cloned().unwrap_or_default();
     Json(OutputResponse {
-        id: format!("tx_{}", i),
+        id: tx_id,
         name,
         zone_id,
         zone_colour_index,
@@ -178,8 +173,13 @@ pub async fn put_output_resource(
         if i < cfg.zones.len() {
             cfg.zones[i] = name.clone();
         }
-        if i < cfg.zone_config.len() {
-            cfg.zone_config[i].name = name.clone();
+        let tx_id = format!("tx_{}", i);
+        if let Some(z) = cfg
+            .zone_config
+            .iter_mut()
+            .find(|z| z.tx_ids.iter().any(|t| t == &tx_id))
+        {
+            z.name = name.clone();
         }
     }
     if let Some(vol) = body.volume_db {

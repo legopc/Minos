@@ -54,10 +54,7 @@ async fn input_compressor_round_trip() {
         "expected threshold_db=-12.0, got {threshold}"
     );
 
-    let ratio = cmp
-        .get("ratio")
-        .and_then(|v| v.as_f64())
-        .expect("ratio");
+    let ratio = cmp.get("ratio").and_then(|v| v.as_f64()).expect("ratio");
     assert!(
         (ratio - 4.0).abs() < 1e-5,
         "expected ratio=4.0, got {ratio}"

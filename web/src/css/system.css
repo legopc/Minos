@@ -331,3 +331,414 @@
   color: var(--text-primary, #eee);
   line-height: 14px;
 }
+
+.sys-card-config {
+  min-width: min(720px, 100%);
+  flex: 1 1 calc(66.66% - 12px);
+}
+
+.sys-config-flow {
+  display: grid;
+  gap: 12px;
+}
+
+.sys-config-step {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.sys-config-step-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.sys-config-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.sys-config-step-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sys-config-help {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.sys-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sys-config-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sys-config-source-summary,
+.sys-config-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.sys-config-source-card,
+.sys-config-preview-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: var(--bg-dark);
+}
+
+.sys-config-preview-card.is-ok {
+  border-color: rgba(92, 184, 92, 0.5);
+}
+
+.sys-config-preview-card.is-error {
+  border-color: rgba(217, 83, 79, 0.65);
+}
+
+.sys-config-preview-card.is-muted {
+  border-color: var(--border-primary);
+}
+
+.sys-config-source-title,
+.sys-config-preview-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sys-config-source-name,
+.sys-config-preview-copy,
+.sys-config-empty {
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.sys-config-empty {
+  color: var(--text-muted);
+}
+
+.sys-config-preview-blocks {
+  display: grid;
+  gap: 10px;
+}
+
+.sys-config-meta,
+.sys-backup-meta,
+.sys-config-stats,
+.sys-config-section-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sys-meta-pill,
+.sys-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-primary);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sys-meta-pill .k,
+.sys-stat-pill .k {
+  color: var(--text-muted);
+}
+
+.sys-meta-pill .v,
+.sys-stat-pill .v {
+  color: var(--text-primary);
+}
+
+.sys-config-diff-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sys-config-diff-row {
+  border-left: 2px solid var(--border-primary);
+  padding-left: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.sys-config-diff-row.added {
+  border-left-color: var(--color-ok);
+}
+
+.sys-config-diff-row.removed {
+  border-left-color: var(--color-warn);
+}
+
+.sys-config-diff-row.changed {
+  border-left-color: var(--color-accent);
+}
+
+.sys-config-diff-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.sys-config-diff-before,
+.sys-config-diff-after {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sys-config-diff-before {
+  color: var(--text-muted);
+}
+
+.sys-config-diff-after {
+  color: var(--text-primary);
+}
+
+.sys-config-server-payload {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sys-backups-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sys-backup-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-dark);
+}
+
+.sys-backup-row.is-selected {
+  border-color: var(--color-accent);
+}
+
+.sys-backup-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sys-backup-name {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.sys-backup-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.sys-backup-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.sys-card-audit {
+  min-width: min(720px, 100%);
+  flex: 1 1 100%;
+}
+
+.sys-audit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.sys-audit-filter {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+
+.sys-audit-filter-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sys-audit-input,
+.sys-audit-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.sys-audit-input:focus,
+.sys-audit-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.sys-audit-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sys-audit-status,
+.sys-audit-empty,
+.sys-audit-details {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.sys-audit-body {
+  min-height: 72px;
+}
+
+.sys-audit-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.sys-audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.sys-audit-table th,
+.sys-audit-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  font-size: 11px;
+}
+
+.sys-audit-table th {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sys-audit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sys-audit-action {
+  color: var(--text-primary);
+}
+
+.sys-audit-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-primary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.sys-audit-badge.is-info {
+  color: var(--text-primary);
+}
+
+.sys-audit-badge.is-warn {
+  color: var(--color-warn);
+  border-color: rgba(210, 153, 34, 0.55);
+}
+
+.sys-audit-badge.is-error {
+  color: var(--color-danger);
+  border-color: rgba(217, 83, 79, 0.55);
+}
+
+@media (max-width: 899px) {
+  .sys-card-config {
+    min-width: 100%;
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .sys-card-audit {
+    min-width: 100%;
+    width: 100%;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 599px) {
+  .sys-config-step {
+    padding: 10px;
+  }
+
+  .sys-backup-row {
+    flex-direction: column;
+  }
+
+  .sys-backup-actions {
+    width: 100%;
+  }
+
+  .sys-audit-toolbar,
+  .sys-audit-actions {
+    width: 100%;
+  }
+
+  .sys-audit-filter {
+    min-width: 100%;
+  }
+}

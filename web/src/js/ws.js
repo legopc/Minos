@@ -229,6 +229,14 @@ function _dispatch(msg) {
       }
       break;
 
+    case 'task': {
+      const task = st.upsertTask(msg);
+      if (task) {
+        window.dispatchEvent(new CustomEvent('pb:task-update', { detail: task }));
+      }
+      break;
+    }
+
     case 'pong':
       break;
 

@@ -1,8 +1,8 @@
 use crate::api::ws_broadcast;
 use crate::scenes::Scene;
-use crate::state::AppState;
+use crate::state::{AppState, EventActor, EventResource, TaskEvent, TaskStatus};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -54,15 +54,35 @@ pub async fn list_scenes(State(s): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn save_scene(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(req): Json<SaveSceneRequest>,
 ) -> impl IntoResponse {
     let cfg = s.config.read().await;
-    let scene = Scene::from_config(&req.name, &cfg, req.description);
+    let description = req.description.clone();
+    let scene = Scene::from_config(&req.name, &cfg, description.clone());
     drop(cfg);
     let mut store = s.scenes.write().await;
-    store.scenes.insert(req.name.clone(), scene);
+    let replaced_existing = store.scenes.insert(req.name.clone(), scene).is_some();
     drop(store);
     crate::persist_scenes_or_500!(s);
+    s.push_audit_log(
+        "scene.save",
+        format!("Saved scene {}.", req.name),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "scene",
+            Some(req.name.clone()),
+            Some(req.name.clone()),
+        )),
+        Some(serde_json::json!({
+            "description": description,
+            "replaced_existing": replaced_existing,
+        })),
+    )
+    .await;
     StatusCode::OK.into_response()
 }
 
@@ -80,11 +100,50 @@ pub async fn save_scene(
     )
 )]
 #[tracing::instrument(skip_all, fields(scene_name = %name))]
-pub async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> impl IntoResponse {
+pub async fn load_scene(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let task_id = format!("scene:load:{name}");
+    s.emit_task_event(TaskEvent::new(
+        task_id.clone(),
+        TaskStatus::Started,
+        "Loading scene",
+        None,
+        Some("scene.load".to_string()),
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "scene",
+            Some(name.clone()),
+            Some(name.clone()),
+        )),
+        None,
+    ));
     let store = s.scenes.read().await;
     let scene = match store.scenes.get(&name) {
         Some(sc) => sc.clone(),
-        None => return (StatusCode::NOT_FOUND, "scene not found").into_response(),
+        None => {
+            s.emit_task_event(TaskEvent::new(
+                task_id,
+                TaskStatus::Failed,
+                "Loading scene",
+                Some("Scene not found.".to_string()),
+                Some("scene.load".to_string()),
+                claims
+                    .as_ref()
+                    .map(|Extension(claims)| EventActor::from_claims(claims)),
+                Some(EventResource::new(
+                    "scene",
+                    Some(name.clone()),
+                    Some(name.clone()),
+                )),
+                None,
+            ));
+            return (StatusCode::NOT_FOUND, "scene not found").into_response();
+        }
     };
     drop(store);
 
@@ -136,12 +195,46 @@ pub async fn load_scene(State(s): State<AppState>, Path(name): Path<String>) -> 
         });
     }
 
+    s.push_audit_log(
+        "scene.load",
+        format!("Loaded scene {name}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "scene",
+            Some(name.clone()),
+            Some(name.clone()),
+        )),
+        Some(serde_json::json!({
+            "crossfade_ms": crossfade_ms,
+        })),
+    )
+    .await;
+    s.emit_task_event(TaskEvent::new(
+        task_id,
+        TaskStatus::Succeeded,
+        "Loading scene",
+        Some(format!("Loaded scene {name}.")),
+        Some("scene.load".to_string()),
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "scene",
+            Some(name.clone()),
+            Some(name.clone()),
+        )),
+        Some(serde_json::json!({ "crossfade_ms": crossfade_ms })),
+    ));
     StatusCode::OK.into_response()
 }
 
 // DELETE /api/v1/scenes/:name
 pub async fn delete_scene(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let mut store = s.scenes.write().await;
@@ -153,6 +246,21 @@ pub async fn delete_scene(
     }
     drop(store);
     crate::persist_scenes_or_500!(s);
+    s.push_audit_log(
+        "scene.delete",
+        format!("Deleted scene {name}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "scene",
+            Some(name.clone()),
+            Some(name.clone()),
+        )),
+        None,
+    )
+    .await;
     StatusCode::OK.into_response()
 }
 
@@ -171,13 +279,20 @@ pub async fn get_scene_by_id(
 // PUT /api/v1/scenes/:id
 pub async fn put_scene(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<UpdateSceneRequest>,
 ) -> impl IntoResponse {
     let mut store = s.scenes.write().await;
+    let actor = claims
+        .as_ref()
+        .map(|Extension(claims)| EventActor::from_claims(claims));
+    let requested_name = body.name.clone();
+    let requested_description = body.description.clone();
+    let requested_favourite = body.is_favourite;
 
     // Rename requires re-keying the HashMap; handle it by moving the scene.
-    if let Some(new_id) = body.name {
+    if let Some(new_id) = requested_name.clone() {
         if new_id != id {
             if store.scenes.contains_key(&new_id) {
                 return StatusCode::CONFLICT.into_response();
@@ -186,10 +301,10 @@ pub async fn put_scene(
                 return StatusCode::NOT_FOUND.into_response();
             };
             scene.name = new_id.clone();
-            if let Some(desc) = body.description {
+            if let Some(desc) = requested_description.clone() {
                 scene.description = Some(desc);
             }
-            if let Some(fav) = body.is_favourite {
+            if let Some(fav) = requested_favourite {
                 scene.is_favourite = fav;
             }
             if store.active.as_deref() == Some(&id) {
@@ -198,6 +313,23 @@ pub async fn put_scene(
             store.scenes.insert(new_id, scene);
             drop(store);
             crate::persist_scenes_or_500!(s);
+            s.push_audit_log(
+                "scene.update",
+                format!("Renamed scene {id}."),
+                None,
+                actor,
+                Some(EventResource::new(
+                    "scene",
+                    Some(id.clone()),
+                    Some(id.clone()),
+                )),
+                Some(serde_json::json!({
+                    "name": requested_name,
+                    "description": requested_description,
+                    "is_favourite": requested_favourite,
+                })),
+            )
+            .await;
             return StatusCode::NO_CONTENT.into_response();
         }
     }
@@ -205,14 +337,30 @@ pub async fn put_scene(
     let Some(scene) = store.scenes.get_mut(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Some(desc) = body.description {
+    if let Some(desc) = requested_description.clone() {
         scene.description = Some(desc);
     }
-    if let Some(fav) = body.is_favourite {
+    if let Some(fav) = requested_favourite {
         scene.is_favourite = fav;
     }
     drop(store);
     crate::persist_scenes_or_500!(s);
+    s.push_audit_log(
+        "scene.update",
+        format!("Updated scene {id}."),
+        None,
+        actor,
+        Some(EventResource::new(
+            "scene",
+            Some(id.clone()),
+            Some(id.clone()),
+        )),
+        Some(serde_json::json!({
+            "description": requested_description,
+            "is_favourite": requested_favourite,
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 

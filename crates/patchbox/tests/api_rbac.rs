@@ -38,10 +38,7 @@ async fn operator_can_write_input() {
         Some(&tok),
     )
     .await;
-    assert!(
-        status.is_success(),
-        "expected 2xx, got {status}"
-    );
+    assert!(status.is_success(), "expected 2xx, got {status}");
 }
 
 // admin → 200 on system write

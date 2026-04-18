@@ -158,7 +158,7 @@ pub fn parse_bus_id(id: &str) -> Option<usize> {
     id.strip_prefix("bus_")?.parse().ok()
 }
 
-pub fn parse_zone_id(id: &str) -> Option<usize> {
+pub fn parse_zone_id(id: &str) -> Option<u64> {
     id.strip_prefix("zone_")?.parse().ok()
 }
 
@@ -511,6 +511,7 @@ pub fn router(state: AppState) -> Router {
             get(get_output_resource).put(put_output_resource),
         )
         .route("/api/v1/zones", get(get_zones_list).post(post_zone))
+        .route("/api/v1/zones/metering", get(get_zone_metering))
         .route(
             "/api/v1/zones/:zone_id",
             put(put_zone_resource).delete(delete_zone_resource),
@@ -520,8 +521,19 @@ pub fn router(state: AppState) -> Router {
             get(get_routes).post(post_route).delete(delete_routes_bulk),
         )
         .route("/api/v1/routes/:id", delete(delete_route))
+        .route("/api/v1/bulk", post(post_bulk_mutation))
         .route("/api/v1/metering", get(get_metering))
         .route("/api/v1/system", get(get_system))
+        .route("/api/v1/system/audit", get(get_audit_log))
+        .route("/api/v1/system/audit/export", get(export_audit_log))
+        .route(
+            "/api/v1/system/dante/diagnostics",
+            get(get_dante_diagnostics),
+        )
+        .route(
+            "/api/v1/system/dante/recovery-actions/:action",
+            post(post_dante_recovery_action),
+        )
         .route("/api/v1/system/config", put(put_system_config))
         .route(
             "/api/v1/system/config/export",
@@ -531,14 +543,12 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/system/config/import",
             post(post_system_config_import),
         )
+        .route("/api/v1/system/config/validate", post(post_config_validate))
         .route(
             "/api/v1/system/config/backup",
             get(get_config_backup_download),
         )
-        .route(
-            "/api/v1/system/config/restore",
-            post(post_config_restore),
-        )
+        .route("/api/v1/system/config/restore", post(post_config_restore))
         .route("/api/v1/system/config/backups", get(get_config_backups))
         .route(
             "/api/v1/system/config/backups/:name",
@@ -647,6 +657,8 @@ pub fn router(state: AppState) -> Router {
     let mut app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/api/v1/health", get(get_health))
+        .route("/api/v1/metrics", get(get_metrics))
+        .route("/api/v1/metrics/prometheus", get(get_metrics_prometheus))
         .route("/api/v1/login", post(auth_api::login))
         .route("/api/v1/auth/refresh", post(auth_api::refresh_token))
         .route("/api/v1/config", get(get_config))

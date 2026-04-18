@@ -1,7 +1,7 @@
 use crate::api::{parse_bus_id, parse_rx_id, parse_tx_id, ws_broadcast};
-use crate::state::AppState;
+use crate::state::{AppState, EventActor, EventResource};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -157,6 +157,7 @@ pub struct UpdateGeneratorMatrixRequest {
 #[tracing::instrument(skip_all)]
 pub async fn put_matrix(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(u): Json<MatrixUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
@@ -169,6 +170,26 @@ pub async fn put_matrix(
     }
     drop(cfg);
     crate::persist_or_500!(s);
+    s.push_audit_log(
+        "route.matrix_update",
+        format!("Updated matrix crosspoint rx_{} -> tx_{}.", u.rx, u.tx),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "route",
+            Some(format!("rx_{}|tx_{}", u.rx, u.tx)),
+            None,
+        )),
+        Some(serde_json::json!({
+            "tx": u.tx,
+            "rx": u.rx,
+            "enabled": u.enabled,
+            "gain_db": u.gain_db,
+        })),
+    )
+    .await;
     StatusCode::OK.into_response()
 }
 
@@ -270,6 +291,7 @@ pub async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
 #[tracing::instrument(skip_all, fields(rx_id, tx_id))]
 pub async fn post_route(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<CreateRouteRequest>,
 ) -> impl IntoResponse {
     // Handle bus→TX route
@@ -298,6 +320,21 @@ pub async fn post_route(
         crate::persist_or_500!(s);
         ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"bus"}).to_string());
         let route_id = format!("bus_{}|tx_{}", b, tx);
+        s.push_audit_log(
+            "route.create",
+            format!("Created route {route_id}."),
+            None,
+            claims
+                .as_ref()
+                .map(|Extension(claims)| EventActor::from_claims(claims)),
+            Some(EventResource::new("route", Some(route_id.clone()), None)),
+            Some(serde_json::json!({
+                "rx_id": body.rx_id,
+                "tx_id": body.tx_id,
+                "route_type": "bus",
+            })),
+        )
+        .await;
         return (
             StatusCode::CREATED,
             Json(serde_json::json!({
@@ -324,6 +361,21 @@ pub async fn post_route(
     crate::persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":&body.rx_id,"tx_id":&body.tx_id,"state":"on","route_type":"dante"}).to_string());
     let route_id = format!("rx_{}|tx_{}", rx, tx);
+    s.push_audit_log(
+        "route.create",
+        format!("Created route {route_id}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new("route", Some(route_id.clone()), None)),
+        Some(serde_json::json!({
+            "rx_id": body.rx_id,
+            "tx_id": body.tx_id,
+            "route_type": "dante",
+        })),
+    )
+    .await;
     (
         StatusCode::CREATED,
         Json(serde_json::json!({
@@ -348,7 +400,11 @@ pub async fn post_route(
         (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
     )
 )]
-pub async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub async fn delete_route(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
     let parts: Vec<&str> = id.splitn(2, '|').collect();
     if parts.len() != 2 {
         return (
@@ -376,6 +432,19 @@ pub async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> 
         drop(cfg);
         crate::persist_or_500!(s);
         ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":format!("bus_{}",b),"tx_id":format!("tx_{}",tx),"state":"off","route_type":"bus"}).to_string());
+        s.push_audit_log(
+            "route.delete",
+            format!("Deleted route {id}."),
+            None,
+            claims
+                .as_ref()
+                .map(|Extension(claims)| EventActor::from_claims(claims)),
+            Some(EventResource::new("route", Some(id.clone()), None)),
+            Some(serde_json::json!({
+                "route_type": "bus",
+            })),
+        )
+        .await;
         return StatusCode::NO_CONTENT.into_response();
     }
     let Some(rx) = parse_rx_id(parts[0]) else {
@@ -392,15 +461,67 @@ pub async fn delete_route(State(s): State<AppState>, Path(id): Path<String>) -> 
     drop(cfg);
     crate::persist_or_500!(s);
     ws_broadcast(&s, serde_json::json!({"type":"route_update","rx_id":format!("rx_{}",rx),"tx_id":format!("tx_{}",tx),"state":"off","route_type":"dante"}).to_string());
+    s.push_audit_log(
+        "route.delete",
+        format!("Deleted route {id}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new("route", Some(id.clone()), None)),
+        Some(serde_json::json!({
+            "route_type": "dante",
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
 // DELETE /api/v1/routes?rx_id=...&tx_id=...
 pub async fn delete_routes_bulk(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+
+    if let Some(zone_id) = params.get("zone_id") {
+        let Some(zone) = cfg.zone_config.iter().find(|z| z.id == *zone_id) else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        let tx_ids = zone.tx_ids.clone();
+        for tx_id in tx_ids {
+            let Some(tx) = parse_tx_id(&tx_id) else {
+                continue;
+            };
+            if let Some(row) = cfg.matrix.get_mut(tx) {
+                for cell in row.iter_mut() {
+                    *cell = false;
+                }
+            }
+        }
+        drop(cfg);
+        crate::persist_or_500!(s);
+        s.push_audit_log(
+            "route.bulk_delete",
+            format!("Cleared routes for zone {zone_id}."),
+            None,
+            claims
+                .as_ref()
+                .map(|Extension(claims)| EventActor::from_claims(claims)),
+            Some(EventResource::new(
+                "zone",
+                Some(zone_id.clone()),
+                Some(zone_id.clone()),
+            )),
+            Some(serde_json::json!({
+                "zone_id": zone_id,
+            })),
+        )
+        .await;
+        return StatusCode::NO_CONTENT.into_response();
+    }
+
     match (params.get("rx_id"), params.get("tx_id")) {
         (Some(rx_id), Some(tx_id)) => {
             let Some(rx) = parse_rx_id(rx_id) else {
@@ -436,13 +557,27 @@ pub async fn delete_routes_bulk(
         (None, None) => {
             return (
                 StatusCode::BAD_REQUEST,
-                "specify rx_id, tx_id, or both as query params",
+                "specify rx_id, tx_id, zone_id, or a combination as query params",
             )
                 .into_response();
         }
     }
     drop(cfg);
     crate::persist_or_500!(s);
+    s.push_audit_log(
+        "route.bulk_delete",
+        "Cleared routes via bulk delete.",
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new("route", None, None)),
+        Some(serde_json::json!({
+            "rx_id": params.get("rx_id"),
+            "tx_id": params.get("tx_id"),
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -760,7 +895,8 @@ pub async fn delete_output_stereo_link(
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     let before = cfg.output_stereo_links.len();
-    cfg.output_stereo_links.retain(|sl| sl.left_channel != left_ch);
+    cfg.output_stereo_links
+        .retain(|sl| sl.left_channel != left_ch);
     if cfg.output_stereo_links.len() == before {
         return StatusCode::NOT_FOUND.into_response();
     }

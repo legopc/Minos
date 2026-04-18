@@ -3,6 +3,7 @@ pub mod auth_api;
 pub mod jwt;
 pub mod openapi;
 pub mod pam_auth;
+pub mod ptp;
 pub mod scenes;
 pub mod state;
 

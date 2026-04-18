@@ -1,12 +1,13 @@
-use crate::api::parse_zone_id;
-use crate::state::AppState;
+use crate::api::{linear_to_dbfs, parse_tx_id, parse_zone_id};
+use crate::state::{AppState, EventActor, EventResource};
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
 use patchbox_core::config::ZoneConfig;
+use std::collections::HashSet;
 use tracing;
 
 #[derive(serde::Deserialize)]
@@ -51,6 +52,15 @@ pub struct UpdateZoneRequest {
     name: Option<String>,
     colour_index: Option<u8>,
     tx_ids: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct ZoneMetering {
+    pub id: String,
+    pub rms_db: f32,
+    pub peak_db: f32,
+    pub gr_db: f32,
+    pub clip_count: u64,
 }
 
 // POST /api/v1/zones/:tx/mute
@@ -115,6 +125,65 @@ pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
     Json(cfg.zone_config.clone())
 }
 
+// GET /api/v1/zones/metering
+#[utoipa::path(
+    get,
+    path = "/api/v1/zones/metering",
+    tag = "zones",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Per-zone metering"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn get_zone_metering(State(s): State<AppState>) -> impl IntoResponse {
+    let zones = {
+        let cfg = s.config.read().await;
+        cfg.zone_config.clone()
+    };
+    let meters = s.meters.read().await.clone();
+
+    let metering: Vec<ZoneMetering> = zones
+        .into_iter()
+        .map(|zone| {
+            let tx_indices: Vec<usize> = zone
+                .tx_ids
+                .iter()
+                .filter_map(|id| parse_tx_id(id))
+                .collect();
+
+            let rms_db = tx_indices
+                .iter()
+                .filter_map(|&idx| meters.tx_rms.get(idx).copied())
+                .map(linear_to_dbfs)
+                .fold(-60.0_f32, f32::max);
+            let peak_db = tx_indices
+                .iter()
+                .filter_map(|&idx| meters.tx_peak.get(idx).copied())
+                .map(linear_to_dbfs)
+                .fold(-60.0_f32, f32::max);
+            let gr_db = tx_indices
+                .iter()
+                .filter_map(|&idx| meters.tx_gr_db.get(idx).copied())
+                .fold(0.0_f32, f32::min);
+            let clip_count = tx_indices
+                .iter()
+                .filter_map(|&idx| meters.tx_clip_count.get(idx).copied())
+                .sum();
+
+            ZoneMetering {
+                id: zone.id,
+                rms_db,
+                peak_db,
+                gr_db,
+                clip_count,
+            }
+        })
+        .collect();
+
+    Json(metering)
+}
+
 // POST /api/v1/zones
 #[utoipa::path(
     post,
@@ -129,19 +198,61 @@ pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn post_zone(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<CreateZoneRequest>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
-    let idx = cfg.zone_config.len();
+
+    let mut tx_ids = body.tx_ids.unwrap_or_default();
+    let mut seen = HashSet::<String>::new();
+    tx_ids.retain(|id| seen.insert(id.clone()));
+
+    for tx_id in &tx_ids {
+        let Some(tx) = parse_tx_id(tx_id) else {
+            return (StatusCode::BAD_REQUEST, "invalid tx_id (expected tx_N)").into_response();
+        };
+        if tx >= cfg.tx_channels {
+            return (StatusCode::BAD_REQUEST, "tx_id out of range").into_response();
+        }
+    }
+
+    // Ensure a TX output belongs to at most one zone.
+    if !tx_ids.is_empty() {
+        let desired: HashSet<String> = tx_ids.iter().cloned().collect();
+        for z in cfg.zone_config.iter_mut() {
+            z.tx_ids.retain(|t| !desired.contains(t));
+        }
+    }
+
+    let id_n = cfg.next_zone_id;
+    cfg.next_zone_id = cfg.next_zone_id.saturating_add(1);
     let zone = ZoneConfig {
-        id: format!("zone_{}", idx),
+        id: format!("zone_{}", id_n),
         name: body.name,
-        colour_index: body.colour_index.unwrap_or((idx % 10) as u8),
-        tx_ids: body.tx_ids.unwrap_or_default(),
+        colour_index: body.colour_index.unwrap_or((id_n % 10) as u8),
+        tx_ids,
     };
     cfg.zone_config.push(zone.clone());
     drop(cfg);
     crate::persist_or_500!(s);
+    s.push_audit_log(
+        "zone.create",
+        format!("Created zone {}.", zone.id),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "zone",
+            Some(zone.id.clone()),
+            Some(zone.name.clone()),
+        )),
+        Some(serde_json::json!({
+            "colour_index": zone.colour_index,
+            "tx_ids": zone.tx_ids,
+        })),
+    )
+    .await;
     (StatusCode::CREATED, Json(zone)).into_response()
 }
 
@@ -161,30 +272,74 @@ pub async fn post_zone(
 #[tracing::instrument(skip_all, fields(zone_id))]
 pub async fn put_zone_resource(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(zone_id): Path<String>,
     Json(body): Json<UpdateZoneRequest>,
 ) -> impl IntoResponse {
-    let Some(i) = parse_zone_id(&zone_id) else {
+    if parse_zone_id(&zone_id).is_none() {
         return (StatusCode::BAD_REQUEST, "invalid zone id (expected zone_N)").into_response();
-    };
-    let mut cfg = s.config.write().await;
-    if i >= cfg.zone_config.len() {
-        return StatusCode::NOT_FOUND.into_response();
     }
-    if let Some(name) = body.name {
-        if i < cfg.zones.len() {
-            cfg.zones[i] = name.clone();
-        }
+    let requested_name = body.name.clone();
+    let requested_colour_index = body.colour_index;
+    let requested_tx_ids = body.tx_ids.clone();
+
+    let mut cfg = s.config.write().await;
+    let Some(i) = cfg.zone_config.iter().position(|z| z.id == zone_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    if let Some(name) = requested_name.clone() {
         cfg.zone_config[i].name = name;
     }
-    if let Some(ci) = body.colour_index {
+    if let Some(ci) = requested_colour_index {
         cfg.zone_config[i].colour_index = ci;
     }
-    if let Some(tx_ids) = body.tx_ids {
+    if let Some(mut tx_ids) = requested_tx_ids.clone() {
+        let mut seen = HashSet::<String>::new();
+        tx_ids.retain(|id| seen.insert(id.clone()));
+
+        for tx_id in &tx_ids {
+            let Some(tx) = parse_tx_id(tx_id) else {
+                return (StatusCode::BAD_REQUEST, "invalid tx_id (expected tx_N)").into_response();
+            };
+            if tx >= cfg.tx_channels {
+                return (StatusCode::BAD_REQUEST, "tx_id out of range").into_response();
+            }
+        }
+
+        if !tx_ids.is_empty() {
+            let desired: HashSet<String> = tx_ids.iter().cloned().collect();
+            for (j, z) in cfg.zone_config.iter_mut().enumerate() {
+                if j == i {
+                    continue;
+                }
+                z.tx_ids.retain(|t| !desired.contains(t));
+            }
+        }
+
         cfg.zone_config[i].tx_ids = tx_ids;
     }
     drop(cfg);
     crate::persist_or_500!(s);
+    s.push_audit_log(
+        "zone.update",
+        format!("Updated zone {zone_id}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "zone",
+            Some(zone_id.clone()),
+            Some(zone_id.clone()),
+        )),
+        Some(serde_json::json!({
+            "name": requested_name,
+            "colour_index": requested_colour_index,
+            "tx_ids": requested_tx_ids,
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -202,18 +357,36 @@ pub async fn put_zone_resource(
 )]
 pub async fn delete_zone_resource(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(zone_id): Path<String>,
 ) -> impl IntoResponse {
-    let Some(i) = parse_zone_id(&zone_id) else {
+    if parse_zone_id(&zone_id).is_none() {
         return (StatusCode::BAD_REQUEST, "invalid zone id (expected zone_N)").into_response();
-    };
-    let mut cfg = s.config.write().await;
-    if i >= cfg.zone_config.len() {
-        return StatusCode::NOT_FOUND.into_response();
     }
-    cfg.zone_config.remove(i);
+    let mut cfg = s.config.write().await;
+    let Some(i) = cfg.zone_config.iter().position(|z| z.id == zone_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let removed = cfg.zone_config.remove(i);
     drop(cfg);
     crate::persist_or_500!(s);
+    s.push_audit_log(
+        "zone.delete",
+        format!("Deleted zone {zone_id}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "zone",
+            Some(zone_id.clone()),
+            Some(removed.name),
+        )),
+        Some(serde_json::json!({
+            "tx_ids": removed.tx_ids,
+        })),
+    )
+    .await;
     StatusCode::NO_CONTENT.into_response()
 }
 

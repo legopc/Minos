@@ -907,6 +907,10 @@ pub struct PatchboxConfig {
     /// Auto-derived from tx_channels / zones in normalize() if empty.
     #[serde(default)]
     pub zone_config: Vec<ZoneConfig>,
+    /// Monotonic allocator for new ZoneConfig IDs.
+    /// Persisted so create/delete does not reuse identifiers.
+    #[serde(default)]
+    pub next_zone_id: u64,
     /// HTTP server port for web UI + API
     pub port: u16,
     /// RX jitter buffer depth in samples (48000 Hz). Default 48 = 1 ms on clean LAN.
@@ -996,6 +1000,7 @@ impl Default for PatchboxConfig {
             input_dsp: (0..rx).map(|_| InputChannelDsp::default()).collect(),
             output_dsp: (0..tx).map(|_| OutputChannelDsp::default()).collect(),
             zone_config: vec![],
+            next_zone_id: 0,
             dante_name: "patchbox".to_string(),
             dante_nic: "eth0".to_string(),
             dante_clock_path: default_clock_path(),
@@ -1103,6 +1108,42 @@ impl PatchboxConfig {
                 })
                 .collect();
         }
+
+        // Ensure ZoneConfig IDs are stable + unique and advance allocator.
+        fn parse_zone_numeric(id: &str) -> Option<u64> {
+            id.strip_prefix("zone_")?.parse().ok()
+        }
+
+        let mut used = std::collections::HashSet::<String>::new();
+        let mut max_seen: Option<u64> = None;
+        let mut next = self.next_zone_id;
+
+        for z in &mut self.zone_config {
+            let needs_new =
+                z.id.is_empty() || used.contains(&z.id) || parse_zone_numeric(&z.id).is_none();
+
+            if needs_new {
+                loop {
+                    let candidate = format!("zone_{}", next);
+                    next = next.saturating_add(1);
+                    if !used.contains(&candidate) {
+                        z.id = candidate;
+                        break;
+                    }
+                }
+            }
+
+            used.insert(z.id.clone());
+            if let Some(n) = parse_zone_numeric(&z.id) {
+                max_seen = Some(max_seen.map_or(n, |m| m.max(n)));
+            }
+        }
+
+        if let Some(max) = max_seen {
+            next = next.max(max.saturating_add(1));
+        }
+        self.next_zone_id = next;
+
         // Normalize internal buses
         for bus in &mut self.internal_buses {
             bus.routing.resize(self.rx_channels, false);
@@ -1259,10 +1300,9 @@ impl PatchboxConfig {
         *gain_cell = gain_db;
 
         if let Some(peer) = peer {
-            if let (Some(peer_cell), Some(peer_gain_cell)) = (
-                tx_row.get_mut(peer),
-                tx_gain_row.get_mut(peer),
-            ) {
+            if let (Some(peer_cell), Some(peer_gain_cell)) =
+                (tx_row.get_mut(peer), tx_gain_row.get_mut(peer))
+            {
                 *peer_cell = enabled;
                 *peer_gain_cell = gain_db;
             }
