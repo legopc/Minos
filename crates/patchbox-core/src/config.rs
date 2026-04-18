@@ -279,6 +279,9 @@ pub struct AecConfig {
 /// Per-channel automixer settings.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct AutomixerChannelConfig {
+    /// Whether the automixer is enabled for this channel.
+    #[serde(default)]
+    pub enabled: bool,
     /// Which automixer group this channel belongs to (matches `AutomixerGroupConfig::id`).
     /// None = not participating in any automixer group.
     #[serde(default)]
@@ -599,7 +602,7 @@ impl DspChain for InputChannelDsp {
             "gte": {"kind": "gte", "version": 1, "enabled": self.gate.enabled, "bypassed": false, "params": &self.gate},
             "cmp": {"kind": "cmp", "version": 1, "enabled": self.compressor.enabled, "bypassed": false, "params": &self.compressor},
             "aec": {"kind": "aec", "version": 1, "enabled": self.aec.enabled, "bypassed": false, "params": &self.aec},
-            "axm": {"kind": "axm", "version": 1, "enabled": true, "bypassed": false, "params": {"group_id": self.automixer.group_id, "weight": self.automixer.weight}},
+            "axm": {"kind": "axm", "version": 1, "enabled": self.automixer.enabled, "bypassed": false, "params": {"group_id": self.automixer.group_id, "weight": self.automixer.weight}},
             "afs": {"kind": "afs", "version": 1, "enabled": self.feedback.enabled, "bypassed": false, "params": {"enabled": self.feedback.enabled, "threshold_db": self.feedback.threshold_db,
                     "hysteresis_db": self.feedback.hysteresis_db, "bandwidth_hz": self.feedback.bandwidth_hz,
                     "max_notches": self.feedback.max_notches, "auto_reset": self.feedback.auto_reset}},

@@ -35,6 +35,7 @@ pub struct UpdateChannelRequest {
 
 #[derive(serde::Deserialize)]
 pub struct UpdateAutomixerChannelRequest {
+    pub enabled: Option<bool>,
     pub group_id: Option<String>,
     pub weight: Option<f32>,
 }
@@ -429,6 +430,9 @@ pub async fn put_input_automixer(
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Some(e) = body.enabled {
+        dsp.automixer.enabled = e;
+    }
     if let Some(gid) = body.group_id {
         dsp.automixer.group_id = if gid.is_empty() { None } else { Some(gid) };
     }

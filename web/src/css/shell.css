@@ -553,13 +553,22 @@ body.offline .xp-cell {
 }
 
 
+.tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border-subtle);
+  height: 100%;
+}
+
 .tabbar-undo-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin: 0 8px;
+  margin: 0;
   border-radius: 50%;
   border: 1px solid var(--border-primary);
   background: transparent;
@@ -579,4 +588,8 @@ body.offline .xp-cell {
 .tabbar-undo-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+.tabbar-actions .tabbar-help {
+  margin: 0;
 }

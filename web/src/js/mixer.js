@@ -150,27 +150,29 @@ function _renderStrips(strips, masters) {
   try {
     // Bus strips (in masters, before output strips — buses are outputs not inputs)
     const busesRaw = st.busList();
-    if (st.state.system?.show_buses_in_mixer !== false && busesRaw.length > 0) {
+    if (st.state.system?.show_buses_in_mixer !== false) {
       const sep = document.createElement('div');
       sep.className = 'mixer-bus-separator';
       sep.textContent = 'BUSES';
       masters.appendChild(sep);
-      const busGroup = document.createElement('div');
-      busGroup.className = 'mixer-reorder-group';
-      applyOrder('buses', busesRaw, b => b.id).forEach(bus => busGroup.appendChild(_buildBusStrip(bus)));
-      masters.appendChild(busGroup);
-      makeReorderable(busGroup, {
-        itemSelector: '.bus-strip',
-        orientation:  'horizontal',
-        getId:        el => el.dataset.busId,
-        onReorder:    ids => saveOrder('buses', ids),
-      });
       const addBusBtn = document.createElement('button');
       addBusBtn.className = 'mixer-add-vca-btn';
       addBusBtn.textContent = '+';
       addBusBtn.title = 'Add internal bus';
       addBusBtn.onclick = () => _showAddBusDialog();
       masters.appendChild(addBusBtn);
+      if (busesRaw.length > 0) {
+        const busGroup = document.createElement('div');
+        busGroup.className = 'mixer-reorder-group';
+        applyOrder('buses', busesRaw, b => b.id).forEach(bus => busGroup.appendChild(_buildBusStrip(bus)));
+        masters.appendChild(busGroup);
+        makeReorderable(busGroup, {
+          itemSelector: '.bus-strip',
+          orientation:  'horizontal',
+          getId:        el => el.dataset.busId,
+          onReorder:    ids => saveOrder('buses', ids),
+        });
+      }
     }
 
     // VCA Groups section
