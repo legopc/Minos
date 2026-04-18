@@ -83,9 +83,10 @@ function _tick(now) {
       a.displayDb = target;
     }
 
-    // Peak hold & decay
-    if (a.displayDb > a.peakLevel) {
-      a.peakLevel = a.displayDb;
+    // Peak hold tracks targetDb (actual server level), not animated displayDb,
+    // so the hold catches the real peak even when attack ballistic is slow.
+    if (a.targetDb > a.peakLevel) {
+      a.peakLevel = a.targetDb;
       a.peakTime = now;
     }
     let peakDb = a.peakLevel;
@@ -105,13 +106,14 @@ function _tick(now) {
     // Update shared peak hold state for external consumers
     state.peakHold.set(id, { level: peakDb, timestamp: now });
 
-    // DOM writes — scaleY for GPU-composited animation
+    // DOM writes — scaleY for GPU-composited animation, solid color by level
     const scale  = dbToPercent(a.displayDb) / 100;
     const pscale = dbToPercent(peakDb) / 100;
+    const col    = dbToColour(a.displayDb);
     const pcol   = dbToColour(peakDb);
 
-    _setScale(`vu-bar-${id}`,  scale);
-    _setScale(`vu-fill-${id}`, scale);
+    _setScale(`vu-bar-${id}`,  scale, col);
+    _setScale(`vu-fill-${id}`, scale, col);
     _setPeak(`vu-peak-${id}`, pscale * 100, pcol);
     _setPeak(`vu-hold-${id}`, pscale * 100, pcol);
   }
@@ -126,9 +128,12 @@ function _tick(now) {
   requestAnimationFrame(_tick);
 }
 
-function _setScale(elId, scale) {
+function _setScale(elId, scale, col) {
   const el = document.getElementById(elId);
-  if (el) el.style.transform = `scaleY(${scale})`;
+  if (el) {
+    el.style.transform = `scaleY(${scale})`;
+    if (col) el.style.background = col;
+  }
 }
 
 function _setPeak(elId, pct, col) {

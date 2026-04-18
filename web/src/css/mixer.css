@@ -141,14 +141,9 @@
   border-radius: 1px;
   transform: scaleY(0);
   transform-origin: bottom center;
-  background: linear-gradient(to top,
-    #1a7a1a  0%,
-    #2ec42e 50%,
-    #c8a020 76%,
-    #e03030 90%,
-    #ff2828 100%
-  );
+  background: var(--vu-green);
   will-change: transform;
+  z-index: 1;
 }
 
 .strip-meter-peak {
@@ -158,6 +153,7 @@
   height: 2px;
   background: var(--vu-amber);
   bottom: 0%;
+  z-index: 2;
 }
 
 .strip-clip-badge {
@@ -520,14 +516,9 @@
   height: 100%;
   transform: scaleY(0);
   transform-origin: bottom center;
-  background: linear-gradient(to top,
-    #1a7a1a  0%,
-    #2ec42e 50%,
-    #c8a020 76%,
-    #e03030 90%,
-    #ff2828 100%
-  );
+  background: var(--vu-green);
   will-change: transform;
+  z-index: 1;
 }
 
 .mixer-strip-peak {
@@ -781,9 +772,10 @@
   right: 0;
   height: 2px;
   background: var(--vu-green);
-  opacity: 0.6;
+  opacity: 0.85;
   bottom: 0%;
   pointer-events: none;
+  z-index: 2;
 }
 
 /* ── Internal Bus Strips ─────────────────────────────────── */
