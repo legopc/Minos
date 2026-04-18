@@ -457,6 +457,13 @@ impl DanteDevice {
                     if let Some(tx) = start_tx_opt.take() {
                         let elapsed_ns = instant_at_poll.elapsed().as_nanos() as usize;
                         let elapsed_samples = elapsed_ns * 48_000 / 1_000_000_000;
+                        tracing::info!(
+                            block,
+                            elapsed_ms = elapsed_ns / 1_000_000,
+                            elapsed_samples,
+                            write_pos_init = elapsed_samples + lead_samples,
+                            "TX start_tx_opt fired — DIAG",
+                        );
                         write_pos_cb.store(
                             elapsed_samples.wrapping_add(lead_samples),
                             AOrdering::Release,
