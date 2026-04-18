@@ -201,10 +201,9 @@ export function updateAll(msg, ballistics = BALLISTICS_PRESETS.Fast) {
   if (rx)   for (const [id, db] of Object.entries(rx))   _getAnim(id).targetDb = db;
   if (tx)   for (const [id, db] of Object.entries(tx))   _getAnim(id).targetDb = db;
   if (bus)  for (const [id, db] of Object.entries(bus))  _getAnim(id).targetDb = db;
-  if (peak) for (const [id, db] of Object.entries(peak)) {
-    const a = _getAnim(id);
-    if (db > a.peakLevel) { a.peakLevel = db; a.peakTime = performance.now(); }
-  }
+  // Note: server 'peak' (true block peak) is intentionally NOT used for peak hold —
+  // true peaks can be 20-30dB above EMA RMS, making the hold appear far above the bar.
+  // Peak hold is tracked in _tick() against targetDb (EMA RMS) instead.
   if (gr)   _updateGR(gr);
   if (clip) _updateClip(clip);
 
