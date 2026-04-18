@@ -79,7 +79,7 @@ async fn main() {
         "dante-patchbox starting"
     );
 
-    let state = AppState::new(config.clone(), args.config);
+    let state = AppState::new(config.clone(), args.config.clone());
 
     // Startup validation: verify config is writable
     state
@@ -88,13 +88,66 @@ async fn main() {
         .expect("startup config write check failed — check permissions on config file");
     tracing::info!("config writability check passed");
 
-    // Graceful shutdown: flush config on SIGINT/SIGTERM
+    // Graceful shutdown: flush config on SIGINT or SIGTERM
     let state_for_shutdown = state.clone();
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = sigterm.recv() => {},
+        }
         tracing::info!("shutting down — persisting config");
         let _ = state_for_shutdown.persist().await;
         std::process::exit(0);
+    });
+
+    // SIGUSR1: hot-reload config from disk without restarting audio/Dante device.
+    // Channel counts, dante_name, and port are preserved (startup-time-only).
+    let state_for_reload = state.clone();
+    let config_path_for_reload = args.config.clone();
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigusr1 = match signal(SignalKind::user_defined1()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "SIGUSR1 handler not available");
+                return;
+            }
+        };
+        loop {
+            sigusr1.recv().await;
+            tracing::info!("SIGUSR1 — hot-reloading config (audio path unaffected)");
+            let text = match std::fs::read_to_string(&config_path_for_reload) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!(error = %e, "SIGUSR1 reload: cannot read config file");
+                    continue;
+                }
+            };
+            let mut new_cfg: PatchboxConfig = match toml::from_str(&text) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!(error = %e, "SIGUSR1 reload: config parse failed");
+                    continue;
+                }
+            };
+            new_cfg.normalize();
+            if let Err(e) = new_cfg.validate() {
+                tracing::error!(error = %e, "SIGUSR1 reload: config validation failed — not applied");
+                continue;
+            }
+            // Preserve startup-only fields — changing these requires a full restart
+            {
+                let old = state_for_reload.config.read().await;
+                new_cfg.rx_channels = old.rx_channels;
+                new_cfg.tx_channels = old.tx_channels;
+                new_cfg.dante_name = old.dante_name.clone();
+                new_cfg.port = old.port;
+            }
+            *state_for_reload.config.write().await = new_cfg;
+            tracing::info!("SIGUSR1 reload: config applied (matrix, DSP, buses updated live)");
+        }
     });
 
     // Start Dante device integration (real with --features inferno, stub otherwise)
