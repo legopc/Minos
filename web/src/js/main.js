@@ -14,6 +14,183 @@ export function toast(msg, isError = false) {
 
 // ── Tab switching ──────────────────────────────────────────────────────────
 let _tabModules = {};
+const ALL_TABS = ['matrix', 'mixer', 'scenes', 'zones', 'dante', 'system'];
+const ROLE_TABS = {
+  admin: ALL_TABS,
+  operator: ['matrix', 'mixer', 'scenes', 'zones', 'dante'],
+  viewer: ['matrix', 'mixer', 'zones'],
+};
+
+function _normaliseRole(role) {
+  const value = String(role ?? '').trim().toLowerCase();
+  if (value === 'admin') return 'admin';
+  if (value === 'operator' || value === 'bar_staff') return 'operator';
+  return 'viewer';
+}
+
+function _parseTokenClaims(token) {
+  if (!token) return null;
+  try {
+    const [, payload] = String(token).split('.');
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(atob(padded));
+  } catch (_) {
+    return null;
+  }
+}
+
+function _applyAuthClaims(token, fallbackRole = 'viewer') {
+  const claims = _parseTokenClaims(token) ?? {};
+  st.setUserName(claims.sub ?? '');
+  st.setUserRole(_normaliseRole(claims.role ?? fallbackRole));
+  st.setUserZone(claims.zone ?? null);
+  return claims;
+}
+
+function _parseRequestedZoneId() {
+  const pathMatch = window.location.pathname.match(/^\/zone\/([^/]+)\/?$/);
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+
+  const url = new URL(window.location.href);
+  const fromQuery = url.searchParams.get('zone');
+  if (fromQuery) return fromQuery;
+
+  const hash = url.hash.replace(/^#/, '');
+  const hashMatch = hash.match(/^zone\/(.+)$/);
+  return hashMatch?.[1] ? decodeURIComponent(hashMatch[1]) : null;
+}
+
+function _setZoneQuery(zoneId) {
+  const pathMatch = window.location.pathname.match(/^\/zone\/([^/]+)\/?$/);
+  if (pathMatch) return;
+  const url = new URL(window.location.href);
+  if (zoneId) url.searchParams.set('zone', zoneId);
+  else url.searchParams.delete('zone');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function _buildShellContext() {
+  const role = _normaliseRole(st.state.userRole);
+  const userZone = st.state.userZone || null;
+  const requestedZoneId = _parseRequestedZoneId();
+  const desiredZoneId = userZone || requestedZoneId || null;
+  let focusedZoneId = desiredZoneId;
+
+  if (focusedZoneId && !st.state.zones.has(focusedZoneId)) {
+    focusedZoneId = null;
+  }
+
+  const allowedTabs = userZone ? ['zones'] : (ROLE_TABS[role] ?? ROLE_TABS.viewer);
+  const shellMode = userZone ? 'zone_locked' : (focusedZoneId ? 'zone_focused' : 'full');
+  return {
+    role,
+    userZone,
+    requestedZoneId,
+    focusedZoneId,
+    missingZoneId: desiredZoneId && !focusedZoneId ? desiredZoneId : null,
+    allowedTabs,
+    shellMode,
+  };
+}
+
+function _updateShellNote(ctx) {
+  const noteEl = document.getElementById('shell-note');
+  if (!noteEl) return;
+
+  let message = '';
+  if (ctx.userZone) {
+    const mismatch = ctx.requestedZoneId && ctx.requestedZoneId !== ctx.userZone;
+    message = ctx.missingZoneId
+      ? `Zone shell requested ${ctx.missingZoneId}, but that zone is unavailable. UX-only until backend enforcement lands.`
+      : mismatch
+      ? `Zone shell pinned to ${ctx.userZone}. Requested deep link ${ctx.requestedZoneId} was ignored. UX-only until backend enforcement lands.`
+      : `Zone-focused shell for ${ctx.userZone}. UX convenience only; backend zone enforcement remains required.`;
+  } else if (ctx.missingZoneId) {
+    message = `Requested zone ${ctx.missingZoneId} is unavailable. This shell flow is not a security boundary; backend enforcement is still required.`;
+  } else if (ctx.requestedZoneId) {
+    message = `Deep-linked zone focus for ${ctx.requestedZoneId}. This shell flow is not a security boundary; backend enforcement is still required.`;
+  }
+
+  noteEl.hidden = !message;
+  noteEl.textContent = message;
+}
+
+function _updateUserBadge(ctx) {
+  const userEl = document.getElementById('tb-user');
+  if (!userEl) return;
+  const parts = [];
+  if (st.state.userName) parts.push(st.state.userName);
+  parts.push(ctx.role);
+  if (ctx.userZone) parts.push(ctx.userZone);
+  userEl.textContent = parts.join(' · ');
+}
+
+function _applyTabVisibility(allowedTabs) {
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    const allowed = allowedTabs.includes(btn.dataset.tab);
+    btn.hidden = !allowed;
+    btn.disabled = !allowed;
+    btn.setAttribute('aria-hidden', allowed ? 'false' : 'true');
+    const panel = document.getElementById(`tab-${btn.dataset.tab}`);
+    if (panel) panel.hidden = !allowed;
+  });
+}
+
+function _selectorEscape(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function _applyZonePanelChrome(lockFocus) {
+  const backBtn = document.querySelector('.zone-panel-back-btn');
+  if (backBtn) backBtn.hidden = !!lockFocus;
+}
+
+function _openFocusedZone(zoneId, lockFocus) {
+  if (!zoneId || st.state.activeTab !== 'zones') return;
+
+  let attempts = 0;
+  const openCard = () => {
+    attempts += 1;
+    const selector = `.zone-card[data-zone-id="${_selectorEscape(zoneId)}"] .zone-card-name-btn`;
+    const trigger = document.querySelector(selector);
+    if (!trigger) {
+      if (attempts < 12) {
+        window.setTimeout(openCard, 60);
+      } else {
+        toast(`Zone ${zoneId} not found.`, true);
+      }
+      return;
+    }
+    trigger.click();
+    window.setTimeout(() => _applyZonePanelChrome(lockFocus), 0);
+  };
+
+  window.requestAnimationFrame(openCard);
+}
+
+function _syncShellChrome() {
+  const ctx = _buildShellContext();
+  st.setAllowedTabs(ctx.allowedTabs);
+  st.setShellMode(ctx.shellMode);
+  st.setFocusedZone(ctx.focusedZoneId);
+  document.body.dataset.shellMode = ctx.shellMode;
+  _applyTabVisibility(ctx.allowedTabs);
+  _updateUserBadge(ctx);
+  _updateShellNote(ctx);
+  if (ctx.userZone || ctx.focusedZoneId) {
+    _setZoneQuery(ctx.userZone || ctx.focusedZoneId);
+  }
+  return ctx;
+}
+
+async function _syncShellRoute() {
+  const ctx = _syncShellChrome();
+  if (ctx.focusedZoneId) {
+    await switchTab('zones');
+  }
+}
 
 async function loadTabModule(tab) {
   if (_tabModules[tab]) return _tabModules[tab];
@@ -33,20 +210,28 @@ async function loadTabModule(tab) {
 }
 
 async function switchTab(tab) {
+  const allowedTabs = st.state.allowedTabs?.length ? st.state.allowedTabs : ALL_TABS;
+  const nextTab = allowedTabs.includes(tab) ? tab : (allowedTabs[0] ?? 'zones');
+
   document.querySelectorAll('.tab-btn').forEach(b => {
-    const isActive = b.dataset.tab === tab;
+    const isActive = b.dataset.tab === nextTab;
     b.classList.toggle('active', isActive);
     b.setAttribute('aria-selected', isActive ? 'true' : 'false');
     b.setAttribute('tabindex', isActive ? '0' : '-1');
   });
   document.querySelectorAll('.tab-content').forEach(el => {
-    el.classList.toggle('active', el.id === `tab-${tab}`);
+    const isActive = el.id === `tab-${nextTab}`;
+    el.classList.toggle('active', isActive);
+    if (!el.hidden) el.toggleAttribute('aria-hidden', !isActive);
   });
-  st.setActiveTab(tab);
-  const mod = await loadTabModule(tab);
+  st.setActiveTab(nextTab);
+  const mod = await loadTabModule(nextTab);
   if (mod?.render) {
-    const el = document.getElementById(`tab-${tab}`);
+    const el = document.getElementById(`tab-${nextTab}`);
     if (el) mod.render(el);
+  }
+  if (nextTab === 'zones' && st.state.focusedZoneId) {
+    _openFocusedZone(st.state.focusedZoneId, st.state.shellMode === 'zone_locked');
   }
 }
 
@@ -149,7 +334,7 @@ function setupLogin() {
       const res = await api.login(user.value.trim(), pass.value);
       api.setToken(res.token);
       api.scheduleRefresh(res.token);
-      st.setUserRole(res.role ?? 'admin');
+      _applyAuthClaims(res.token, res.role ?? 'viewer');
       hideLogin();
       await loadAll();
     } catch (e) {
@@ -215,13 +400,9 @@ async function loadAll() {
 
     updateStatusBar();
 
-    // Render active tab
-    const tab = st.state.activeTab;
-    const mod = await loadTabModule(tab);
-    if (mod?.render) {
-      const el = document.getElementById(`tab-${tab}`);
-      if (el) mod.render(el);
-    }
+    const ctx = _syncShellChrome();
+    const tab = ctx.focusedZoneId ? 'zones' : st.state.activeTab;
+    await switchTab(tab);
 
     // Start WebSocket
     initWs();
@@ -238,6 +419,8 @@ async function loadAll() {
 window.addEventListener('pb:unauthorized', () => showLogin());
 window.addEventListener('pb:status-update', () => updateStatusBar());
 window.addEventListener('pb:ws-state', e => updateWsStatus(e.detail));
+window.addEventListener('hashchange', () => { _syncShellRoute().catch(() => {}); });
+window.addEventListener('popstate', () => { _syncShellRoute().catch(() => {}); });
 
 // Offline banner with grace period
 let _offlineTimer = null;
@@ -313,7 +496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Wire tab buttons with ARIA and roving tabindex
   const tabButtons = document.querySelectorAll('.tab-btn');
-  tabButtons.forEach((btn, idx) => {
+  tabButtons.forEach((btn) => {
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
     btn.setAttribute('tabindex', btn.classList.contains('active') ? '0' : '-1');
@@ -322,13 +505,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Arrow key navigation for tabs
     btn.addEventListener('keydown', (e) => {
+      const visibleButtons = [...document.querySelectorAll('.tab-btn:not([hidden])')];
+      const visibleIdx = visibleButtons.indexOf(btn);
+      if (visibleIdx < 0 || visibleButtons.length === 0) return;
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        const nextBtn = tabButtons[(idx + 1) % tabButtons.length];
+        const nextBtn = visibleButtons[(visibleIdx + 1) % visibleButtons.length];
         nextBtn.focus();
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        const prevBtn = tabButtons[(idx - 1 + tabButtons.length) % tabButtons.length];
+        const prevBtn = visibleButtons[(visibleIdx - 1 + visibleButtons.length) % visibleButtons.length];
         prevBtn.focus();
       }
     });
@@ -341,7 +527,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Re-schedule refresh for any token already in localStorage
-  api.scheduleRefresh(localStorage.getItem('pb_token') ?? '');
+  const token = localStorage.getItem('pb_token') ?? '';
+  api.scheduleRefresh(token);
+  _applyAuthClaims(token, st.state.userRole);
+  _syncShellChrome();
 
   try {
     await api.getHealth();

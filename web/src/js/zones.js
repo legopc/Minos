@@ -12,6 +12,12 @@ let _openZoneId = null;
 let _zoneMetering = new Map();
 let _zoneMeteringReq = null;
 let _zoneMeteringFetchedAt = 0;
+let _selectedZoneIds = new Set();
+let _zoneBulkBusy = false;
+let _zoneTemplates = [];
+let _zoneTemplatesReq = null;
+let _zoneTemplatesFetchedAt = 0;
+let _selectedTemplateId = '';
 
 export function render(container) {
   _container = container;
@@ -23,18 +29,53 @@ function _showGrid() {
   _container.innerHTML = '';
   _container.id = 'tab-zones';
   _kickZoneMeteringRefresh();
+  _kickZoneTemplateRefresh();
+  _selectedZones();
 
   const toolbar = document.createElement('div');
   toolbar.className = 'zones-toolbar';
-  toolbar.innerHTML = `<span style="flex:1;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">Zones</span>`;
+  const title = document.createElement('span');
+  title.className = 'zones-toolbar-title';
+  title.textContent = 'Zones';
+  toolbar.appendChild(title);
+
+  const selectedCount = _selectedZoneIds.size;
+  const count = document.createElement('span');
+  count.className = 'zones-toolbar-count';
+  count.textContent = selectedCount
+    ? `${selectedCount} selected`
+    : `${st.zoneList().length} total`;
+  toolbar.appendChild(count);
+
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.className = 'zones-toolbar-btn';
+  selectAllBtn.textContent = 'SELECT ALL';
+  selectAllBtn.disabled = _zoneBulkBusy || st.zoneList().length === 0;
+  selectAllBtn.onclick = () => {
+    _selectedZoneIds = new Set(st.zoneList().map((zone) => zone.id));
+    _showGrid();
+  };
+  toolbar.appendChild(selectAllBtn);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'zones-toolbar-btn';
+  clearBtn.textContent = 'CLEAR';
+  clearBtn.disabled = _zoneBulkBusy || _selectedZoneIds.size === 0;
+  clearBtn.onclick = () => {
+    _selectedZoneIds.clear();
+    _showGrid();
+  };
+  toolbar.appendChild(clearBtn);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'zones-add-btn';
   addBtn.textContent = 'NEW ZONE';
+  addBtn.disabled = _zoneBulkBusy;
   addBtn.onclick = () => _createZone();
   toolbar.appendChild(addBtn);
 
   _container.appendChild(toolbar);
+  _container.appendChild(_buildBulkBar());
 
   const grid = document.createElement('div');
   grid.className = 'zones-grid';
@@ -166,12 +207,29 @@ function _renderCards(grid) {
 function _buildCard(zone) {
   const colour = st.getZoneColour(zone.colour_index ?? 0);
   const card = document.createElement('div');
-  card.className = 'zone-card';
+  const selected = _selectedZoneIds.has(zone.id);
+  card.className = 'zone-card' + (selected ? ' selected' : '');
   card.dataset.zoneId = zone.id;
   card.style.setProperty('--zone-card-color', colour);
 
   const hdr = document.createElement('div');
   hdr.className = 'zone-card-header';
+
+  const selectWrap = document.createElement('label');
+  selectWrap.className = 'zone-card-select';
+  selectWrap.title = selected ? 'Deselect zone' : 'Select zone';
+  const selectBox = document.createElement('input');
+  selectBox.type = 'checkbox';
+  selectBox.className = 'zone-card-checkbox';
+  selectBox.checked = selected;
+  selectBox.disabled = _zoneBulkBusy;
+  selectBox.onchange = () => {
+    if (selectBox.checked) _selectedZoneIds.add(zone.id);
+    else _selectedZoneIds.delete(zone.id);
+    _showGrid();
+  };
+  selectWrap.appendChild(selectBox);
+  hdr.appendChild(selectWrap);
 
   const nameBtn = document.createElement('button');
   nameBtn.className = 'zone-card-name zone-card-name-btn';
@@ -408,6 +466,22 @@ async function _refreshOutputs() {
   outs.forEach(o => st.setOutput(o));
 }
 
+async function _refreshZoneState() {
+  const [zones, outputs, routes] = await Promise.all([
+    api.getZones().catch(() => null),
+    api.getOutputs(),
+    api.getRoutes(),
+  ]);
+
+  if (Array.isArray(zones)) {
+    st.zoneList().forEach((zone) => st.removeZone(zone.id));
+    zones.forEach((zone) => st.setZone(zone));
+  }
+  outputs.forEach((out) => st.setOutput(out));
+  st.routeList().forEach((route) => st.removeRoute(route.rx_id, route.tx_id));
+  routes.forEach((route) => st.setRoute(route));
+}
+
 function _kickZoneMeteringRefresh() {
   const now = Date.now();
   if (_zoneMeteringReq || now - _zoneMeteringFetchedAt < 2000) return;
@@ -425,6 +499,256 @@ function _kickZoneMeteringRefresh() {
     .finally(() => {
       _zoneMeteringReq = null;
     });
+}
+
+function _kickZoneTemplateRefresh(force = false) {
+  const now = Date.now();
+  if (_zoneTemplatesReq || (!force && _zoneTemplatesFetchedAt && now - _zoneTemplatesFetchedAt < 15000)) return;
+  _zoneTemplatesReq = api.getZoneTemplates()
+    .then((templates) => {
+      _zoneTemplates = Array.isArray(templates) ? templates : [];
+      _zoneTemplatesFetchedAt = Date.now();
+      if (_selectedTemplateId && !_zoneTemplates.some((template) => template.id === _selectedTemplateId)) {
+        _selectedTemplateId = '';
+      }
+      if (_container && st.state.activeTab === 'zones' && !_openZoneId) _showGrid();
+    })
+    .catch(() => {
+      _zoneTemplates = [];
+      _zoneTemplatesFetchedAt = Date.now();
+      if (_selectedTemplateId) _selectedTemplateId = '';
+      if (_container && st.state.activeTab === 'zones' && !_openZoneId) _showGrid();
+    })
+    .finally(() => {
+      _zoneTemplatesReq = null;
+    });
+}
+
+function _selectedZones() {
+  const zonesById = new Map(st.zoneList().map((zone) => [zone.id, zone]));
+  [..._selectedZoneIds].forEach((id) => {
+    if (!zonesById.has(id)) _selectedZoneIds.delete(id);
+  });
+  return [..._selectedZoneIds].map((id) => zonesById.get(id)).filter(Boolean);
+}
+
+function _selectedZoneOutputIds(zones = _selectedZones()) {
+  return [...new Set(zones.flatMap((zone) => zone.tx_ids ?? []))];
+}
+
+function _buildBulkBar() {
+  const selectedZones = _selectedZones();
+  const selectedOutputs = _selectedZoneOutputIds(selectedZones);
+
+  const bar = document.createElement('div');
+  bar.className = 'zones-bulk-bar' + (selectedZones.length ? '' : ' is-empty');
+
+  const scope = document.createElement('div');
+  scope.className = 'zones-bulk-scope';
+
+  const summary = document.createElement('div');
+  summary.className = 'zones-bulk-summary';
+  summary.textContent = selectedZones.length
+    ? `${selectedZones.length} zone${_plural(selectedZones.length)} selected · ${selectedOutputs.length} output${_plural(selectedOutputs.length)}`
+    : 'Select zones to mute, clear inputs, or apply a template.';
+  scope.appendChild(summary);
+
+  const chips = document.createElement('div');
+  chips.className = 'zones-bulk-chip-list';
+  if (selectedZones.length) {
+    selectedZones.forEach((zone) => {
+      const chip = document.createElement('span');
+      chip.className = 'zones-bulk-chip';
+      chip.textContent = zone.name ?? zone.id;
+      chips.appendChild(chip);
+    });
+  } else {
+    const hint = document.createElement('span');
+    hint.className = 'zones-bulk-empty';
+    hint.textContent = 'No scope selected.';
+    chips.appendChild(hint);
+  }
+  scope.appendChild(chips);
+  bar.appendChild(scope);
+
+  const actions = document.createElement('div');
+  actions.className = 'zones-bulk-actions';
+  actions.appendChild(_bulkActionButton('MUTE', _zoneBulkBusy || !selectedZones.length, () => _setSelectedZonesMuted(true)));
+  actions.appendChild(_bulkActionButton('UNMUTE', _zoneBulkBusy || !selectedZones.length, () => _setSelectedZonesMuted(false)));
+  actions.appendChild(_bulkActionButton('CLEAR INPUTS', _zoneBulkBusy || !selectedZones.length, () => _confirmClearSelectedZoneInputs(selectedZones, selectedOutputs)));
+
+  const templateWrap = document.createElement('div');
+  templateWrap.className = 'zones-template-wrap';
+
+  const templateLabel = document.createElement('span');
+  templateLabel.className = 'zones-template-label';
+  templateLabel.textContent = 'Template';
+  templateWrap.appendChild(templateLabel);
+
+  const templateSel = document.createElement('select');
+  templateSel.className = 'zones-template-select';
+  templateSel.disabled = _zoneBulkBusy || _zoneTemplatesReq !== null || _zoneTemplates.length === 0;
+  templateSel.onchange = () => {
+    _selectedTemplateId = templateSel.value;
+    _showGrid();
+  };
+
+  const templatePlaceholder = document.createElement('option');
+  templatePlaceholder.value = '';
+  templatePlaceholder.textContent = _zoneTemplatesReq
+    ? 'Loading templates…'
+    : (_zoneTemplates.length ? 'Choose template' : 'No templates available');
+  templateSel.appendChild(templatePlaceholder);
+  _zoneTemplates.forEach((template) => {
+    const opt = document.createElement('option');
+    opt.value = template.id;
+    opt.textContent = template.name ?? template.id;
+    if (template.id === _selectedTemplateId) opt.selected = true;
+    templateSel.appendChild(opt);
+  });
+  templateWrap.appendChild(templateSel);
+
+  const templateApply = _bulkActionButton(
+    'APPLY',
+    _zoneBulkBusy || !selectedZones.length || !_selectedTemplateId || !_zoneTemplates.length,
+    () => _confirmApplyTemplate(selectedZones),
+  );
+  templateApply.classList.add('zones-template-apply-btn');
+  templateWrap.appendChild(templateApply);
+
+  const templateRefresh = _bulkActionButton('REFRESH', _zoneBulkBusy || _zoneTemplatesReq !== null, () => {
+    _kickZoneTemplateRefresh(true);
+    _showGrid();
+  });
+  templateRefresh.classList.add('zones-template-refresh-btn');
+  templateWrap.appendChild(templateRefresh);
+
+  const templateMeta = document.createElement('div');
+  templateMeta.className = 'zones-template-meta';
+  templateMeta.textContent = _zoneTemplatesReq
+    ? 'Template list loading…'
+    : (_zoneTemplates.length
+      ? `${_zoneTemplates.length} template${_plural(_zoneTemplates.length)} ready`
+      : 'Template list empty on this build.');
+  templateWrap.appendChild(templateMeta);
+
+  actions.appendChild(templateWrap);
+  bar.appendChild(actions);
+  return bar;
+}
+
+function _bulkActionButton(label, disabled, onClick) {
+  const btn = document.createElement('button');
+  btn.className = 'zones-toolbar-btn zones-bulk-btn';
+  btn.textContent = label;
+  btn.disabled = disabled;
+  btn.onclick = onClick;
+  return btn;
+}
+
+function _confirmClearSelectedZoneInputs(selectedZones, selectedOutputs) {
+  if (!selectedZones.length) return;
+  confirmModal({
+    title: 'Clear selected zone inputs',
+    body: `Clear routes for ${selectedZones.length} selected zone${_plural(selectedZones.length)} (${selectedOutputs.length} outputs)?`,
+    confirmLabel: 'Clear inputs',
+    danger: true,
+    onConfirm: async () => {
+      await _withBulkBusy(async () => {
+        const zoneIds = selectedZones.map((zone) => zone.id);
+        const txIds = new Set(selectedOutputs);
+        const prevRoutes = st.routeList()
+          .filter((route) => txIds.has(route.tx_id))
+          .map((route) => ({ rx_id: route.rx_id, tx_id: route.tx_id, route_type: route.route_type }));
+
+        await api.clearZonesRoutes(zoneIds);
+        await _refreshZoneState();
+        toast(`Cleared inputs for ${selectedZones.length} zone${_plural(selectedZones.length)}.`, false);
+
+        undo.push({
+          label: `Clear inputs for ${selectedZones.length} zones`,
+          apply: async () => {
+            await api.clearZonesRoutes(zoneIds);
+            await _refreshZoneState();
+          },
+          revert: async () => {
+            for (const route of prevRoutes) {
+              const restored = await api.postRoute(route.rx_id, route.tx_id, route.route_type === 'bus' ? 'bus' : 'local');
+              st.setRoute(restored);
+            }
+            await _refreshZoneState();
+          },
+        });
+      });
+    },
+  });
+}
+
+function _confirmApplyTemplate(selectedZones) {
+  if (!selectedZones.length || !_selectedTemplateId) return;
+  const template = _zoneTemplates.find((entry) => entry.id === _selectedTemplateId);
+  const selectedOutputs = _selectedZoneOutputIds(selectedZones);
+  confirmModal({
+    title: 'Apply zone template',
+    body: `Apply "${_e(template?.name ?? _selectedTemplateId)}" to ${selectedZones.length} selected zone${_plural(selectedZones.length)} (${selectedOutputs.length} outputs)?`,
+    confirmLabel: 'Apply template',
+    onConfirm: async () => {
+      await _withBulkBusy(async () => {
+        const result = await api.applyZoneTemplate(selectedZones.map((zone) => zone.id), _selectedTemplateId);
+        if (result?.unsupported) {
+          toast('Zone templates are unavailable on this build.', true);
+          return;
+        }
+        await _refreshZoneState();
+        _kickZoneMeteringRefresh();
+        toast(`Applied ${template?.name ?? _selectedTemplateId} to ${selectedZones.length} zone${_plural(selectedZones.length)}.`, false);
+      });
+    },
+  });
+}
+
+async function _setSelectedZonesMuted(muted) {
+  const selectedZones = _selectedZones();
+  if (!selectedZones.length) return;
+
+  await _withBulkBusy(async () => {
+    const prev = _selectedZoneOutputIds(selectedZones).map((txId) => ({
+      id: txId,
+      muted: st.state.outputs.get(txId)?.muted === true,
+    }));
+
+    await api.setZonesMuted(selectedZones, muted);
+    await _refreshZoneState();
+    toast(`${muted ? 'Muted' : 'Unmuted'} ${selectedZones.length} zone${_plural(selectedZones.length)}.`, false);
+
+    undo.push({
+      label: `${muted ? 'Mute' : 'Unmute'} ${selectedZones.length} zones`,
+      apply: async () => {
+        await api.setZonesMuted(selectedZones, muted);
+        await _refreshZoneState();
+      },
+      revert: async () => {
+        for (const entry of prev) {
+          await api.putOutput(entry.id, { muted: entry.muted });
+        }
+        await _refreshZoneState();
+      },
+    });
+  });
+}
+
+async function _withBulkBusy(work) {
+  if (_zoneBulkBusy) return;
+  _zoneBulkBusy = true;
+  _showGrid();
+  try {
+    await work();
+  } catch (e) {
+    toast(e?.message ?? 'Bulk zone action failed.', true);
+  } finally {
+    _zoneBulkBusy = false;
+    if (_container && st.state.activeTab === 'zones' && !_openZoneId) _showGrid();
+  }
 }
 
 function _zoneMeterMarkup(metering) {
@@ -539,11 +863,12 @@ function _deleteZone(zone) {
     danger: true,
     onConfirm: async () => {
       try {
-        await api.deleteRoutesByZone(zone.id);
+        await api.clearZoneRoutesBulk(zone.id);
         st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
         await api.deleteZone(zone.id);
         st.removeZone(zone.id);
         await _refreshOutputs();
+        _selectedZoneIds.delete(zone.id);
         _showGrid();
       } catch (e) {
         toast('Delete error: ' + e.message, true);
@@ -579,6 +904,10 @@ function _zoneStereoPairCount(zone) {
 function _txIndex(txId) {
   const n = Number(String(txId).replace(/^tx_/, ''));
   return Number.isInteger(n) ? n : null;
+}
+
+function _plural(count) {
+  return count === 1 ? '' : 's';
 }
 
 function _e(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

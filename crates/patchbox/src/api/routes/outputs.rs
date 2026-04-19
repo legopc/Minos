@@ -1,9 +1,10 @@
 use crate::api::{dsp_to_value, parse_tx_id, ws_broadcast, EnabledBody, GainBody, MutedBody};
+use crate::auth_api;
 use crate::state::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use patchbox_core::config::{
@@ -35,6 +36,19 @@ pub struct UpdateOutputRequest {
 #[derive(serde::Deserialize)]
 pub struct DitherBody {
     bits: u8,
+}
+
+fn ensure_output_zone_scope(
+    cfg: &patchbox_core::config::PatchboxConfig,
+    claims: Option<&Extension<crate::jwt::Claims>>,
+    ch: usize,
+    detail: &'static str,
+) -> Result<(), Response> {
+    auth_api::ensure_zone_scope_tx(cfg, claims, ch, detail)?;
+    if let Some(peer) = cfg.output_stereo_peer(ch) {
+        auth_api::ensure_zone_scope_tx(cfg, claims, peer, detail)?;
+    }
+    Ok(())
 }
 
 // GET /api/v1/outputs
@@ -158,6 +172,7 @@ pub async fn get_output_resource(
 #[tracing::instrument(skip_all, fields(output_id = %id))]
 pub async fn put_output_resource(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<UpdateOutputRequest>,
 ) -> impl IntoResponse {
@@ -167,6 +182,14 @@ pub async fn put_output_resource(
     let mut cfg = s.config.write().await;
     if i >= cfg.tx_channels {
         return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        i,
+        "Zone-scoped users can only update outputs in their own zone.",
+    ) {
+        return response;
     }
     let pair_ch = cfg.output_stereo_peer(i);
     if let Some(ref name) = body.name {
@@ -230,10 +253,22 @@ pub(crate) async fn get_output_dsp(
 // PUT /api/v1/outputs/:ch/gain
 pub(crate) async fn put_output_gain(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<GainBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only adjust output gain in their own zone.",
+    ) {
+        return response;
+    }
     let pair_ch = cfg.output_stereo_peer(ch);
     let clamped = body.gain_db.clamp(-60.0, 24.0);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
@@ -253,10 +288,22 @@ pub(crate) async fn put_output_gain(
 // PUT /api/v1/outputs/:ch/hpf
 pub(crate) async fn put_output_hpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -271,10 +318,22 @@ pub(crate) async fn put_output_hpf(
 // PUT /api/v1/outputs/:ch/lpf
 pub(crate) async fn put_output_lpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -289,10 +348,22 @@ pub(crate) async fn put_output_lpf(
 // PUT /api/v1/outputs/:ch/eq
 pub(crate) async fn put_output_eq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<EqConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -307,10 +378,22 @@ pub(crate) async fn put_output_eq(
 // PUT /api/v1/outputs/:ch/eq/enabled
 pub(crate) async fn put_output_eq_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -323,10 +406,22 @@ pub(crate) async fn put_output_eq_enabled(
 // PUT /api/v1/outputs/:ch/compressor
 pub(crate) async fn put_output_compressor(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<CompressorConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -341,10 +436,22 @@ pub(crate) async fn put_output_compressor(
 // PUT /api/v1/outputs/:ch/limiter
 pub(crate) async fn put_output_limiter(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<LimiterConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -359,10 +466,22 @@ pub(crate) async fn put_output_limiter(
 // PUT /api/v1/outputs/:ch/delay
 pub(crate) async fn put_output_delay(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<DelayConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -377,6 +496,7 @@ pub(crate) async fn put_output_delay(
 // PUT /api/v1/outputs/:ch/dither
 pub(crate) async fn put_output_dither(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DitherBody>,
 ) -> impl IntoResponse {
@@ -384,6 +504,17 @@ pub(crate) async fn put_output_dither(
         return (StatusCode::BAD_REQUEST, "bits must be 0, 16, or 24").into_response();
     }
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -396,10 +527,22 @@ pub(crate) async fn put_output_dither(
 // PUT /api/v1/outputs/:ch/enabled
 pub(crate) async fn put_output_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update outputs in their own zone.",
+    ) {
+        return response;
+    }
     let pair_ch = cfg.output_stereo_peer(ch);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -418,10 +561,22 @@ pub(crate) async fn put_output_enabled(
 // PUT /api/v1/outputs/:ch/mute
 pub(crate) async fn put_output_mute(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<MutedBody>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only mute outputs in their own zone.",
+    ) {
+        return response;
+    }
     let pair_ch = cfg.output_stereo_peer(ch);
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -458,10 +613,22 @@ pub(crate) async fn get_output_deq(
 // PUT /api/v1/outputs/:ch/deq
 pub(crate) async fn put_output_deq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<DynamicEqConfig>>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.output_dsp.get(ch).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
     let Some(dsp) = cfg.output_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
     };

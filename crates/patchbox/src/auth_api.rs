@@ -206,6 +206,84 @@ struct RbacForbidden {
     actual: &'static str,
 }
 
+#[derive(Serialize)]
+struct ZoneScopeForbidden {
+    error: &'static str,
+    zone: String,
+    target: Option<String>,
+    detail: &'static str,
+}
+
+pub fn claimed_zone_id(claims: Option<&axum::extract::Extension<crate::jwt::Claims>>) -> Option<&str> {
+    claims
+        .and_then(|axum::extract::Extension(claims)| claims.zone.as_deref())
+        .map(str::trim)
+        .filter(|zone| !zone.is_empty())
+}
+
+pub fn forbid_zone_scope(
+    zone_id: &str,
+    target: Option<&str>,
+    detail: &'static str,
+) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ZoneScopeForbidden {
+            error: "zone_scope_forbidden",
+            zone: zone_id.to_string(),
+            target: target.map(str::to_string),
+            detail,
+        }),
+    )
+        .into_response()
+}
+
+pub fn ensure_not_zone_scoped(
+    claims: Option<&axum::extract::Extension<crate::jwt::Claims>>,
+    detail: &'static str,
+) -> Result<(), Response> {
+    if let Some(zone_id) = claimed_zone_id(claims) {
+        return Err(forbid_zone_scope(zone_id, None, detail));
+    }
+    Ok(())
+}
+
+pub fn ensure_zone_scope_target(
+    claims: Option<&axum::extract::Extension<crate::jwt::Claims>>,
+    target_zone_id: &str,
+    detail: &'static str,
+) -> Result<(), Response> {
+    if let Some(zone_id) = claimed_zone_id(claims) {
+        if zone_id != target_zone_id {
+            return Err(forbid_zone_scope(zone_id, Some(target_zone_id), detail));
+        }
+    }
+    Ok(())
+}
+
+pub fn zone_for_tx(cfg: &patchbox_core::config::PatchboxConfig, tx: usize) -> Option<&str> {
+    let tx_id = format!("tx_{tx}");
+    cfg.zone_config
+        .iter()
+        .find(|zone| zone.tx_ids.iter().any(|id| id == &tx_id))
+        .map(|zone| zone.id.as_str())
+}
+
+pub fn ensure_zone_scope_tx(
+    cfg: &patchbox_core::config::PatchboxConfig,
+    claims: Option<&axum::extract::Extension<crate::jwt::Claims>>,
+    tx: usize,
+    detail: &'static str,
+) -> Result<(), Response> {
+    let Some(zone_id) = claimed_zone_id(claims) else {
+        return Ok(());
+    };
+    let Some(target_zone_id) = zone_for_tx(cfg, tx) else {
+        return Err(forbid_zone_scope(zone_id, None, detail));
+    };
+    ensure_zone_scope_target(claims, target_zone_id, detail)
+}
+
 pub async fn require_auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let token = req
         .headers()

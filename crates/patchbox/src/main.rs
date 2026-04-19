@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 mod api;
+mod ab_compare;
 mod auth_api;
 mod jwt;
+mod morph;
 mod openapi;
 mod pam_auth;
 mod ptp;

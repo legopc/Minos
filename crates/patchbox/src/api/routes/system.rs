@@ -1,4 +1,7 @@
-use crate::api::{linear_to_dbfs, parse_tx_id, parse_zone_id, ws_broadcast};
+use crate::api::{
+    linear_to_dbfs, parse_tx_id, parse_zone_id, parse_zone_template_id, ws_broadcast,
+};
+use crate::auth_api;
 use crate::ptp::{is_ptp_locked_state, query_ptp_offset, query_ptp_state};
 use crate::state::{
     AppState, EventActor, EventLogEntry, EventResource, PtpHistorySample, TaskEvent, TaskStatus,
@@ -9,7 +12,9 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use patchbox_core::config::{InputChannelDsp, InternalBusConfig, PatchboxConfig};
+use patchbox_core::config::{
+    InputChannelDsp, InternalBusConfig, PatchboxConfig, ZoneTemplateConfig,
+};
 use std::collections::{BTreeSet, HashMap};
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path as FsPath, PathBuf};
@@ -355,8 +360,20 @@ pub struct AuditExportResponse {
 #[derive(Clone, Debug, serde::Deserialize, utoipa::ToSchema)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum BulkMutationRequest {
-    SetAllOutputsMuted { muted: bool },
-    ClearZoneRoutes { zone_id: String },
+    SetAllOutputsMuted {
+        muted: bool,
+    },
+    SetZoneOutputsMuted {
+        zone_id: String,
+        muted: bool,
+    },
+    ApplyZoneTemplate {
+        zone_id: String,
+        template_id: String,
+    },
+    ClearZoneRoutes {
+        zone_id: String,
+    },
 }
 
 #[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
@@ -365,6 +382,60 @@ pub struct BulkMutationResponse {
     pub operation: String,
     pub affected: usize,
     pub task_id: String,
+}
+
+fn set_output_muted_state(cfg: &mut PatchboxConfig, tx: usize, muted: bool) -> bool {
+    let mut changed = false;
+
+    if let Some(current) = cfg.output_muted.get(tx).copied() {
+        if current != muted {
+            changed = true;
+        }
+    }
+    if let Some(current) = cfg.output_dsp.get(tx).map(|dsp| dsp.muted) {
+        if current != muted {
+            changed = true;
+        }
+    }
+
+    if let Some(value) = cfg.output_muted.get_mut(tx) {
+        *value = muted;
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.muted = muted;
+    }
+
+    changed
+}
+
+fn apply_zone_template_to_output(
+    cfg: &mut PatchboxConfig,
+    tx: usize,
+    template: &ZoneTemplateConfig,
+) {
+    let gain_db = template.output.gain_db.clamp(-60.0, 24.0);
+    let muted = template.output.muted;
+    let eq = template.output.eq.clone();
+    let limiter = template.output.limiter.clone();
+
+    if let Some(value) = cfg.output_gain_db.get_mut(tx) {
+        *value = gain_db;
+    }
+    if let Some(value) = cfg.output_muted.get_mut(tx) {
+        *value = muted;
+    }
+    if let Some(value) = cfg.per_output_eq.get_mut(tx) {
+        *value = eq.clone();
+    }
+    if let Some(value) = cfg.per_output_limiter.get_mut(tx) {
+        *value = limiter.clone();
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.gain_db = gain_db;
+        dsp.muted = muted;
+        dsp.eq = eq;
+        dsp.limiter = limiter;
+    }
 }
 
 fn linear_to_db(v: f32) -> f32 {
@@ -1774,6 +1845,12 @@ pub async fn post_bulk_mutation(
 ) -> impl IntoResponse {
     match body {
         BulkMutationRequest::SetAllOutputsMuted { muted } => {
+            if let Err(response) = auth_api::ensure_not_zone_scoped(
+                claims.as_ref(),
+                "Zone-scoped users cannot change all outputs at once.",
+            ) {
+                return response;
+            }
             let operation = if muted {
                 "set_all_outputs_muted"
             } else {
@@ -1804,9 +1881,8 @@ pub async fn post_bulk_mutation(
             let affected = {
                 let mut cfg = s.config.write().await;
                 let mut changed = 0usize;
-                for value in &mut cfg.output_muted {
-                    if *value != muted {
-                        *value = muted;
+                for tx in 0..cfg.tx_channels {
+                    if set_output_muted_state(&mut cfg, tx, muted) {
                         changed += 1;
                     }
                 }
@@ -1854,7 +1930,363 @@ pub async fn post_bulk_mutation(
             })
             .into_response()
         }
+        BulkMutationRequest::SetZoneOutputsMuted { zone_id, muted } => {
+            if let Err(response) = auth_api::ensure_zone_scope_target(
+                claims.as_ref(),
+                &zone_id,
+                "Zone-scoped users can only change outputs in their own zone.",
+            ) {
+                return response;
+            }
+            if parse_zone_id(&zone_id).is_none() {
+                emit_task_event(
+                    &s,
+                    claims.as_ref(),
+                    format!("bulk:set_zone_outputs_muted:{zone_id}"),
+                    TaskStatus::Failed,
+                    "Updating zone output mutes",
+                    Some("Invalid zone id.".to_string()),
+                    Some("bulk.zone_outputs_mute"),
+                    Some(EventResource::new(
+                        "zone",
+                        Some(zone_id.clone()),
+                        Some(zone_id.clone()),
+                    )),
+                    Some(serde_json::json!({ "muted": muted })),
+                );
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(crate::api::ErrorResponse {
+                        error: "invalid zone id (expected zone_N)".to_string(),
+                        in_memory: None,
+                    }),
+                )
+                    .into_response();
+            }
+
+            let task_id = format!("bulk:set_zone_outputs_muted:{zone_id}");
+            let label = if muted {
+                "Muting zone outputs"
+            } else {
+                "Unmuting zone outputs"
+            };
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Started,
+                label,
+                None,
+                Some("bulk.zone_outputs_mute"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_id.clone()),
+                )),
+                Some(serde_json::json!({ "muted": muted })),
+            );
+
+            let (zone_name, affected) = {
+                let mut cfg = s.config.write().await;
+                let Some(zone) = cfg
+                    .zone_config
+                    .iter()
+                    .find(|zone| zone.id == zone_id)
+                    .cloned()
+                else {
+                    emit_task_event(
+                        &s,
+                        claims.as_ref(),
+                        task_id.clone(),
+                        TaskStatus::Failed,
+                        label,
+                        Some("Zone not found.".to_string()),
+                        Some("bulk.zone_outputs_mute"),
+                        Some(EventResource::new(
+                            "zone",
+                            Some(zone_id.clone()),
+                            Some(zone_id.clone()),
+                        )),
+                        Some(serde_json::json!({ "muted": muted })),
+                    );
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(crate::api::ErrorResponse {
+                            error: "zone not found".to_string(),
+                            in_memory: None,
+                        }),
+                    )
+                        .into_response();
+                };
+
+                let mut changed = 0usize;
+                for tx_id in &zone.tx_ids {
+                    let Some(tx) = parse_tx_id(tx_id) else {
+                        continue;
+                    };
+                    if tx >= cfg.tx_channels {
+                        continue;
+                    }
+                    if set_output_muted_state(&mut cfg, tx, muted) {
+                        changed += 1;
+                    }
+                }
+
+                (zone.name, changed)
+            };
+            crate::persist_or_500!(s);
+            log_audit_event(
+                &s,
+                claims.as_ref(),
+                "bulk.zone_outputs_mute",
+                if muted {
+                    format!("Muted outputs for zone {zone_id}.")
+                } else {
+                    format!("Cleared output mutes for zone {zone_id}.")
+                },
+                None,
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_name.clone()),
+                )),
+                Some(serde_json::json!({ "muted": muted, "affected": affected })),
+            )
+            .await;
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Succeeded,
+                label,
+                Some(format!("Updated {affected} outputs.")),
+                Some("bulk.zone_outputs_mute"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_name),
+                )),
+                Some(serde_json::json!({ "muted": muted, "affected": affected })),
+            );
+            Json(BulkMutationResponse {
+                ok: true,
+                operation: "set_zone_outputs_muted".to_string(),
+                affected,
+                task_id,
+            })
+            .into_response()
+        }
+        BulkMutationRequest::ApplyZoneTemplate {
+            zone_id,
+            template_id,
+        } => {
+            if let Err(response) = auth_api::ensure_zone_scope_target(
+                claims.as_ref(),
+                &zone_id,
+                "Zone-scoped users can only apply templates to their own zone.",
+            ) {
+                return response;
+            }
+            if parse_zone_id(&zone_id).is_none() {
+                emit_task_event(
+                    &s,
+                    claims.as_ref(),
+                    format!("bulk:apply_zone_template:{zone_id}:{template_id}"),
+                    TaskStatus::Failed,
+                    "Applying zone template",
+                    Some("Invalid zone id.".to_string()),
+                    Some("bulk.apply_zone_template"),
+                    Some(EventResource::new(
+                        "zone",
+                        Some(zone_id.clone()),
+                        Some(zone_id.clone()),
+                    )),
+                    Some(serde_json::json!({ "template_id": template_id })),
+                );
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(crate::api::ErrorResponse {
+                        error: "invalid zone id (expected zone_N)".to_string(),
+                        in_memory: None,
+                    }),
+                )
+                    .into_response();
+            }
+            if parse_zone_template_id(&template_id).is_none() {
+                emit_task_event(
+                    &s,
+                    claims.as_ref(),
+                    format!("bulk:apply_zone_template:{zone_id}:{template_id}"),
+                    TaskStatus::Failed,
+                    "Applying zone template",
+                    Some("Invalid zone template id.".to_string()),
+                    Some("bulk.apply_zone_template"),
+                    Some(EventResource::new(
+                        "zone",
+                        Some(zone_id.clone()),
+                        Some(zone_id.clone()),
+                    )),
+                    Some(serde_json::json!({ "template_id": template_id })),
+                );
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(crate::api::ErrorResponse {
+                        error: "invalid zone template id (expected zone_template_N)".to_string(),
+                        in_memory: None,
+                    }),
+                )
+                    .into_response();
+            }
+
+            let task_id = format!("bulk:apply_zone_template:{zone_id}:{template_id}");
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Started,
+                "Applying zone template",
+                None,
+                Some("bulk.apply_zone_template"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_id.clone()),
+                )),
+                Some(serde_json::json!({ "template_id": template_id })),
+            );
+
+            let (zone_name, template_name, affected) = {
+                let mut cfg = s.config.write().await;
+                let Some(template) = cfg
+                    .zone_templates
+                    .iter()
+                    .find(|template| template.id == template_id)
+                    .cloned()
+                else {
+                    emit_task_event(
+                        &s,
+                        claims.as_ref(),
+                        task_id.clone(),
+                        TaskStatus::Failed,
+                        "Applying zone template",
+                        Some("Zone template not found.".to_string()),
+                        Some("bulk.apply_zone_template"),
+                        Some(EventResource::new(
+                            "zone",
+                            Some(zone_id.clone()),
+                            Some(zone_id.clone()),
+                        )),
+                        Some(serde_json::json!({ "template_id": template_id })),
+                    );
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(crate::api::ErrorResponse {
+                            error: "zone template not found".to_string(),
+                            in_memory: None,
+                        }),
+                    )
+                        .into_response();
+                };
+
+                let Some(zone_idx) = cfg.zone_config.iter().position(|zone| zone.id == zone_id)
+                else {
+                    emit_task_event(
+                        &s,
+                        claims.as_ref(),
+                        task_id.clone(),
+                        TaskStatus::Failed,
+                        "Applying zone template",
+                        Some("Zone not found.".to_string()),
+                        Some("bulk.apply_zone_template"),
+                        Some(EventResource::new(
+                            "zone",
+                            Some(zone_id.clone()),
+                            Some(zone_id.clone()),
+                        )),
+                        Some(serde_json::json!({ "template_id": template_id })),
+                    );
+                    return (
+                        StatusCode::NOT_FOUND,
+                        Json(crate::api::ErrorResponse {
+                            error: "zone not found".to_string(),
+                            in_memory: None,
+                        }),
+                    )
+                        .into_response();
+                };
+
+                let zone_name = cfg.zone_config[zone_idx].name.clone();
+                let tx_ids = cfg.zone_config[zone_idx].tx_ids.clone();
+                cfg.zone_config[zone_idx].colour_index = template.colour_index;
+
+                let mut touched = 0usize;
+                for tx_id in &tx_ids {
+                    let Some(tx) = parse_tx_id(tx_id) else {
+                        continue;
+                    };
+                    if tx >= cfg.tx_channels {
+                        continue;
+                    }
+                    apply_zone_template_to_output(&mut cfg, tx, &template);
+                    touched += 1;
+                }
+
+                (zone_name, template.name, touched)
+            };
+            crate::persist_or_500!(s);
+            log_audit_event(
+                &s,
+                claims.as_ref(),
+                "bulk.apply_zone_template",
+                format!("Applied template {template_id} to zone {zone_id}."),
+                None,
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_name.clone()),
+                )),
+                Some(serde_json::json!({
+                    "template_id": template_id,
+                    "template_name": template_name,
+                    "affected": affected,
+                })),
+            )
+            .await;
+            emit_task_event(
+                &s,
+                claims.as_ref(),
+                task_id.clone(),
+                TaskStatus::Succeeded,
+                "Applying zone template",
+                Some(format!("Updated {affected} outputs.")),
+                Some("bulk.apply_zone_template"),
+                Some(EventResource::new(
+                    "zone",
+                    Some(zone_id.clone()),
+                    Some(zone_name),
+                )),
+                Some(serde_json::json!({
+                    "template_id": template_id,
+                    "template_name": template_name,
+                    "affected": affected,
+                })),
+            );
+            Json(BulkMutationResponse {
+                ok: true,
+                operation: "apply_zone_template".to_string(),
+                affected,
+                task_id,
+            })
+            .into_response()
+        }
         BulkMutationRequest::ClearZoneRoutes { zone_id } => {
+            if let Err(response) = auth_api::ensure_zone_scope_target(
+                claims.as_ref(),
+                &zone_id,
+                "Zone-scoped users can only clear routes in their own zone.",
+            ) {
+                return response;
+            }
             if parse_zone_id(&zone_id).is_none() {
                 emit_task_event(
                     &s,

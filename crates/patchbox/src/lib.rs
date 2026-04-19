@@ -1,6 +1,8 @@
 pub mod api;
+pub mod ab_compare;
 pub mod auth_api;
 pub mod jwt;
+pub mod morph;
 pub mod openapi;
 pub mod pam_auth;
 pub mod ptp;

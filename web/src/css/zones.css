@@ -17,6 +17,21 @@
   flex-shrink: 0;
 }
 
+.zones-toolbar-title {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.zones-toolbar-count {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.zones-toolbar-btn,
 .zones-add-btn {
   font-size: 11px;
   padding: 2px 8px;
@@ -27,7 +42,104 @@
   cursor: pointer;
   position: relative;
 }
+.zones-toolbar-btn:hover,
 .zones-add-btn:hover { background: var(--bg-row-hover); }
+.zones-toolbar-btn:disabled,
+.zones-add-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.zones-bulk-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-primary);
+}
+
+.zones-bulk-bar.is-empty {
+  background: var(--bg-dark);
+}
+
+.zones-bulk-scope {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zones-bulk-summary,
+.zones-bulk-empty,
+.zones-template-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.zones-bulk-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.zones-bulk-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-dark);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.zones-bulk-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.zones-bulk-btn {
+  min-height: 28px;
+}
+
+.zones-template-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-width: min(100%, 520px);
+}
+
+.zones-template-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.zones-template-select {
+  min-width: 180px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 2px;
+  padding: 4px 6px;
+}
+
+.zones-template-select:disabled {
+  opacity: 0.6;
+}
+
+.zones-template-meta {
+  grid-column: 1 / -1;
+}
 
 .zones-grid {
   flex: 1;
@@ -50,11 +162,30 @@
   gap: 8px;
 }
 
+.zone-card.selected {
+  border-color: var(--zone-card-color, var(--border-primary));
+  box-shadow: inset 0 0 0 1px var(--zone-card-color, var(--border-primary));
+}
+
 .zone-card-header {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: space-between;
+}
+
+.zone-card-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zone-card-checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--zone-card-color, var(--color-accent));
+  cursor: pointer;
 }
 
 .zone-card-name {
@@ -297,6 +428,7 @@
 
 /* s7-ui-touch-targets: expand tap target for zones add button on touch devices */
 @media (pointer: coarse) {
+  .zones-toolbar-btn::before,
   .zones-add-btn::before {
     content: '';
     position: absolute;
@@ -347,6 +479,29 @@
     .zones-toolbar {
       height: var(--row-h);
       overflow-x: auto;
+    }
+
+    .zones-bulk-bar {
+      flex-direction: column;
+      padding: 8px;
+    }
+
+    .zones-bulk-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    .zones-bulk-btn {
+      flex: 1 1 auto;
+    }
+
+    .zones-template-wrap {
+      width: 100%;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .zones-template-meta {
+      grid-column: 1 / -1;
     }
 
     .zones-add-btn {

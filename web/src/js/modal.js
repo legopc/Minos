@@ -12,7 +12,7 @@ export function confirmModal({ title, body, confirmLabel = 'Confirm', cancelLabe
   overlay.innerHTML = `
     <div class="modal-box">
       <h2 class="modal-title" id="pb-modal-title">${title}</h2>
-      <p class="modal-body">${body}</p>
+      <div class="modal-body">${body}</div>
       <div class="modal-actions">
         <button class="modal-cancel">${cancelLabel}</button>
         <button class="modal-confirm${danger ? ' btn-danger' : ''}">${confirmLabel}</button>

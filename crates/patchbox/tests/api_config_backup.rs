@@ -3,7 +3,7 @@ mod common;
 use axum::{
     body::Body,
     extract::ConnectInfo,
-    http::{Method, Request, StatusCode, header},
+    http::{header, Method, Request, StatusCode},
 };
 use http_body_util::BodyExt;
 use patchbox_core::config::PatchboxConfig;
@@ -233,12 +233,10 @@ async fn validate_post_returns_diff_without_mutating_config() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("response should be JSON");
     assert_eq!(json["valid"], true);
     assert_eq!(json["summary"]["total_changes"], 1);
-    assert!(
-        json["summary"]["description"]
-            .as_str()
-            .unwrap_or("")
-            .contains("dante_name")
-    );
+    assert!(json["summary"]["description"]
+        .as_str()
+        .unwrap_or("")
+        .contains("dante_name"));
     assert_eq!(json["changes"][0]["path"], "dante_name");
     assert_eq!(json["changes"][0]["after"], "preview-device");
 
@@ -263,15 +261,13 @@ async fn validate_post_invalid_toml_reports_error() {
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("response should be JSON");
     assert_eq!(json["valid"], false);
     assert_eq!(json["summary"]["total_changes"], 0);
-    assert!(
-        json["errors"]
-            .as_array()
-            .expect("errors array")
-            .first()
-            .and_then(|value| value.as_str())
-            .unwrap_or("")
-            .contains("invalid config TOML")
-    );
+    assert!(json["errors"]
+        .as_array()
+        .expect("errors array")
+        .first()
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .contains("invalid config TOML"));
 }
 
 #[tokio::test]
@@ -301,18 +297,14 @@ async fn restore_post_creates_backup_metadata_and_returns_it_in_list() {
     assert_eq!(backup["metadata"]["has_metadata"], true);
     assert_eq!(backup["metadata"]["source"], "restore");
     assert_eq!(backup["metadata"]["requested_by"], "test");
-    assert!(
-        backup["metadata"]["note"]
-            .as_str()
-            .unwrap_or("")
-            .contains("before config restore")
-    );
-    assert!(
-        backup["metadata"]["summary"]
-            .as_str()
-            .unwrap_or("")
-            .contains("dante_name")
-    );
+    assert!(backup["metadata"]["note"]
+        .as_str()
+        .unwrap_or("")
+        .contains("before config restore"));
+    assert!(backup["metadata"]["summary"]
+        .as_str()
+        .unwrap_or("")
+        .contains("dante_name"));
     assert!(backup["metadata"]["version"].as_str().is_some());
     assert!(backup["metadata"]["created_at"].as_str().is_some());
 

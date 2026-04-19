@@ -37,8 +37,14 @@ async fn zone_membership_affects_outputs_and_route_bulk_delete_supports_zone_id(
     assert_eq!(arr.len(), 2);
     for out in arr {
         assert_eq!(out.get("name").and_then(|v| v.as_str()), Some("Main"));
-        assert_eq!(out.get("zone_id").and_then(|v| v.as_str()), Some(zone_id.as_str()));
-        assert_eq!(out.get("zone_colour_index").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(
+            out.get("zone_id").and_then(|v| v.as_str()),
+            Some(zone_id.as_str())
+        );
+        assert_eq!(
+            out.get("zone_colour_index").and_then(|v| v.as_u64()),
+            Some(2)
+        );
     }
 
     // Add routes to each output.
@@ -72,7 +78,10 @@ async fn zone_membership_affects_outputs_and_route_bulk_delete_supports_zone_id(
     let (status, json) = common::get_json(&app, "/api/v1/routes", Some(&tok)).await;
     assert_eq!(status, StatusCode::OK);
     let routes = json.as_array().expect("routes must be array");
-    assert!(routes.is_empty(), "expected all routes cleared, got {routes:?}");
+    assert!(
+        routes.is_empty(),
+        "expected all routes cleared, got {routes:?}"
+    );
 }
 
 #[tokio::test]
@@ -129,7 +138,10 @@ async fn zone_metering_aggregates_member_outputs() {
         .expect("clip_count");
 
     assert!((rms_db - (-6.0)).abs() < 0.2, "unexpected rms_db: {rms_db}");
-    assert!((peak_db - (-1.0)).abs() < 0.2, "unexpected peak_db: {peak_db}");
+    assert!(
+        (peak_db - (-1.0)).abs() < 0.2,
+        "unexpected peak_db: {peak_db}"
+    );
     assert!((gr_db - (-5.0)).abs() < 0.1, "unexpected gr_db: {gr_db}");
     assert_eq!(clip_count, 5);
 }

@@ -19,10 +19,16 @@ const _state = {
   selChannel:    null,
   openPanels:    new Map(),  // panel_id → {blockKey, channelId, el, triggerEl}
   soloSet:       new Set(),
+  userName:      '',
   userRole:      'admin',
+  userZone:      null,
+  allowedTabs:   ['matrix', 'mixer', 'scenes', 'zones', 'dante', 'system'],
+  shellMode:     'full',
+  focusedZoneId: null,
   connState:     'offline',
   ptp:           { locked: null, offset_ns: 0 },
   activeSceneId: null,
+  sceneAb:       { slot_a: null, slot_b: null, active: 'a', morph: null },
   tasks:         [],    // TaskStatus[]
   system:        {
     monitor_device: null,
@@ -87,7 +93,20 @@ export function setSystem(sys)             { _state.system = sys; }
 export function setConnState(s)            { _state.connState = s; }
 export function setPtp(locked, offset_ns)  { _state.ptp = { locked, offset_ns }; }
 export function setActiveScene(id)         { _state.activeSceneId = id; }
+export function setSceneAb(ab)             {
+  _state.sceneAb = {
+    slot_a: ab?.slot_a ?? null,
+    slot_b: ab?.slot_b ?? null,
+    active: ab?.active ?? 'a',
+    morph: ab?.morph ?? null,
+  };
+}
+export function setUserName(name)          { _state.userName = name ? String(name) : ''; }
 export function setUserRole(role)          { _state.userRole = role; }
+export function setUserZone(zoneId)        { _state.userZone = zoneId ? String(zoneId) : null; }
+export function setAllowedTabs(tabs)       { _state.allowedTabs = Array.isArray(tabs) ? [...tabs] : []; }
+export function setShellMode(mode)         { _state.shellMode = mode ? String(mode) : 'full'; }
+export function setFocusedZone(id)         { _state.focusedZoneId = id ? String(id) : null; }
 export function setActiveTab(tab)          { _state.activeTab = tab; }
 export function setSoloed(id, on)          { on ? _state.soloSet.add(id) : _state.soloSet.delete(id); }
 export function setVcaGroups(arr)          { _state.vcaGroups = arr ?? []; }

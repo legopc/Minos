@@ -723,6 +723,44 @@ pub struct ZoneConfig {
     pub tx_ids: Vec<String>,
 }
 
+/// Reusable output settings for a zone preset/template.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ZoneTemplateOutputConfig {
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub eq: EqConfig,
+    #[serde(default)]
+    pub limiter: LimiterConfig,
+}
+
+impl Default for ZoneTemplateOutputConfig {
+    fn default() -> Self {
+        Self {
+            gain_db: 0.0,
+            muted: false,
+            eq: EqConfig::default(),
+            limiter: LimiterConfig::default(),
+        }
+    }
+}
+
+/// Named preset for applying a consistent look + core output DSP to a zone.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ZoneTemplateConfig {
+    /// Stable string ID synthesised as "zone_template_{n}"
+    pub id: String,
+    /// Human-readable preset name
+    pub name: String,
+    /// Colour palette index 0-9, maps to --zone-color-{n} CSS var
+    #[serde(default)]
+    pub colour_index: u8,
+    #[serde(default)]
+    pub output: ZoneTemplateOutputConfig,
+}
+
 /// Internal submix bus — N RX inputs summed and DSP-processed, then routable to TX outputs.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct InternalBusConfig {
@@ -911,6 +949,12 @@ pub struct PatchboxConfig {
     /// Persisted so create/delete does not reuse identifiers.
     #[serde(default)]
     pub next_zone_id: u64,
+    /// Saved zone presets/templates.
+    #[serde(default)]
+    pub zone_templates: Vec<ZoneTemplateConfig>,
+    /// Monotonic allocator for new ZoneTemplateConfig IDs.
+    #[serde(default)]
+    pub next_zone_template_id: u64,
     /// HTTP server port for web UI + API
     pub port: u16,
     /// RX jitter buffer depth in samples (48000 Hz). Default 48 = 1 ms on clean LAN.
@@ -1001,6 +1045,8 @@ impl Default for PatchboxConfig {
             output_dsp: (0..tx).map(|_| OutputChannelDsp::default()).collect(),
             zone_config: vec![],
             next_zone_id: 0,
+            zone_templates: vec![],
+            next_zone_template_id: 0,
             dante_name: "patchbox".to_string(),
             dante_nic: "eth0".to_string(),
             dante_clock_path: default_clock_path(),
@@ -1143,6 +1189,42 @@ impl PatchboxConfig {
             next = next.max(max.saturating_add(1));
         }
         self.next_zone_id = next;
+
+        // Ensure ZoneTemplateConfig IDs are stable + unique and advance allocator.
+        fn parse_zone_template_numeric(id: &str) -> Option<u64> {
+            id.strip_prefix("zone_template_")?.parse().ok()
+        }
+
+        let mut used = std::collections::HashSet::<String>::new();
+        let mut max_seen: Option<u64> = None;
+        let mut next = self.next_zone_template_id;
+
+        for template in &mut self.zone_templates {
+            let needs_new = template.id.is_empty()
+                || used.contains(&template.id)
+                || parse_zone_template_numeric(&template.id).is_none();
+
+            if needs_new {
+                loop {
+                    let candidate = format!("zone_template_{}", next);
+                    next = next.saturating_add(1);
+                    if !used.contains(&candidate) {
+                        template.id = candidate;
+                        break;
+                    }
+                }
+            }
+
+            used.insert(template.id.clone());
+            if let Some(n) = parse_zone_template_numeric(&template.id) {
+                max_seen = Some(max_seen.map_or(n, |m| m.max(n)));
+            }
+        }
+
+        if let Some(max) = max_seen {
+            next = next.max(max.saturating_add(1));
+        }
+        self.next_zone_template_id = next;
 
         // Normalize internal buses
         for bus in &mut self.internal_buses {

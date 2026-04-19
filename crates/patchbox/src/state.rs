@@ -1,3 +1,4 @@
+use crate::ab_compare::AbCompareState;
 use crate::jwt;
 use crate::scenes::SceneStore;
 use patchbox_core::config::PatchboxConfig;
@@ -197,6 +198,8 @@ pub struct AppState {
     pub resyncs: Arc<AtomicU64>,
     /// Broadcast channel — WS handler subscribes; API mutation handlers send events
     pub ws_tx: Arc<broadcast::Sender<String>>,
+    /// Ephemeral scene A/B compare state.
+    pub ab_state: Arc<RwLock<AbCompareState>>,
     /// DSP engine CPU metrics — shared with health endpoint
     pub dsp_metrics: Arc<DspMetrics>,
     /// Shutdown signal for the ALSA monitor writer thread.
@@ -209,6 +212,8 @@ pub struct AppState {
     pub monitor_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// Debounced config persist task for high-frequency control changes.
     pub persist_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    /// Scene morph background task.
+    pub morph_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// Disable process exit for restart-style API calls in tests.
     pub exit_on_restart: bool,
 }
@@ -264,10 +269,12 @@ impl AppState {
             audio_callbacks: Arc::new(AtomicU64::new(0)),
             resyncs: Arc::new(AtomicU64::new(0)),
             ws_tx: Arc::new(ws_tx),
+            ab_state: Arc::new(RwLock::new(AbCompareState::default())),
             dsp_metrics: Arc::new(DspMetrics::new()),
             monitor_shutdown: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             monitor_thread: Arc::new(std::sync::Mutex::new(None)),
             persist_task: Arc::new(Mutex::new(None)),
+            morph_task: Arc::new(Mutex::new(None)),
             exit_on_restart: true,
         }
     }

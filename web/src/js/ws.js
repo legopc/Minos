@@ -222,6 +222,43 @@ function _dispatch(msg) {
       }
       break;
 
+    case 'ab_update':
+      st.setSceneAb(msg);
+      window.dispatchEvent(new CustomEvent('pb:ab-update', { detail: st.state.sceneAb }));
+      break;
+
+    case 'morph_progress': {
+      st.setSceneAb({
+        ...st.state.sceneAb,
+        morph: {
+          ...(st.state.sceneAb?.morph ?? {}),
+          direction: msg.direction ?? st.state.sceneAb?.morph?.direction ?? null,
+          duration_ms: st.state.sceneAb?.morph?.duration_ms ?? 0,
+          elapsed_ms: msg.elapsed_ms ?? 0,
+          t: msg.t ?? 0,
+        },
+      });
+      window.dispatchEvent(new CustomEvent('pb:ab-update', { detail: st.state.sceneAb }));
+      break;
+    }
+
+    case 'morph_complete':
+      st.setSceneAb({
+        ...st.state.sceneAb,
+        active: msg.active ?? st.state.sceneAb?.active ?? 'a',
+        morph: null,
+      });
+      window.dispatchEvent(new CustomEvent('pb:ab-update', { detail: st.state.sceneAb }));
+      break;
+
+    case 'morph_cancelled':
+      st.setSceneAb({
+        ...st.state.sceneAb,
+        morph: null,
+      });
+      window.dispatchEvent(new CustomEvent('pb:ab-update', { detail: st.state.sceneAb }));
+      break;
+
     case 'dante_status':
       if (msg.ptp_locked !== undefined) {
         st.setPtp(msg.ptp_locked, msg.ptp_offset_ns ?? 0);

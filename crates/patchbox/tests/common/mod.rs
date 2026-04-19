@@ -66,6 +66,11 @@ pub fn operator_token() -> String {
     jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate operator jwt")
 }
 
+pub fn zone_operator_token(zone_id: &str) -> String {
+    let claims = jwt::Claims::new("zone-operator", "operator", Some(zone_id.to_string()));
+    jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate zone-scoped operator jwt")
+}
+
 pub fn admin_token() -> String {
     let claims = jwt::Claims::new("admin-user", "admin", None);
     jwt::generate(&claims, &TEST_JWT_SECRET).expect("generate admin jwt")

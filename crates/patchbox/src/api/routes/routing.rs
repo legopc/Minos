@@ -1,4 +1,5 @@
 use crate::api::{parse_bus_id, parse_rx_id, parse_tx_id, ws_broadcast};
+use crate::auth_api;
 use crate::state::{AppState, EventActor, EventResource};
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -153,6 +154,15 @@ pub struct UpdateGeneratorMatrixRequest {
     gains: Vec<f32>,
 }
 
+fn ensure_routing_zone_scope(
+    cfg: &patchbox_core::config::PatchboxConfig,
+    claims: Option<&Extension<crate::jwt::Claims>>,
+    tx: usize,
+    detail: &'static str,
+) -> Result<(), axum::response::Response> {
+    auth_api::ensure_zone_scope_tx(cfg, claims, tx, detail)
+}
+
 // PUT /api/v1/matrix
 #[tracing::instrument(skip_all)]
 pub async fn put_matrix(
@@ -163,6 +173,14 @@ pub async fn put_matrix(
     let mut cfg = s.config.write().await;
     if u.tx >= cfg.tx_channels || u.rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
+    }
+    if let Err(response) = ensure_routing_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        u.tx,
+        "Zone-scoped users can only change routes in their own zone.",
+    ) {
+        return response;
     }
     cfg.matrix[u.tx][u.rx] = u.enabled;
     if let Some(db) = u.gain_db {
@@ -220,11 +238,20 @@ pub async fn put_gain_input(
 // PUT /api/v1/gain/output
 pub async fn put_gain_output(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(u): Json<GainUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if u.channel >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "out of range").into_response();
+    }
+    if let Err(response) = ensure_routing_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        u.channel,
+        "Zone-scoped users can only change outputs in their own zone.",
+    ) {
+        return response;
     }
     cfg.output_gain_db[u.channel] = u.db.clamp(-60.0, 12.0);
     drop(cfg);
@@ -306,6 +333,14 @@ pub async fn post_route(
         if tx >= cfg.tx_channels || b >= cfg.internal_buses.len() {
             return (StatusCode::BAD_REQUEST, "index out of range").into_response();
         }
+        if let Err(response) = ensure_routing_zone_scope(
+            &cfg,
+            claims.as_ref(),
+            tx,
+            "Zone-scoped users can only change routes in their own zone.",
+        ) {
+            return response;
+        }
         let n_buses = cfg.internal_buses.len();
         let tx_channels = cfg.tx_channels;
         if cfg.bus_matrix.is_none() {
@@ -355,6 +390,14 @@ pub async fn post_route(
     let mut cfg = s.config.write().await;
     if tx >= cfg.tx_channels || rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "channel index out of range").into_response();
+    }
+    if let Err(response) = ensure_routing_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only change routes in their own zone.",
+    ) {
+        return response;
     }
     cfg.matrix[tx][rx] = true;
     drop(cfg);
@@ -422,6 +465,14 @@ pub async fn delete_route(
             return (StatusCode::BAD_REQUEST, "invalid tx part in route id").into_response();
         };
         let mut cfg = s.config.write().await;
+        if let Err(response) = ensure_routing_zone_scope(
+            &cfg,
+            claims.as_ref(),
+            tx,
+            "Zone-scoped users can only change routes in their own zone.",
+        ) {
+            return response;
+        }
         if let Some(bm) = cfg.bus_matrix.as_mut() {
             if let Some(row) = bm.get_mut(tx) {
                 if b < row.len() {
@@ -457,6 +508,14 @@ pub async fn delete_route(
     if tx >= cfg.tx_channels || rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "channel index out of range").into_response();
     }
+    if let Err(response) = ensure_routing_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only change routes in their own zone.",
+    ) {
+        return response;
+    }
     cfg.matrix[tx][rx] = false;
     drop(cfg);
     crate::persist_or_500!(s);
@@ -486,6 +545,13 @@ pub async fn delete_routes_bulk(
     let mut cfg = s.config.write().await;
 
     if let Some(zone_id) = params.get("zone_id") {
+        if let Err(response) = auth_api::ensure_zone_scope_target(
+            claims.as_ref(),
+            zone_id,
+            "Zone-scoped users can only clear routes in their own zone.",
+        ) {
+            return response;
+        }
         let Some(zone) = cfg.zone_config.iter().find(|z| z.id == *zone_id) else {
             return StatusCode::NOT_FOUND.into_response();
         };
@@ -530,11 +596,25 @@ pub async fn delete_routes_bulk(
             let Some(tx) = parse_tx_id(tx_id) else {
                 return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
             };
+            if let Err(response) = ensure_routing_zone_scope(
+                &cfg,
+                claims.as_ref(),
+                tx,
+                "Zone-scoped users can only clear routes in their own zone.",
+            ) {
+                return response;
+            }
             if tx < cfg.tx_channels && rx < cfg.rx_channels {
                 cfg.matrix[tx][rx] = false;
             }
         }
         (Some(rx_id), None) => {
+            if let Err(response) = auth_api::ensure_not_zone_scoped(
+                claims.as_ref(),
+                "Zone-scoped users must target a specific zone or output when clearing routes.",
+            ) {
+                return response;
+            }
             let Some(rx) = parse_rx_id(rx_id) else {
                 return (StatusCode::BAD_REQUEST, "invalid rx_id").into_response();
             };
@@ -548,6 +628,14 @@ pub async fn delete_routes_bulk(
             let Some(tx) = parse_tx_id(tx_id) else {
                 return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
             };
+            if let Err(response) = ensure_routing_zone_scope(
+                &cfg,
+                claims.as_ref(),
+                tx,
+                "Zone-scoped users can only clear routes in their own zone.",
+            ) {
+                return response;
+            }
             if let Some(row) = cfg.matrix.get_mut(tx) {
                 for cell in row.iter_mut() {
                     *cell = false;

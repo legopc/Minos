@@ -171,6 +171,165 @@ async fn bulk_clear_zone_routes_applies_and_emits_task_updates() {
 }
 
 #[tokio::test]
+async fn bulk_set_zone_outputs_muted_applies_and_emits_task_updates() {
+    let (app, state) = common::test_app_with_state();
+    let tok = common::admin_token();
+
+    let (status, zone) = common::post_json(
+        &app,
+        "/api/v1/zones",
+        serde_json::json!({"name":"Mute Zone","tx_ids":["tx_0","tx_1"]}),
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_id = zone
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("zone id")
+        .to_string();
+
+    let mut receiver = state.ws_tx.subscribe();
+    let (status, json) = common::post_json(
+        &app,
+        "/api/v1/bulk",
+        serde_json::json!({
+            "operation":"set_zone_outputs_muted",
+            "zone_id": zone_id,
+            "muted": true
+        }),
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json.get("affected").and_then(|v| v.as_u64()), Some(2));
+
+    let cfg = state.config.read().await;
+    assert_eq!(cfg.output_muted, vec![true, true]);
+    assert!(cfg.output_dsp.iter().all(|dsp| dsp.muted));
+    drop(cfg);
+
+    let started = recv_task(&mut receiver).await;
+    let succeeded = recv_task(&mut receiver).await;
+
+    assert_eq!(
+        started.get("task_id").and_then(|v| v.as_str()),
+        Some("bulk:set_zone_outputs_muted:zone_2")
+    );
+    assert_eq!(
+        started.get("status").and_then(|v| v.as_str()),
+        Some("started")
+    );
+    assert_eq!(
+        succeeded.get("status").and_then(|v| v.as_str()),
+        Some("succeeded")
+    );
+}
+
+#[tokio::test]
+async fn bulk_apply_zone_template_applies_and_emits_task_updates() {
+    let (app, state) = common::test_app_with_state();
+    let tok = common::admin_token();
+
+    let (status, zone) = common::post_json(
+        &app,
+        "/api/v1/zones",
+        serde_json::json!({"name":"Preset Zone","tx_ids":["tx_0","tx_1"]}),
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let zone_id = zone
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("zone id")
+        .to_string();
+
+    let (status, template) = common::post_json(
+        &app,
+        "/api/v1/zones/templates",
+        serde_json::json!({
+            "name":"Speech",
+            "colour_index": 6,
+            "output": {
+                "gain_db": -9.5,
+                "muted": true,
+                "eq": {
+                    "enabled": true,
+                    "bands": [
+                        {"freq_hz": 160.0, "gain_db": 3.0, "q": 0.9, "band_type": "Peaking"}
+                    ]
+                },
+                "limiter": {
+                    "enabled": true,
+                    "threshold_db": -4.0,
+                    "attack_ms": 2.0,
+                    "release_ms": 90.0
+                }
+            }
+        }),
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let template_id = template
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("template id")
+        .to_string();
+
+    let mut receiver = state.ws_tx.subscribe();
+    let (status, json) = common::post_json(
+        &app,
+        "/api/v1/bulk",
+        serde_json::json!({
+            "operation":"apply_zone_template",
+            "zone_id": zone_id,
+            "template_id": template_id
+        }),
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json.get("affected").and_then(|v| v.as_u64()), Some(2));
+
+    let cfg = state.config.read().await;
+    let zone = cfg
+        .zone_config
+        .iter()
+        .find(|zone| zone.id == "zone_2")
+        .expect("zone");
+    assert_eq!(zone.colour_index, 6);
+    assert_eq!(cfg.output_gain_db, vec![-9.5, -9.5]);
+    assert_eq!(cfg.output_muted, vec![true, true]);
+    assert!(cfg.per_output_eq.iter().all(|eq| eq.enabled));
+    assert!(cfg.per_output_limiter.iter().all(|lim| lim.enabled));
+    assert!(cfg
+        .output_dsp
+        .iter()
+        .all(|dsp| dsp.gain_db == -9.5 && dsp.muted && dsp.eq.enabled && dsp.limiter.enabled));
+    assert_eq!(cfg.output_dsp[0].eq.bands[0].gain_db, 3.0);
+    assert_eq!(cfg.output_dsp[0].limiter.threshold_db, -4.0);
+    drop(cfg);
+
+    let started = recv_task(&mut receiver).await;
+    let succeeded = recv_task(&mut receiver).await;
+
+    assert_eq!(
+        started.get("task_id").and_then(|v| v.as_str()),
+        Some("bulk:apply_zone_template:zone_2:zone_template_0")
+    );
+    assert_eq!(
+        started.get("status").and_then(|v| v.as_str()),
+        Some("started")
+    );
+    assert_eq!(
+        succeeded.get("status").and_then(|v| v.as_str()),
+        Some("succeeded")
+    );
+}
+
+#[tokio::test]
 async fn config_restore_emits_task_updates() {
     let (app, state) = common::test_app_with_state();
     let tok = common::admin_token();

@@ -1,4 +1,5 @@
-use crate::api::{linear_to_dbfs, parse_tx_id, parse_zone_id};
+use crate::api::{linear_to_dbfs, parse_tx_id, parse_zone_id, parse_zone_template_id};
+use crate::auth_api;
 use crate::state::{AppState, EventActor, EventResource};
 use axum::{
     extract::{Extension, Path, State},
@@ -6,7 +7,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use patchbox_core::config::ZoneConfig;
+use patchbox_core::config::{ZoneConfig, ZoneTemplateConfig, ZoneTemplateOutputConfig};
 use std::collections::HashSet;
 use tracing;
 
@@ -54,6 +55,13 @@ pub struct UpdateZoneRequest {
     tx_ids: Option<Vec<String>>,
 }
 
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct CreateZoneTemplateRequest {
+    name: String,
+    colour_index: Option<u8>,
+    output: Option<ZoneTemplateOutputConfig>,
+}
+
 #[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct ZoneMetering {
     pub id: String,
@@ -64,10 +72,22 @@ pub struct ZoneMetering {
 }
 
 // POST /api/v1/zones/:tx/mute
-pub async fn mute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
+pub async fn mute_zone(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(tx): Path<usize>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if tx >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only mute outputs in their own zone.",
+    ) {
+        return response;
     }
     cfg.output_muted[tx] = true;
     drop(cfg);
@@ -76,10 +96,22 @@ pub async fn mute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl
 }
 
 // POST /api/v1/zones/:tx/unmute
-pub async fn unmute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> impl IntoResponse {
+pub async fn unmute_zone(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(tx): Path<usize>,
+) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if tx >= cfg.tx_channels {
         return (StatusCode::BAD_REQUEST, "zone out of range").into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only unmute outputs in their own zone.",
+    ) {
+        return response;
     }
     cfg.output_muted[tx] = false;
     drop(cfg);
@@ -88,7 +120,16 @@ pub async fn unmute_zone(State(s): State<AppState>, Path(tx): Path<usize>) -> im
 }
 
 // POST /api/v1/mute-all
-pub async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn mute_all(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot mute all outputs.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() {
         *m = true;
@@ -99,7 +140,16 @@ pub async fn mute_all(State(s): State<AppState>) -> impl IntoResponse {
 }
 
 // POST /api/v1/unmute-all
-pub async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn unmute_all(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot unmute all outputs.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() {
         *m = false;
@@ -123,6 +173,22 @@ pub async fn unmute_all(State(s): State<AppState>) -> impl IntoResponse {
 pub async fn get_zones_list(State(s): State<AppState>) -> impl IntoResponse {
     let cfg = s.config.read().await;
     Json(cfg.zone_config.clone())
+}
+
+// GET /api/v1/zones/templates
+#[utoipa::path(
+    get,
+    path = "/api/v1/zones/templates",
+    tag = "zones",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "List of zone templates", body = Vec<ZoneTemplateConfig>),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn get_zone_templates(State(s): State<AppState>) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    Json(cfg.zone_templates.clone())
 }
 
 // GET /api/v1/zones/metering
@@ -201,6 +267,12 @@ pub async fn post_zone(
     claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<CreateZoneRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot create zones.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
 
     let mut tx_ids = body.tx_ids.unwrap_or_default();
@@ -256,6 +328,65 @@ pub async fn post_zone(
     (StatusCode::CREATED, Json(zone)).into_response()
 }
 
+// POST /api/v1/zones/templates
+#[utoipa::path(
+    post,
+    path = "/api/v1/zones/templates",
+    tag = "zones",
+    security(("bearer_auth" = [])),
+    request_body = CreateZoneTemplateRequest,
+    responses(
+        (status = 201, description = "Zone template created", body = ZoneTemplateConfig),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn post_zone_template(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Json(body): Json<CreateZoneTemplateRequest>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot manage zone templates.",
+    ) {
+        return response;
+    }
+    let mut output = body.output.unwrap_or_default();
+    output.gain_db = output.gain_db.clamp(-60.0, 24.0);
+
+    let mut cfg = s.config.write().await;
+    let id_n = cfg.next_zone_template_id;
+    cfg.next_zone_template_id = cfg.next_zone_template_id.saturating_add(1);
+    let template = ZoneTemplateConfig {
+        id: format!("zone_template_{}", id_n),
+        name: body.name,
+        colour_index: body.colour_index.unwrap_or(0),
+        output,
+    };
+    cfg.zone_templates.push(template.clone());
+    drop(cfg);
+    crate::persist_or_500!(s);
+    s.push_audit_log(
+        "zone_template.create",
+        format!("Created zone template {}.", template.id),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "zone_template",
+            Some(template.id.clone()),
+            Some(template.name.clone()),
+        )),
+        Some(serde_json::json!({
+            "colour_index": template.colour_index,
+            "output": template.output,
+        })),
+    )
+    .await;
+    (StatusCode::CREATED, Json(template)).into_response()
+}
+
 // PUT /api/v1/zones/:zone_id
 #[utoipa::path(
     put,
@@ -276,6 +407,12 @@ pub async fn put_zone_resource(
     Path(zone_id): Path<String>,
     Json(body): Json<UpdateZoneRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot edit zone definitions.",
+    ) {
+        return response;
+    }
     if parse_zone_id(&zone_id).is_none() {
         return (StatusCode::BAD_REQUEST, "invalid zone id (expected zone_N)").into_response();
     }
@@ -360,6 +497,12 @@ pub async fn delete_zone_resource(
     claims: Option<Extension<crate::jwt::Claims>>,
     Path(zone_id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot delete zones.",
+    ) {
+        return response;
+    }
     if parse_zone_id(&zone_id).is_none() {
         return (StatusCode::BAD_REQUEST, "invalid zone id (expected zone_N)").into_response();
     }
@@ -390,12 +533,81 @@ pub async fn delete_zone_resource(
     StatusCode::NO_CONTENT.into_response()
 }
 
+// DELETE /api/v1/zones/templates/:template_id
+#[utoipa::path(
+    delete,
+    path = "/api/v1/zones/templates/{template_id}",
+    tag = "zones",
+    security(("bearer_auth" = [])),
+    params(("template_id" = String, Path, description = "Zone template ID")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn delete_zone_template(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(template_id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot manage zone templates.",
+    ) {
+        return response;
+    }
+    if parse_zone_template_id(&template_id).is_none() {
+        return (
+            StatusCode::BAD_REQUEST,
+            "invalid zone template id (expected zone_template_N)",
+        )
+            .into_response();
+    }
+    let mut cfg = s.config.write().await;
+    let Some(i) = cfg
+        .zone_templates
+        .iter()
+        .position(|template| template.id == template_id)
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let removed = cfg.zone_templates.remove(i);
+    drop(cfg);
+    crate::persist_or_500!(s);
+    s.push_audit_log(
+        "zone_template.delete",
+        format!("Deleted zone template {template_id}."),
+        None,
+        claims
+            .as_ref()
+            .map(|Extension(claims)| EventActor::from_claims(claims)),
+        Some(EventResource::new(
+            "zone_template",
+            Some(template_id.clone()),
+            Some(removed.name),
+        )),
+        Some(serde_json::json!({
+            "colour_index": removed.colour_index,
+            "output": removed.output,
+        })),
+    )
+    .await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // PUT /api/v1/sources/:idx/name
 pub async fn put_source_name(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(idx): Path<usize>,
     Json(u): Json<NameUpdate>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot rename inputs.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     if idx >= cfg.sources.len() {
         return (StatusCode::BAD_REQUEST, "index out of range").into_response();
@@ -409,12 +621,21 @@ pub async fn put_source_name(
 // PUT /api/v1/zones/:idx/name
 pub async fn put_zone_name(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(idx): Path<usize>,
     Json(u): Json<NameUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
     if idx >= cfg.zones.len() {
         return (StatusCode::BAD_REQUEST, "index out of range").into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        idx,
+        "Zone-scoped users can only rename outputs in their own zone.",
+    ) {
+        return response;
     }
     cfg.zones[idx] = u.name;
     drop(cfg);
@@ -434,6 +655,7 @@ pub async fn get_eq(State(s): State<AppState>, Path(tx): Path<usize>) -> impl In
 // PUT /api/v1/zones/:tx/eq
 pub async fn put_eq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(tx): Path<usize>,
     Json(u): Json<EqUpdate>,
 ) -> impl IntoResponse {
@@ -441,6 +663,17 @@ pub async fn put_eq(
         return StatusCode::BAD_REQUEST.into_response();
     }
     let mut cfg = s.config.write().await;
+    if cfg.per_output_eq.get(tx).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only update EQ in their own zone.",
+    ) {
+        return response;
+    }
     let Some(eq) = cfg.per_output_eq.get_mut(tx) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -455,10 +688,22 @@ pub async fn put_eq(
 // PUT /api/v1/zones/:tx/eq/enabled
 pub async fn put_eq_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(tx): Path<usize>,
     Json(u): Json<EqEnabledUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.per_output_eq.get(tx).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only update EQ in their own zone.",
+    ) {
+        return response;
+    }
     let Some(eq) = cfg.per_output_eq.get_mut(tx) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -480,10 +725,22 @@ pub async fn get_limiter(State(s): State<AppState>, Path(tx): Path<usize>) -> im
 // PUT /api/v1/zones/:tx/limiter
 pub async fn put_limiter(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(tx): Path<usize>,
     Json(u): Json<LimiterUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.per_output_limiter.get(tx).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only update limiters in their own zone.",
+    ) {
+        return response;
+    }
     let Some(lim) = cfg.per_output_limiter.get_mut(tx) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -498,10 +755,22 @@ pub async fn put_limiter(
 // PUT /api/v1/zones/:tx/limiter/enabled
 pub async fn put_limiter_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(tx): Path<usize>,
     Json(u): Json<LimiterEnabledUpdate>,
 ) -> impl IntoResponse {
     let mut cfg = s.config.write().await;
+    if cfg.per_output_limiter.get(tx).is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = auth_api::ensure_zone_scope_tx(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only update limiters in their own zone.",
+    ) {
+        return response;
+    }
     let Some(lim) = cfg.per_output_limiter.get_mut(tx) else {
         return StatusCode::NOT_FOUND.into_response();
     };

@@ -162,6 +162,10 @@ pub fn parse_zone_id(id: &str) -> Option<u64> {
     id.strip_prefix("zone_")?.parse().ok()
 }
 
+pub fn parse_zone_template_id(id: &str) -> Option<u64> {
+    id.strip_prefix("zone_template_")?.parse().ok()
+}
+
 pub fn dsp_to_value(dsp: &impl DspChain) -> serde_json::Value {
     dsp.to_dsp_value()
 }
@@ -460,6 +464,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/mute-all", post(mute_all))
         .route("/api/v1/unmute-all", post(unmute_all))
         .route("/api/v1/scenes", get(list_scenes).post(save_scene))
+        .route("/api/v1/scenes/ab", get(get_ab_state))
+        .route("/api/v1/scenes/ab/capture", post(capture_ab_slot))
+        .route("/api/v1/scenes/ab/toggle", post(toggle_ab))
+        .route("/api/v1/scenes/ab/diff", get(get_ab_diff))
+        .route("/api/v1/scenes/ab/morph", post(start_ab_morph))
+        .route("/api/v1/scenes/ab/morph/cancel", post(cancel_ab_morph))
+        .route("/api/v1/scenes/ab/save", post(save_ab_slot))
         .route("/api/v1/scenes/:name/load", post(load_scene))
         .route(
             "/api/v1/scenes/:name",
@@ -511,10 +522,18 @@ pub fn router(state: AppState) -> Router {
             get(get_output_resource).put(put_output_resource),
         )
         .route("/api/v1/zones", get(get_zones_list).post(post_zone))
+        .route(
+            "/api/v1/zones/templates",
+            get(get_zone_templates).post(post_zone_template),
+        )
         .route("/api/v1/zones/metering", get(get_zone_metering))
         .route(
             "/api/v1/zones/:zone_id",
             put(put_zone_resource).delete(delete_zone_resource),
+        )
+        .route(
+            "/api/v1/zones/templates/:template_id",
+            delete(delete_zone_template),
         )
         .route(
             "/api/v1/routes",

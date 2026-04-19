@@ -55,10 +55,76 @@ async function raw(path, init = {}) {
   return r;
 }
 
+async function compatReq(candidates, defaults = {}) {
+  const list = Array.isArray(candidates) ? candidates : [candidates];
+  for (const candidate of list) {
+    const spec = typeof candidate === 'string'
+      ? { path: candidate }
+      : candidate;
+    const method = spec.method ?? defaults.method ?? 'GET';
+    const body = spec.body !== undefined ? spec.body : defaults.body;
+    const headers = { ...(defaults.headers ?? {}), ...(spec.headers ?? {}) };
+    const init = { method, headers };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+      if (!init.headers['Content-Type']) init.headers['Content-Type'] = 'application/json';
+    }
+
+    const r = await raw(spec.path, init);
+    const continueStatuses = new Set([
+      ...(defaults.continueStatuses ?? [404, 405]),
+      ...(spec.continueStatuses ?? []),
+    ]);
+    if (continueStatuses.has(r.status)) continue;
+    if (!r.ok) {
+      const txt = await r.text().catch(() => r.statusText);
+      throw new Error(`${r.status}: ${txt}`);
+    }
+    if (r.status === 204 || spec.parse === false) return null;
+    const ct = r.headers.get('content-type') ?? '';
+    if (!ct.includes('json')) return null;
+    return r.json();
+  }
+  return undefined;
+}
+
+function uniqueStrings(values) {
+  return [...new Set((values ?? []).filter(Boolean).map((value) => String(value)))];
+}
+
+function normaliseZoneTemplate(entry, index) {
+  if (typeof entry === 'string') {
+    return { id: entry, name: entry, description: '' };
+  }
+  if (!entry || typeof entry !== 'object') return null;
+  const id = entry.id ?? entry.template_id ?? entry.slug ?? entry.name ?? `template_${index}`;
+  const name = entry.name ?? entry.label ?? entry.title ?? entry.template_name ?? id;
+  return {
+    ...entry,
+    id: String(id),
+    name: String(name),
+    description: entry.description != null ? String(entry.description) : '',
+  };
+}
+
+function normaliseZoneTemplates(payload) {
+  const list = Array.isArray(payload)
+    ? payload
+    : payload?.templates ?? payload?.zone_templates ?? payload?.items ?? payload?.data ?? [];
+  return Array.isArray(list)
+    ? list.map(normaliseZoneTemplate).filter(Boolean)
+    : [];
+}
+
 function buildQueryString(params = {}) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value == null || value === '' || value === 'all') return;
+    if (Array.isArray(value)) {
+      if (!value.length) return;
+      query.set(key, value.join(','));
+      return;
+    }
     query.set(key, String(value));
   });
   const str = query.toString();
@@ -390,6 +456,112 @@ export const muteZone      = (txIdx)     => post(`/zones/${txIdx}/mute`);
  */
 export const unmuteZone    = (txIdx)     => post(`/zones/${txIdx}/unmute`);
 
+export const postBulkMutation = (body)   => post('/bulk', body);
+
+export async function setZonesMuted(zones, muted) {
+  const list = Array.isArray(zones) ? zones : [zones];
+  const zoneIds = uniqueStrings(list.map((zone) => zone?.id));
+  const txIds = uniqueStrings(list.flatMap((zone) => zone?.tx_ids ?? []));
+  const payload = await compatReq([
+    { path: '/zones/bulk', method: 'POST', body: { operation: 'set_muted', zone_ids: zoneIds, muted }, continueStatuses: [400] },
+    { path: '/zones/bulk-mute', method: 'POST', body: { zone_ids: zoneIds, muted }, continueStatuses: [400] },
+    { path: '/bulk', method: 'POST', body: { operation: 'set_zone_outputs_muted', zone_ids: zoneIds, muted }, continueStatuses: [400] },
+  ]);
+  if (payload !== undefined) return payload;
+  for (const txId of txIds) {
+    await putOutput(txId, { muted });
+  }
+  return {
+    ok: true,
+    operation: muted ? 'mute_zones' : 'unmute_zones',
+    affected: txIds.length,
+    fallback: true,
+  };
+}
+
+export async function clearZoneRoutesBulk(zoneId) {
+  const payload = await compatReq({
+    path: '/bulk',
+    method: 'POST',
+    body: { operation: 'clear_zone_routes', zone_id: zoneId },
+  });
+  if (payload !== undefined) return payload;
+  await deleteRoutesByZone(zoneId);
+  return {
+    ok: true,
+    operation: 'clear_zone_routes',
+    affected: 0,
+    fallback: true,
+  };
+}
+
+export async function clearZonesRoutes(zoneIds) {
+  const ids = uniqueStrings(zoneIds);
+  const payload = await compatReq([
+    { path: '/zones/bulk', method: 'POST', body: { operation: 'clear_routes', zone_ids: ids }, continueStatuses: [400] },
+    { path: '/bulk', method: 'POST', body: { operation: 'clear_zone_routes', zone_ids: ids }, continueStatuses: [400] },
+  ]);
+  if (payload !== undefined) return payload;
+
+  let affected = 0;
+  for (const zoneId of ids) {
+    const result = await clearZoneRoutesBulk(zoneId);
+    affected += Number(result?.affected ?? 0);
+  }
+  return {
+    ok: true,
+    operation: 'clear_zone_routes',
+    affected,
+    fallback: true,
+  };
+}
+
+export async function getZoneTemplates() {
+  const payload = await compatReq([
+    '/zones/templates',
+    '/zone-templates',
+    '/templates/zones',
+  ]);
+  if (payload === undefined) return [];
+  return normaliseZoneTemplates(payload);
+}
+
+export async function applyZoneTemplate(zoneIds, templateId) {
+  const ids = uniqueStrings(Array.isArray(zoneIds) ? zoneIds : [zoneIds]);
+  if (!ids.length || !templateId) {
+    return { ok: false, operation: 'apply_zone_template', affected: 0, unsupported: true };
+  }
+
+  const payload = await compatReq([
+    { path: '/zones/templates/apply', method: 'POST', body: { template_id: templateId, zone_ids: ids }, continueStatuses: [400] },
+    { path: '/zones/template/apply', method: 'POST', body: { template_id: templateId, zone_ids: ids }, continueStatuses: [400] },
+    { path: '/zone-templates/apply', method: 'POST', body: { template_id: templateId, zone_ids: ids }, continueStatuses: [400] },
+    { path: '/templates/zones/apply', method: 'POST', body: { template_id: templateId, zone_ids: ids }, continueStatuses: [400] },
+    { path: '/zones/apply-template', method: 'POST', body: { template_id: templateId, zone_ids: ids }, continueStatuses: [400] },
+    ...(ids.length === 1 ? [
+      { path: `/zones/${ids[0]}/template`, method: 'POST', body: { template_id: templateId }, continueStatuses: [400] },
+      { path: `/zones/${ids[0]}/template/apply`, method: 'POST', body: { template_id: templateId }, continueStatuses: [400] },
+      { path: `/zones/${ids[0]}/templates/${encodeURIComponent(templateId)}/apply`, method: 'POST', parse: false, continueStatuses: [400] },
+    ] : []),
+  ]);
+
+  if (payload !== undefined) {
+    return {
+      ok: true,
+      operation: 'apply_zone_template',
+      affected: ids.length,
+      ...(payload ?? {}),
+    };
+  }
+
+  return {
+    ok: false,
+    operation: 'apply_zone_template',
+    affected: 0,
+    unsupported: true,
+  };
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 /**
  * Fetch all routes (RX-to-TX connections).
@@ -542,6 +714,48 @@ export const putBusPolarity = (id, invert) => reqWithRetry('PUT', `/buses/${id}/
 export const setBusMute    = (id, muted)    => reqWithRetry('PUT', `/buses/${id}/mute`, { muted });
 
 // ── Scenes ─────────────────────────────────────────────────────────────────
+const DEFAULT_RECALL_SCOPE = Object.freeze({
+  routing: true,
+  inputs: true,
+  outputs: true,
+  buses: true,
+  groups: true,
+  generators: true,
+});
+
+function normaliseScopedChannelIds(values, prefix) {
+  const list = Array.isArray(values) ? values : [];
+  return uniqueStrings(list.map((value) => {
+    if (typeof value === 'number' && Number.isInteger(value)) return `${prefix}${value}`;
+    const str = String(value ?? '').trim();
+    if (!str) return null;
+    return str.startsWith(prefix) ? str : `${prefix}${str.replace(/^[^0-9-]*/, '')}`;
+  }).filter(Boolean));
+}
+
+function normaliseRecallScope(scope) {
+  if (!scope || typeof scope !== 'object') return { ...DEFAULT_RECALL_SCOPE };
+  const inputs = typeof scope.inputs === 'object' && scope.inputs !== null
+    ? scope.inputs.enabled !== false
+    : scope.inputs !== false;
+  const outputs = typeof scope.outputs === 'object' && scope.outputs !== null
+    ? scope.outputs.enabled !== false
+    : scope.outputs !== false;
+  const normalised = {
+    routing: scope.routing !== false,
+    inputs,
+    outputs,
+    buses: scope.buses !== false,
+    groups: scope.groups !== false,
+    generators: scope.generators !== false,
+  };
+  const inputChannels = normaliseScopedChannelIds(scope.input_channels ?? scope.inputs?.channels, 'rx_');
+  const outputChannels = normaliseScopedChannelIds(scope.output_channels ?? scope.outputs?.channels, 'tx_');
+  if (inputChannels.length) normalised.input_channels = inputChannels;
+  if (outputChannels.length) normalised.output_channels = outputChannels;
+  return normalised;
+}
+
 /**
  * Fetch all scenes.
  * @returns {Promise<{scenes: Array<Scene>, active: string|null}>} Scenes and active scene ID
@@ -580,16 +794,34 @@ export const deleteScene   = (id)        => del(`/scenes/${id}`);
 /**
  * Load a scene (apply its snapshot).
  * @param {string} id - Scene ID
+ * @param {Object|undefined} scope - Optional recall scope
  * @returns {Promise<null>}
  */
-export const loadScene     = (id)        => post(`/scenes/${id}/load`);
+export const loadScene     = (id, scope) => scope === undefined
+  ? post(`/scenes/${id}/load`)
+  : post(`/scenes/${id}/load`, { scope: normaliseRecallScope(scope) });
 
 /**
  * Get differences between a scene and current state.
  * @param {string} id - Scene ID
+ * @param {Object|undefined} scope - Optional recall scope
  * @returns {Promise<SceneDiff>} Diff object
  */
-export const getSceneDiff  = (id)        => get(`/scenes/${id}/diff`);
+export const getSceneDiff  = (id, scope) => scope === undefined
+  ? get(`/scenes/${id}/diff`)
+  : get(`/scenes/${id}/diff${buildQueryString(normaliseRecallScope(scope))}`);
+export const getAbState    = ()          => get('/scenes/ab');
+export const captureAbSlot = (slot, body = { source: 'live' }) =>
+  post(`/scenes/ab/capture?slot=${encodeURIComponent(slot)}`, body);
+export const toggleAb      = ()          => post('/scenes/ab/toggle', {});
+export const getAbDiff     = ()          => get('/scenes/ab/diff');
+export const startAbMorph  = (body)      => post('/scenes/ab/morph', {
+  ...body,
+  scope: body?.scope ? normaliseRecallScope(body.scope) : undefined,
+});
+export const cancelAbMorph = ()          => post('/scenes/ab/morph/cancel', {});
+export const saveAbSlot    = (slot, name) =>
+  post(`/scenes/ab/save?slot=${encodeURIComponent(slot)}`, { name });
 
 // ── Metering ───────────────────────────────────────────────────────────────
 /**
