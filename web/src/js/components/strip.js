@@ -376,9 +376,14 @@ export function updateStripMeter(stripEl, db) {
   const bar  = document.getElementById(`vu-bar-${id}`);
   const peak = document.getElementById(`vu-peak-${id}`);
   if (!bar) return;
-  const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
-  bar.style.height = pct + '%';
-  if (peak) peak.style.bottom = pct + '%';
+  const pct = dbToPercent(db);
+  const col = db > -3 ? 'var(--vu-red)' : db > -12 ? 'var(--vu-amber)' : 'var(--vu-green)';
+  bar.style.transform = `scaleY(${pct / 100})`;
+  bar.style.background = col;
+  if (peak) {
+    peak.style.bottom = pct + '%';
+    peak.style.background = col;
+  }
 }
 
 /**

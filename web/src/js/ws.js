@@ -115,6 +115,8 @@ function _dispatch(msg) {
     case 'metering':
       st.setMetering(msg.rx, msg.tx, msg.gr, msg.bus);
       meter.updateAll(msg, _ballistics);
+      import('./matrix.js').then(m => m.updateMetering?.(msg.rx, msg.tx)).catch(() => {});
+      import('./mixer.js').then(m => m.updateMetering?.(msg.rx, msg.tx, msg.bus)).catch(() => {});
       window.dispatchEvent(new CustomEvent('pb:metering', { detail: msg }));
       break;
 

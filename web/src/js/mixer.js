@@ -252,6 +252,9 @@ export function render(container) {
   body.appendChild(masters);
 
   _renderStrips(strips, masters);
+  _updateSoloIndicator();
+  const { rx, tx, bus } = _currentMeterMaps();
+  updateMetering(rx, tx, bus);
 }
 
 function _renderSceneBar(bar) {
@@ -1477,10 +1480,13 @@ export function updateMetering(rx, tx, bus) {
       const bar  = document.getElementById(`vu-bar-${id}`);
       const peak = document.getElementById(`vu-peak-${id}`);
       if (!bar) return;
-      const pct = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
-      bar.style.height = pct + '%';
+      const pct = _meterPct(db);
+      const col = _meterColour(db);
+      bar.style.transform = `scaleY(${pct / 100})`;
+      bar.style.background = col;
       if (peak) {
         peak.style.bottom = pct + '%';
+        peak.style.background = col;
       }
     });
   };
@@ -1490,6 +1496,30 @@ export function updateMetering(rx, tx, bus) {
 }
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
+
+function _meterPct(db) {
+  if (!isFinite(db) || db <= -48) return 0;
+  if (db >= 0) return 100;
+  return ((db + 48) / 48) * 100;
+}
+
+function _meterColour(db) {
+  if (db > -3) return 'var(--vu-red)';
+  if (db > -12) return 'var(--vu-amber)';
+  return 'var(--vu-green)';
+}
+
+function _currentMeterMaps() {
+  const rx = {};
+  const tx = {};
+  const bus = {};
+  for (const [id, db] of st.state.metering.entries()) {
+    if (id.startsWith('rx_')) rx[id] = db;
+    else if (id.startsWith('tx_')) tx[id] = db;
+    else if (id.startsWith('bus_')) bus[id] = db;
+  }
+  return { rx, tx, bus };
+}
 
 function _refreshSoloButtons() {
   document.querySelectorAll('.mixer-solo-btn').forEach(btn => {

@@ -377,6 +377,9 @@ export function render(container) {
       viewport.scrollTop  = prevScrollY;
     });
   }
+
+  const { rx, tx } = _currentMeterMaps();
+  updateMetering(rx, tx);
 }
 
 // ── Column ordering ────────────────────────────────────────────────────────
@@ -1397,6 +1400,16 @@ export function updateMetering(rxData, txData) {
       col.style.setProperty('--signal-color', _dbToColour(db));
     });
   }
+}
+
+function _currentMeterMaps() {
+  const rx = {};
+  const tx = {};
+  for (const [id, db] of st.state.metering.entries()) {
+    if (id.startsWith('rx_')) rx[id] = db;
+    else if (id.startsWith('tx_')) tx[id] = db;
+  }
+  return { rx, tx };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
