@@ -143,6 +143,42 @@
   gap: 4px;
 }
 
+.status-monitor {
+  min-width: 0;
+  gap: 6px;
+}
+
+.status-monitor.active {
+  color: var(--text-primary);
+}
+
+.status-monitor-label,
+.status-monitor-state {
+  white-space: nowrap;
+}
+
+.status-monitor-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-monitor-clear {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.status-monitor-clear:hover,
+.status-monitor-clear:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--accent-gold);
+}
+
 .status-item.ptp-locked {
   color: var(--dot-live);
 }

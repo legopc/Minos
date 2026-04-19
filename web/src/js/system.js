@@ -189,15 +189,30 @@ export async function render(container) {
   if (monitorSelect) {
     try {
       const resp = await api.getAudioDevices();
-      (resp.devices ?? []).forEach(d => {
+      const devices = Array.isArray(resp.devices) ? resp.devices : [];
+      devices.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.name;
         opt.textContent = `${d.name} — ${d.description ?? 'Audio Device'}`;
         if (d.name === sys.monitor_device) opt.selected = true;
         monitorSelect.appendChild(opt);
       });
+      if (sys.monitor_device && !devices.some((d) => d.name === sys.monitor_device)) {
+        const opt = document.createElement('option');
+        opt.value = sys.monitor_device;
+        opt.textContent = `${sys.monitor_device} — Current config`;
+        opt.selected = true;
+        monitorSelect.appendChild(opt);
+      }
     } catch (e) {
       console.error('Failed to load audio devices:', e);
+      if (sys.monitor_device) {
+        const opt = document.createElement('option');
+        opt.value = sys.monitor_device;
+        opt.textContent = `${sys.monitor_device} — Current config`;
+        opt.selected = true;
+        monitorSelect.appendChild(opt);
+      }
     }
   }
 

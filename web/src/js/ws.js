@@ -10,6 +10,7 @@ let _meterFilter = null;  // null = all, Set = filtered ids
 let _ballistics = meter.BALLISTICS_PRESETS.Digital;
 let _hasConnected = false;
 let _lastCloseReason = '';
+let _keepaliveTimer = null;
 
 export function setMeteringBallistics(ballistics) {
   _ballistics = ballistics;
@@ -41,6 +42,12 @@ function _connect() {
     _retryMs = 1000;
     clearTimeout(_retryTmr);
     _retryTmr = null;
+    clearInterval(_keepaliveTimer);
+    _keepaliveTimer = window.setInterval(() => {
+      if (_ws?.readyState === WebSocket.OPEN) {
+        _ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 10000);
     const reconnected = _hasConnected;
     _hasConnected = true;
     if (reconnected) {
@@ -65,6 +72,8 @@ function _connect() {
 
   _ws.onclose = (event) => {
     _ws = null;
+    clearInterval(_keepaliveTimer);
+    _keepaliveTimer = null;
     _lastCloseReason = _formatCloseReason(event);
     st.setStaleData(true);
     _emitWsState('reconnecting', { reason: _lastCloseReason, retryMs: _retryMs });

@@ -96,25 +96,7 @@ function _buildShellContext() {
 }
 
 function _updateShellNote(ctx) {
-  const noteEl = document.getElementById('shell-note');
-  if (!noteEl) return;
-
-  let message = '';
-  if (ctx.userZone) {
-    const mismatch = ctx.requestedZoneId && ctx.requestedZoneId !== ctx.userZone;
-    message = ctx.missingZoneId
-      ? `Zone shell requested ${ctx.missingZoneId}, but that zone is unavailable. UX-only until backend enforcement lands.`
-      : mismatch
-      ? `Zone shell pinned to ${ctx.userZone}. Requested deep link ${ctx.requestedZoneId} was ignored. UX-only until backend enforcement lands.`
-      : `Zone-focused shell for ${ctx.userZone}. UX convenience only; backend zone enforcement remains required.`;
-  } else if (ctx.missingZoneId) {
-    message = `Requested zone ${ctx.missingZoneId} is unavailable. This shell flow is not a security boundary; backend enforcement is still required.`;
-  } else if (ctx.requestedZoneId) {
-    message = `Deep-linked zone focus for ${ctx.requestedZoneId}. This shell flow is not a security boundary; backend enforcement is still required.`;
-  }
-
-  noteEl.hidden = !message;
-  noteEl.textContent = message;
+  return;
 }
 
 function _updateUserBadge(ctx) {
@@ -278,6 +260,64 @@ export function updateStatusBar() {
     dropsEl.title = `Audio sample drops since last restart${sys.uptime_s ? ' · Uptime: ' + _fmtUptime(sys.uptime_s) : ''}`;
     dropsEl.className = 'status-item' + (drops > 0 ? ' drops-warn' : '');
   }
+
+  _updateMonitorStatus();
+}
+
+function _updateMonitorStatus() {
+  const el = document.getElementById('sb-monitor');
+  if (!el) return;
+
+  const sys = st.state.system ?? {};
+  const device = sys.monitor_device ?? null;
+  const soloIds = [...st.state.soloSet];
+  const active = !!device && soloIds.length > 0;
+  const dotClass = !device ? 'dot-offline' : active ? 'dot-live' : 'dot-warn';
+  const label = device ? `MON ${device}` : 'MON off';
+  const state = active ? `SOLO ${soloIds.length}` : device ? 'armed' : 'disabled';
+  const names = soloIds
+    .map((id) => st.state.channels?.get(id)?.name ?? id)
+    .join(', ');
+
+  el.className = `status-item status-monitor${active ? ' active' : ''}`;
+  el.textContent = '';
+
+  const dot = document.createElement('span');
+  dot.className = `dot ${dotClass}`;
+  el.appendChild(dot);
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'status-monitor-label';
+  labelEl.textContent = label;
+  el.appendChild(labelEl);
+
+  const stateEl = document.createElement('span');
+  stateEl.className = 'status-monitor-state';
+  stateEl.textContent = state;
+  el.appendChild(stateEl);
+
+  if (active) {
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'status-monitor-clear';
+    clearBtn.textContent = 'clr';
+    clearBtn.title = 'Clear solo';
+    clearBtn.setAttribute('aria-label', 'Clear all solos');
+    clearBtn.onclick = async () => {
+      try {
+        await api.clearSolo();
+      } catch (e) {
+        toast('Clear solo failed', true);
+      }
+    };
+    el.appendChild(clearBtn);
+  }
+
+  el.title = active
+    ? `${device} · ${names}`
+    : device
+    ? `${device} · no active solo`
+    : 'Monitor output disabled';
 }
 
 export function updateWsStatus(state) {
@@ -488,6 +528,8 @@ async function loadAll() {
 // ── Entry point ────────────────────────────────────────────────────────────
 window.addEventListener('pb:unauthorized', () => showLogin());
 window.addEventListener('pb:status-update', () => updateStatusBar());
+window.addEventListener('pb:solo-update', () => updateStatusBar());
+window.addEventListener('pb:monitor-update', () => updateStatusBar());
 window.addEventListener('pb:ws-state', e => updateWsStatus(e.detail));
 window.addEventListener('hashchange', () => { _syncShellRoute().catch(() => {}); });
 window.addEventListener('popstate', () => { _syncShellRoute().catch(() => {}); });
