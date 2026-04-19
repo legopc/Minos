@@ -1018,6 +1018,110 @@
   transition: opacity 0.15s;
 }
 
+.monitor-bus-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-dark);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.mon-bar-label {
+  color: var(--accent-gold);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mon-state {
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mon-state.active {
+  color: var(--text-primary);
+  border-color: var(--accent-gold);
+}
+
+.mon-device {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.mon-btn {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-control, #2a2a2a);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mon-btn:hover,
+.mon-btn:focus-visible {
+  background: var(--bg-control-hover, #333);
+}
+
+.mon-btn-clr:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mon-level-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mon-level-lbl {
+  min-width: 42px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mon-level-slider {
+  width: 110px;
+  accent-color: var(--accent-gold);
+}
+
+.mon-level-slider:disabled {
+  opacity: 0.4;
+}
+
+.mon-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-primary);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+}
+
+.mon-active-dot.lit {
+  background: var(--accent-gold);
+  box-shadow: 0 0 6px rgba(232, 181, 0, 0.7);
+}
+
 /* ── Reorder group container (VCA / AXM / GEN / BUS groups in masters) ──────── */
 .mixer-reorder-group {
   display: flex;

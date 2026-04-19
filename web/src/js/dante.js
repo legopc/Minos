@@ -6,6 +6,9 @@ import { toast } from './toast.js';
 let _pollTimer = null;
 let _container = null;
 let _diag = null;
+let _routeTrace = null;
+let _traceTxId = null;
+let _traceBusy = false;
 let _pendingAction = null;
 let _listenersBound = false;
 
@@ -20,7 +23,14 @@ export function render(container) {
 async function _refresh() {
   if (st.state.activeTab !== 'dante') return;
   try {
-    _diag = await api.getDanteDiagnostics();
+    const nextTraceTxId = _getTraceTxId();
+    const [diag, trace] = await Promise.all([
+      api.getDanteDiagnostics(),
+      nextTraceTxId ? api.getRouteTrace(nextTraceTxId).catch(() => null) : Promise.resolve(null),
+    ]);
+    _diag = diag;
+    _routeTrace = trace;
+    _traceTxId = nextTraceTxId;
     _render();
   } catch {
     // Ignore transient errors; system poll + WS continue to update other UI bits.
@@ -44,6 +54,9 @@ function _render() {
   const cards = diag ? `
     <div class="dante-diag-grid">
       ${_renderCard('Device', diag.device)}
+      ${_renderRosterCard(diag.roster)}
+      ${_renderSubscriptionsCard(diag.subscriptions)}
+      ${_renderRouteTraceCard()}
       ${_renderCard('Network', diag.network)}
       ${_renderCard('PTP', diag.ptp)}
       ${_renderPtpHistoryCard(diag.ptp_history)}
@@ -73,6 +86,7 @@ function _render() {
 
   _bindRecoveryActions();
   _bindEventLogActions();
+  _bindTraceControls();
 }
 
 function _renderCard(title, card) {
@@ -123,6 +137,141 @@ function _renderPtpHistoryCard(samples) {
           <div><span class="k">Max</span><span class="v">${max === null ? '—' : (max + ' ns')}</span></div>
         </div>
         <div class="dante-ptp-spark">${spark}</div>
+      </div>
+    </div>`;
+}
+
+function _renderSubscriptionsCard(subscriptions) {
+  const arr = Array.isArray(subscriptions) ? subscriptions : [];
+  const active = arr.filter((entry) => entry?.state === 'active').length;
+  const routedSilent = arr.filter((entry) => entry?.state === 'routed_silent').length;
+  const muted = arr.filter((entry) => entry?.state === 'muted').length;
+  const level = routedSilent > 0 || muted > 0
+    ? 'warn'
+    : active > 0
+    ? 'ok'
+    : 'unknown';
+
+  return `
+    <div class="dante-diag-card dante-diag-${_e(level)} dante-subscription-card">
+      <div class="dante-diag-card-h">
+        <div class="dante-diag-card-title">Subscription Health</div>
+        <div class="dante-diag-card-level">${active}/${arr.length || 0} active</div>
+      </div>
+      <div class="dante-diag-card-summary">
+        Estimated from Minos routing and output metering.${routedSilent || muted ? ` ${routedSilent + muted} output(s) need attention.` : ''}
+      </div>
+      <div class="dante-subscription-list">
+        ${arr.length === 0 ? '<div class="dante-diag-item">No output subscriptions available.</div>' : arr.map((entry) => `
+          <div class="dante-subscription-row">
+            <div class="dante-subscription-head">
+              <span class="dante-subscription-name">${_e(entry.output_name ?? entry.output_id ?? 'Output')}</span>
+              <span class="dante-subscription-badge is-${_e(entry.state ?? 'unrouted')}">${_e(_subscriptionStateLabel(entry.state))}</span>
+            </div>
+            <div class="dante-subscription-meta">
+              ${_e(entry.output_id ?? '—')} · ${_e(entry.summary ?? 'Subscription state unavailable.')}
+            </div>
+            <div class="dante-subscription-sources">
+              ${(entry.sources ?? []).length === 0
+                ? '<span class="dante-subscription-source is-empty">No routed sources</span>'
+                : (entry.sources ?? []).map((source) => `<span class="dante-subscription-source">${_e(source)}</span>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function _renderRosterCard(roster) {
+  const arr = Array.isArray(roster) ? roster : [];
+  const warn = arr.filter((entry) => entry?.level === 'warn' || entry?.level === 'error').length;
+  const ok = arr.filter((entry) => entry?.level === 'ok').length;
+  const inputs = arr.filter((entry) => entry?.kind === 'input').length;
+  const outputs = arr.filter((entry) => entry?.kind === 'output').length;
+  const level = warn > 0
+    ? 'warn'
+    : ok > 0
+    ? 'ok'
+    : 'unknown';
+
+  return `
+    <div class="dante-diag-card dante-diag-${_e(level)} dante-roster-card">
+      <div class="dante-diag-card-h">
+        <div class="dante-diag-card-title">Local I/O Roster</div>
+        <div class="dante-diag-card-level">${inputs} RX · ${outputs} TX</div>
+      </div>
+      <div class="dante-diag-card-summary">Estimated from Minos config, routing, and live metering.</div>
+      <div class="dante-roster-list">
+        ${arr.length === 0 ? '<div class="dante-diag-item">No Dante endpoints available.</div>' : arr.map((entry) => `
+          <div class="dante-roster-row">
+            <div class="dante-roster-head">
+              <span class="dante-roster-kind is-${_e(entry.kind ?? 'input')}">${_e(_rosterKindLabel(entry.kind))}</span>
+              <span class="dante-roster-name">${_e(entry.name ?? entry.id ?? 'Endpoint')}</span>
+              <span class="dante-roster-signal ${entry.signal_present ? 'is-live' : 'is-idle'}">${entry.signal_present ? 'signal' : 'idle'}</span>
+            </div>
+            <div class="dante-roster-meta">
+              ${_e(entry.id ?? '—')} · ${_e(_formatDbfs(entry.level_dbfs))} · ${_e(String(entry.linked_count ?? 0))} linked
+            </div>
+            <div class="dante-roster-summary">${_e(entry.summary ?? 'Endpoint state unavailable.')}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function _renderRouteTraceCard() {
+  const outputs = st.outputList();
+  const selectedTxId = _getTraceTxId();
+  const warnings = Array.isArray(_routeTrace?.warnings) ? _routeTrace.warnings : [];
+  const paths = Array.isArray(_routeTrace?.paths) ? _routeTrace.paths : [];
+  const level = warnings.length > 0
+    ? 'warn'
+    : paths.length > 0
+    ? 'ok'
+    : 'unknown';
+
+  return `
+    <div class="dante-diag-card dante-diag-${_e(level)} dante-trace-card">
+      <div class="dante-diag-card-h">
+        <div class="dante-diag-card-title">Route Trace</div>
+        <div class="dante-diag-card-level">${paths.length} path${paths.length === 1 ? '' : 's'}</div>
+      </div>
+      <div class="dante-trace-toolbar">
+        <label class="dante-trace-label" for="dante-trace-output">Output</label>
+        <select id="dante-trace-output" class="dante-trace-select" data-dante-trace-output ${outputs.length ? '' : 'disabled'}>
+          ${outputs.length === 0
+            ? '<option value="">No outputs</option>'
+            : outputs.map((output) => `
+              <option value="${_e(output.id)}" ${output.id === selectedTxId ? 'selected' : ''}>${_e(output.name ?? output.id)}</option>
+            `).join('')}
+        </select>
+      </div>
+      <div class="dante-diag-card-summary">
+        ${_traceBusy
+          ? 'Refreshing trace…'
+          : _routeTrace?.output_name
+            ? `Resolved signal paths feeding ${_e(_routeTrace.output_name)}.`
+            : 'Trace the active routing for one output, including bus chains and generators.'}
+      </div>
+      ${warnings.length ? `
+        <div class="dante-trace-warnings">
+          ${warnings.map((warning) => `<div class="dante-trace-warning">${_e(warning)}</div>`).join('')}
+        </div>
+      ` : ''}
+      <div class="dante-trace-list">
+        ${paths.length === 0
+          ? `<div class="dante-diag-item">${_traceBusy ? 'Loading trace…' : 'No active paths traced for this output.'}</div>`
+          : paths.map((path) => `
+            <div class="dante-trace-row">
+              <div class="dante-trace-head">
+                <span class="dante-trace-badge is-${_e(path.kind ?? 'direct')}">${_e(_traceKindLabel(path.kind))}</span>
+                <span class="dante-trace-summary">${_e(path.summary ?? 'Trace path')}</span>
+              </div>
+              <div class="dante-trace-hops">
+                ${(path.hops ?? []).map((hop) => `<span class="dante-trace-hop is-${_e(hop.kind ?? 'input')}">${_e(hop.name ?? hop.id ?? 'Hop')}</span>`).join('<span class="dante-trace-arrow">→</span>')}
+              </div>
+            </div>
+          `).join('')}
       </div>
     </div>`;
 }
@@ -218,6 +367,16 @@ function _bindEventLogActions() {
   if (!_container) return;
   _container.querySelectorAll('[data-dante-eventlog-export]').forEach((btn) => {
     btn.addEventListener('click', _exportEventLog);
+  });
+}
+
+function _bindTraceControls() {
+  if (!_container) return;
+  _container.querySelectorAll('[data-dante-trace-output]').forEach((select) => {
+    select.addEventListener('change', () => {
+      _traceTxId = select.value || null;
+      _refreshRouteTrace();
+    });
   });
 }
 
@@ -320,6 +479,33 @@ function _formatEventTs(tsMs) {
   return new Date(value).toLocaleString();
 }
 
+function _formatDbfs(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${num.toFixed(1)} dBFS`;
+}
+
+function _getTraceTxId() {
+  const outputs = st.outputList();
+  if (_traceTxId && outputs.some((output) => output.id === _traceTxId)) return _traceTxId;
+  return outputs[0]?.id ?? _traceTxId ?? null;
+}
+
+async function _refreshRouteTrace() {
+  const txId = _getTraceTxId();
+  _traceBusy = true;
+  _render();
+  try {
+    _routeTrace = txId ? await api.getRouteTrace(txId) : null;
+    _traceTxId = txId;
+  } catch {
+    _routeTrace = null;
+  } finally {
+    _traceBusy = false;
+    if (st.state.activeTab === 'dante') _render();
+  }
+}
+
 function _getDanteTasks() {
   return st.taskList()
     .filter(_isDanteTask)
@@ -353,6 +539,33 @@ function _taskStateLabel(state) {
     case 'succeeded': return 'Succeeded';
     case 'failed': return 'Failed';
     default: return _e(state ?? 'Task');
+  }
+}
+
+function _subscriptionStateLabel(state) {
+  switch (String(state ?? '').trim().toLowerCase()) {
+    case 'active': return 'Active';
+    case 'routed_silent': return 'Silent';
+    case 'muted': return 'Muted';
+    case 'unrouted': return 'Unrouted';
+    default: return _e(state ?? 'Unknown');
+  }
+}
+
+function _rosterKindLabel(kind) {
+  switch (String(kind ?? '').trim().toLowerCase()) {
+    case 'output': return 'TX';
+    case 'input': return 'RX';
+    default: return 'I/O';
+  }
+}
+
+function _traceKindLabel(kind) {
+  switch (String(kind ?? '').trim().toLowerCase()) {
+    case 'generator': return 'Generator';
+    case 'bus': return 'Bus';
+    case 'direct': return 'Direct';
+    default: return 'Trace';
   }
 }
 

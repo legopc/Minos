@@ -252,6 +252,12 @@ export function render(container) {
   body.appendChild(masters);
 
   _renderStrips(strips, masters);
+
+  const monitorBar = document.createElement('div');
+  monitorBar.className = 'monitor-bus-bar';
+  monitorBar.id = 'monitor-bus-bar';
+  container.appendChild(monitorBar);
+  _renderMonitorBar(monitorBar);
 }
 
 function _renderSceneBar(bar) {
@@ -1491,6 +1497,62 @@ export function updateMetering(rx, tx, bus) {
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
 
+function _renderMonitorBar(bar) {
+  if (!bar) return;
+  const sys = st.state.system ?? {};
+  const device = sys.monitor_device ?? null;
+  const enabled = !!device;
+  const active = enabled && st.state.soloSet.size > 0;
+  const levelDb = Number.isFinite(sys.monitor_volume_db) ? sys.monitor_volume_db : 0;
+
+  bar.innerHTML = `
+    <span class="mon-bar-label">MON BUS</span>
+    <span class="mon-state ${enabled ? 'active' : ''}">${enabled ? 'READY' : 'DISABLED'}</span>
+    <span class="mon-device" title="${_esc(device ?? 'Configure monitor output in System settings')}">${_esc(device ?? 'No monitor device configured')}</span>
+    <div class="mon-level-wrap">
+      <span class="mon-level-lbl">${_db(levelDb)}</span>
+      <input type="range" class="mon-level-slider" min="-60" max="12" step="1" value="${levelDb}" ${enabled ? '' : 'disabled'}>
+    </div>
+    <button class="mon-btn" data-mon-open-system>System</button>
+    <button class="mon-btn mon-btn-clr" data-mon-clear-solo ${st.state.soloSet.size > 0 ? '' : 'disabled'}>Solo clr</button>
+    <span class="mon-active-dot ${active ? 'lit' : ''}" title="${active ? 'Solo active' : 'Solo inactive'}"></span>
+  `;
+
+  const slider = bar.querySelector('.mon-level-slider');
+  const levelLbl = bar.querySelector('.mon-level-lbl');
+  let levelTimer = null;
+  if (slider && levelLbl) {
+    slider.addEventListener('input', () => {
+      levelLbl.textContent = _db(slider.value);
+    });
+    slider.addEventListener('change', () => {
+      if (!enabled) return;
+      clearTimeout(levelTimer);
+      levelTimer = setTimeout(async () => {
+        try {
+          const volume_db = parseFloat(slider.value);
+          await api.putMonitor({ device, volume_db });
+          st.state.system.monitor_volume_db = volume_db;
+          window.dispatchEvent(new CustomEvent('pb:monitor-update'));
+        } catch (e) {
+          toast('Monitor level failed: ' + (e?.message ?? String(e)), true);
+        }
+      }, 40);
+    });
+  }
+
+  bar.querySelector('[data-mon-open-system]')?.addEventListener('click', async () => {
+    document.querySelector('.tab-btn[data-tab="system"]')?.click();
+  });
+  bar.querySelector('[data-mon-clear-solo]')?.addEventListener('click', async () => {
+    try {
+      await api.clearSolo();
+    } catch (e) {
+      toast('Clear solo failed: ' + (e?.message ?? String(e)), true);
+    }
+  });
+}
+
 function _refreshSoloButtons() {
   document.querySelectorAll('.mixer-solo-btn').forEach(btn => {
     const id = btn.id.replace('solo-', '');
@@ -1538,4 +1600,17 @@ window.addEventListener('pb:solo-update', () => {
   _refreshSoloButtons();
   _applySoloVisual();
   _updateSoloIndicator();
+  _renderMonitorBar(document.getElementById('monitor-bus-bar'));
 });
+
+window.addEventListener('pb:monitor-update', () => {
+  _renderMonitorBar(document.getElementById('monitor-bus-bar'));
+});
+
+function _esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

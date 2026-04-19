@@ -6,8 +6,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-mod api;
 mod ab_compare;
+mod api;
 mod auth_api;
 mod jwt;
 mod morph;

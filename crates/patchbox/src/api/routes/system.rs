@@ -198,6 +198,50 @@ pub struct DiagnosticCard {
     pub items: Vec<DiagnosticItem>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DanteSubscriptionState {
+    Active,
+    RoutedSilent,
+    Unrouted,
+    Muted,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DanteSubscriptionStatus {
+    pub output_id: String,
+    pub output_name: String,
+    pub zone_id: String,
+    pub state: DanteSubscriptionState,
+    pub level: DiagnosticLevel,
+    pub estimated: bool,
+    pub route_count: usize,
+    pub signal_present: bool,
+    pub tx_level_dbfs: f32,
+    pub sources: Vec<String>,
+    pub summary: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DanteEndpointKind {
+    Input,
+    Output,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct DanteEndpointRosterEntry {
+    pub id: String,
+    pub kind: DanteEndpointKind,
+    pub name: String,
+    pub level: DiagnosticLevel,
+    pub estimated: bool,
+    pub linked_count: usize,
+    pub signal_present: bool,
+    pub level_dbfs: f32,
+    pub summary: String,
+}
+
 #[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct DanteDiagnosticsResponse {
     pub event_log: Vec<crate::state::EventLogEntry>,
@@ -206,6 +250,8 @@ pub struct DanteDiagnosticsResponse {
     pub network: DiagnosticCard,
     pub ptp: DiagnosticCard,
     pub ptp_history: Vec<PtpHistorySample>,
+    pub roster: Vec<DanteEndpointRosterEntry>,
+    pub subscriptions: Vec<DanteSubscriptionStatus>,
     pub recovery_actions: Vec<DanteRecoveryAction>,
 }
 
@@ -302,8 +348,16 @@ pub struct ConfigValidateResponse {
     pub valid: bool,
     pub normalized: bool,
     pub errors: Vec<String>,
+    pub warnings: Vec<ConfigCompatibilityWarning>,
     pub summary: ConfigDiffSummary,
     pub changes: Vec<ConfigDiffEntry>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, utoipa::ToSchema)]
+pub struct ConfigCompatibilityWarning {
+    pub code: String,
+    pub summary: String,
+    pub details: Vec<String>,
 }
 
 #[derive(
@@ -472,6 +526,507 @@ fn dante_recovery_actions() -> Vec<DanteRecoveryAction> {
             description: "Persist config and restart the service.".to_string(),
         },
     ]
+}
+
+fn dante_output_identity(cfg: &PatchboxConfig, tx: usize) -> (String, String, Option<String>, u8) {
+    let tx_id = format!("tx_{}", tx);
+    let zone = cfg
+        .zone_config
+        .iter()
+        .find(|z| z.tx_ids.iter().any(|candidate| candidate == &tx_id));
+    let output_name = zone.map(|z| z.name.clone()).unwrap_or_else(|| {
+        cfg.zones
+            .get(tx)
+            .cloned()
+            .unwrap_or_else(|| format!("Zone {}", tx + 1))
+    });
+    let zone_id = zone
+        .map(|z| z.id.clone())
+        .unwrap_or_else(|| format!("zone_{}", tx));
+    let zone_name = zone.map(|z| z.name.clone());
+    let zone_colour_index = zone.map(|z| z.colour_index).unwrap_or((tx % 10) as u8);
+    (output_name, zone_id, zone_name, zone_colour_index)
+}
+
+fn build_dante_subscription_statuses(
+    cfg: &PatchboxConfig,
+    meters: &crate::state::MeterState,
+) -> Vec<DanteSubscriptionStatus> {
+    (0..cfg.tx_channels)
+        .map(|tx| {
+            let output_id = format!("tx_{}", tx);
+            let (output_name, zone_id, _zone_name, _zone_colour_index) =
+                dante_output_identity(cfg, tx);
+
+            let mut sources = Vec::new();
+            if let Some(row) = cfg.matrix.get(tx) {
+                for (rx, enabled) in row.iter().enumerate() {
+                    if *enabled {
+                        sources.push(format!("Input {}", rx + 1));
+                    }
+                }
+            }
+            if let Some(bus_matrix) = cfg.bus_matrix.as_ref().and_then(|matrix| matrix.get(tx)) {
+                for (bus_idx, enabled) in bus_matrix.iter().enumerate() {
+                    if *enabled {
+                        let label = cfg
+                            .internal_buses
+                            .get(bus_idx)
+                            .map(|bus| bus.name.clone())
+                            .unwrap_or_else(|| format!("Bus {}", bus_idx + 1));
+                        sources.push(label);
+                    }
+                }
+            }
+            for (gen_idx, row) in cfg.generator_bus_matrix.iter().enumerate() {
+                let routed = row
+                    .get(tx)
+                    .copied()
+                    .unwrap_or(f32::NEG_INFINITY)
+                    .is_finite();
+                if routed {
+                    let label = cfg
+                        .signal_generators
+                        .get(gen_idx)
+                        .map(|generator| generator.name.clone())
+                        .unwrap_or_else(|| format!("Generator {}", gen_idx + 1));
+                    sources.push(label);
+                }
+            }
+
+            let route_count = sources.len();
+            let dsp = cfg.output_dsp.get(tx).cloned().unwrap_or_default();
+            let tx_level_dbfs = linear_to_dbfs(meters.tx_rms.get(tx).copied().unwrap_or_default());
+            let signal_present = tx_level_dbfs > -55.0;
+            let (state, level, summary) = if route_count == 0 {
+                (
+                    DanteSubscriptionState::Unrouted,
+                    DiagnosticLevel::Unknown,
+                    "No routed sources.".to_string(),
+                )
+            } else if dsp.muted {
+                (
+                    DanteSubscriptionState::Muted,
+                    DiagnosticLevel::Warn,
+                    format!("{route_count} routed source(s), but output is muted."),
+                )
+            } else if signal_present {
+                (
+                    DanteSubscriptionState::Active,
+                    DiagnosticLevel::Ok,
+                    format!("{route_count} routed source(s) carrying signal."),
+                )
+            } else {
+                (
+                    DanteSubscriptionState::RoutedSilent,
+                    DiagnosticLevel::Warn,
+                    format!("{route_count} routed source(s), but no output signal detected."),
+                )
+            };
+
+            DanteSubscriptionStatus {
+                output_id,
+                output_name,
+                zone_id,
+                state,
+                level,
+                estimated: true,
+                route_count,
+                signal_present,
+                tx_level_dbfs,
+                sources,
+                summary,
+            }
+        })
+        .collect()
+}
+
+fn build_dante_endpoint_roster(
+    cfg: &PatchboxConfig,
+    meters: &crate::state::MeterState,
+) -> Vec<DanteEndpointRosterEntry> {
+    let mut entries = Vec::with_capacity(cfg.rx_channels + cfg.tx_channels);
+
+    for rx in 0..cfg.rx_channels {
+        let input_name = cfg
+            .sources
+            .get(rx)
+            .cloned()
+            .unwrap_or_else(|| format!("Source {}", rx + 1));
+        let output_routes = cfg
+            .matrix
+            .iter()
+            .filter(|row| row.get(rx).copied().unwrap_or(false))
+            .count();
+        let bus_routes = cfg
+            .internal_buses
+            .iter()
+            .filter(|bus| bus.routing.get(rx).copied().unwrap_or(false))
+            .count();
+        let linked_count = output_routes + bus_routes;
+        let level_dbfs = linear_to_dbfs(meters.rx_rms.get(rx).copied().unwrap_or_default());
+        let signal_present = level_dbfs > -55.0;
+        let (level, summary) = if linked_count == 0 && !signal_present {
+            (
+                DiagnosticLevel::Unknown,
+                "Idle input with no active destinations.".to_string(),
+            )
+        } else if linked_count == 0 {
+            (
+                DiagnosticLevel::Unknown,
+                "Signal present, but nothing is currently routed from this input.".to_string(),
+            )
+        } else if signal_present {
+            (
+                DiagnosticLevel::Ok,
+                format!("Feeds {linked_count} destination(s) and carries signal."),
+            )
+        } else {
+            (
+                DiagnosticLevel::Warn,
+                format!("Feeds {linked_count} destination(s), but no input signal is detected."),
+            )
+        };
+
+        entries.push(DanteEndpointRosterEntry {
+            id: format!("rx_{}", rx),
+            kind: DanteEndpointKind::Input,
+            name: input_name,
+            level,
+            estimated: true,
+            linked_count,
+            signal_present,
+            level_dbfs,
+            summary,
+        });
+    }
+
+    for tx in 0..cfg.tx_channels {
+        let (output_name, _zone_id, _zone_name, _zone_colour_index) =
+            dante_output_identity(cfg, tx);
+        let linked_count = cfg
+            .matrix
+            .get(tx)
+            .map(|row| row.iter().filter(|enabled| **enabled).count())
+            .unwrap_or(0)
+            + cfg
+                .bus_matrix
+                .as_ref()
+                .and_then(|matrix| matrix.get(tx))
+                .map(|row| row.iter().filter(|enabled| **enabled).count())
+                .unwrap_or(0)
+            + cfg
+                .generator_bus_matrix
+                .iter()
+                .filter(|row| {
+                    row.get(tx)
+                        .copied()
+                        .unwrap_or(f32::NEG_INFINITY)
+                        .is_finite()
+                })
+                .count();
+        let dsp = cfg.output_dsp.get(tx).cloned().unwrap_or_default();
+        let level_dbfs = linear_to_dbfs(meters.tx_rms.get(tx).copied().unwrap_or_default());
+        let signal_present = level_dbfs > -55.0;
+        let (level, summary) = if linked_count == 0 {
+            (
+                DiagnosticLevel::Unknown,
+                "No active sources routed to this output.".to_string(),
+            )
+        } else if dsp.muted {
+            (
+                DiagnosticLevel::Warn,
+                format!("{linked_count} routed source(s), but the output is muted."),
+            )
+        } else if signal_present {
+            (
+                DiagnosticLevel::Ok,
+                format!("{linked_count} routed source(s) are feeding this output."),
+            )
+        } else {
+            (
+                DiagnosticLevel::Warn,
+                format!("{linked_count} routed source(s), but no output signal is detected."),
+            )
+        };
+
+        entries.push(DanteEndpointRosterEntry {
+            id: format!("tx_{}", tx),
+            kind: DanteEndpointKind::Output,
+            name: output_name,
+            level,
+            estimated: true,
+            linked_count,
+            signal_present,
+            level_dbfs,
+            summary,
+        });
+    }
+
+    entries
+}
+
+fn build_config_validate_warnings(
+    current: &PatchboxConfig,
+    candidate: &PatchboxConfig,
+) -> Vec<ConfigCompatibilityWarning> {
+    let mut warnings = Vec::new();
+
+    if candidate.rx_channels < current.rx_channels {
+        let direct_routes = current
+            .matrix
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .skip(candidate.rx_channels)
+                    .filter(|enabled| **enabled)
+                    .count()
+            })
+            .sum::<usize>();
+        let bus_inputs = current
+            .internal_buses
+            .iter()
+            .map(|bus| {
+                bus.routing
+                    .iter()
+                    .skip(candidate.rx_channels)
+                    .filter(|enabled| **enabled)
+                    .count()
+            })
+            .sum::<usize>();
+        let removed_links = current
+            .stereo_links
+            .iter()
+            .filter(|link| {
+                link.left_channel >= candidate.rx_channels
+                    || link.right_channel >= candidate.rx_channels
+            })
+            .count();
+        let mut details = vec![format!(
+            "RX channels shrink from {} to {}.",
+            current.rx_channels, candidate.rx_channels
+        )];
+        if direct_routes > 0 {
+            details.push(format!(
+                "{direct_routes} direct output route(s) currently reference inputs that would be removed."
+            ));
+        }
+        if bus_inputs > 0 {
+            details.push(format!(
+                "{bus_inputs} bus input feed(s) currently reference inputs that would be removed."
+            ));
+        }
+        if removed_links > 0 {
+            details.push(format!(
+                "{removed_links} stereo input link(s) reference channels outside the new RX range."
+            ));
+        }
+        warnings.push(ConfigCompatibilityWarning {
+            code: "rx_shrink".to_string(),
+            summary: "Input-count shrink can orphan live sources and input-linked DSP.".to_string(),
+            details,
+        });
+    }
+
+    if candidate.tx_channels < current.tx_channels {
+        let direct_routes = current
+            .matrix
+            .iter()
+            .skip(candidate.tx_channels)
+            .map(|row| row.iter().filter(|enabled| **enabled).count())
+            .sum::<usize>();
+        let bus_routes = current
+            .bus_matrix
+            .as_ref()
+            .map(|matrix| {
+                matrix
+                    .iter()
+                    .skip(candidate.tx_channels)
+                    .map(|row| row.iter().filter(|enabled| **enabled).count())
+                    .sum::<usize>()
+            })
+            .unwrap_or(0);
+        let generator_routes = current
+            .generator_bus_matrix
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .skip(candidate.tx_channels)
+                    .filter(|gain| gain.is_finite())
+                    .count()
+            })
+            .sum::<usize>();
+        let removed_links = current
+            .output_stereo_links
+            .iter()
+            .filter(|link| {
+                link.left_channel >= candidate.tx_channels
+                    || link.right_channel >= candidate.tx_channels
+            })
+            .count();
+        let mut details = vec![format!(
+            "TX channels shrink from {} to {}.",
+            current.tx_channels, candidate.tx_channels
+        )];
+        if direct_routes > 0 {
+            details.push(format!(
+                "{direct_routes} direct route(s) currently feed outputs that would be removed."
+            ));
+        }
+        if bus_routes > 0 {
+            details.push(format!(
+                "{bus_routes} bus-to-output route(s) currently feed outputs that would be removed."
+            ));
+        }
+        if generator_routes > 0 {
+            details.push(format!(
+                "{generator_routes} generator route(s) currently feed outputs that would be removed."
+            ));
+        }
+        if removed_links > 0 {
+            details.push(format!(
+                "{removed_links} stereo output link(s) reference channels outside the new TX range."
+            ));
+        }
+        warnings.push(ConfigCompatibilityWarning {
+            code: "tx_shrink".to_string(),
+            summary: "Output-count shrink can drop routed destinations and stereo output pairs."
+                .to_string(),
+            details,
+        });
+    }
+
+    let current_bus_ids: BTreeSet<&str> = current
+        .internal_buses
+        .iter()
+        .map(|bus| bus.id.as_str())
+        .collect();
+    let candidate_bus_ids: BTreeSet<&str> = candidate
+        .internal_buses
+        .iter()
+        .map(|bus| bus.id.as_str())
+        .collect();
+    let removed_bus_indices = current
+        .internal_buses
+        .iter()
+        .enumerate()
+        .filter(|(_, bus)| !candidate_bus_ids.contains(bus.id.as_str()))
+        .collect::<Vec<_>>();
+    if !removed_bus_indices.is_empty() {
+        let removed_bus_names = removed_bus_indices
+            .iter()
+            .map(|(_, bus)| bus.name.clone())
+            .collect::<Vec<_>>();
+        let input_feeds = removed_bus_indices
+            .iter()
+            .map(|(_, bus)| bus.routing.iter().filter(|enabled| **enabled).count())
+            .sum::<usize>();
+        let output_routes = current
+            .bus_matrix
+            .as_ref()
+            .map(|matrix| {
+                removed_bus_indices
+                    .iter()
+                    .map(|(index, _)| {
+                        matrix
+                            .iter()
+                            .filter(|row| row.get(*index).copied().unwrap_or(false))
+                            .count()
+                    })
+                    .sum::<usize>()
+            })
+            .unwrap_or(0);
+        let feed_links = current
+            .bus_feed_matrix
+            .as_ref()
+            .map(|matrix| {
+                removed_bus_indices
+                    .iter()
+                    .map(|(index, _)| {
+                        matrix
+                            .get(*index)
+                            .map(|row| row.iter().filter(|enabled| **enabled).count())
+                            .unwrap_or(0)
+                            + matrix
+                                .iter()
+                                .filter(|row| row.get(*index).copied().unwrap_or(false))
+                                .count()
+                    })
+                    .sum::<usize>()
+            })
+            .unwrap_or(0);
+        let mut details = vec![format!("Removed buses: {}.", removed_bus_names.join(", "))];
+        if input_feeds > 0 {
+            details.push(format!(
+                "{input_feeds} input feed(s) currently terminate on those buses."
+            ));
+        }
+        if output_routes > 0 {
+            details.push(format!(
+                "{output_routes} bus-to-output route(s) currently depend on those buses."
+            ));
+        }
+        if feed_links > 0 {
+            details.push(format!(
+                "{feed_links} bus-to-bus feed link(s) currently reference those buses."
+            ));
+        }
+        warnings.push(ConfigCompatibilityWarning {
+            code: "bus_removal".to_string(),
+            summary:
+                "Removing internal buses can strand input feeds and downstream bus/output routes."
+                    .to_string(),
+            details,
+        });
+    } else if candidate.internal_buses.len() < current_bus_ids.len() {
+        warnings.push(ConfigCompatibilityWarning {
+            code: "bus_removal".to_string(),
+            summary: "Bus count shrinks, but removed bus identities could not be matched cleanly."
+                .to_string(),
+            details: vec!["Review bus IDs and downstream routes before applying.".to_string()],
+        });
+    }
+
+    let candidate_generator_ids: BTreeSet<&str> = candidate
+        .signal_generators
+        .iter()
+        .map(|generator| generator.id.as_str())
+        .collect();
+    let removed_generators = current
+        .signal_generators
+        .iter()
+        .enumerate()
+        .filter(|(_, generator)| !candidate_generator_ids.contains(generator.id.as_str()))
+        .collect::<Vec<_>>();
+    if !removed_generators.is_empty() {
+        let removed_names = removed_generators
+            .iter()
+            .map(|(_, generator)| generator.name.clone())
+            .collect::<Vec<_>>();
+        let routed_outputs = removed_generators
+            .iter()
+            .map(|(index, _)| {
+                current
+                    .generator_bus_matrix
+                    .get(*index)
+                    .map(|row| row.iter().filter(|gain| gain.is_finite()).count())
+                    .unwrap_or(0)
+            })
+            .sum::<usize>();
+        let mut details = vec![format!("Removed generators: {}.", removed_names.join(", "))];
+        if routed_outputs > 0 {
+            details.push(format!(
+                "{routed_outputs} generator route(s) currently depend on those generators."
+            ));
+        }
+        warnings.push(ConfigCompatibilityWarning {
+            code: "generator_removal".to_string(),
+            summary: "Removing built-in generators can break routed test-signal paths.".to_string(),
+            details,
+        });
+    }
+
+    warnings
 }
 
 #[derive(Default)]
@@ -1330,7 +1885,6 @@ pub async fn get_dante_diagnostics(State(s): State<AppState>) -> impl IntoRespon
     let tx_channels = cfg.tx_channels;
     let clock_path = cfg.dante_clock_path.clone();
     let obs_path = cfg.statime_observation_path.clone();
-    drop(cfg);
 
     let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
 
@@ -1445,6 +1999,11 @@ pub async fn get_dante_diagnostics(State(s): State<AppState>) -> impl IntoRespon
     };
 
     let ptp_history = s.ptp_history.read().await.iter().cloned().collect();
+    let meters = s.meters.read().await;
+    let roster = build_dante_endpoint_roster(&cfg, &meters);
+    let subscriptions = build_dante_subscription_statuses(&cfg, &meters);
+    drop(meters);
+    drop(cfg);
 
     Json(DanteDiagnosticsResponse {
         event_log: s.event_log.read().await.iter().cloned().collect(),
@@ -1453,6 +2012,8 @@ pub async fn get_dante_diagnostics(State(s): State<AppState>) -> impl IntoRespon
         network,
         ptp,
         ptp_history,
+        roster,
+        subscriptions,
         recovery_actions: dante_recovery_actions(),
     })
 }
@@ -2796,6 +3357,7 @@ pub async fn post_config_validate(
                 valid: false,
                 normalized: false,
                 errors: vec![format!("invalid config TOML: {error}")],
+                warnings: vec![],
                 summary: ConfigDiffSummary::default(),
                 changes: vec![],
             })
@@ -2809,11 +3371,13 @@ pub async fn post_config_validate(
         current
     };
     let (summary, changes) = build_config_diff_summary(&current, &candidate);
+    let warnings = build_config_validate_warnings(&current, &candidate);
 
     Json(ConfigValidateResponse {
         valid: true,
         normalized,
         errors: vec![],
+        warnings,
         summary,
         changes,
     })

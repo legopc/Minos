@@ -134,10 +134,9 @@ pub async fn save_scene(
     claims: Option<Extension<crate::jwt::Claims>>,
     Json(req): Json<SaveSceneRequest>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot save scenes.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot save scenes.")
+    {
         return response;
     }
     let cfg = s.config.read().await;
@@ -189,10 +188,9 @@ pub async fn load_scene(
     Path(name): Path<String>,
     body: Option<Json<LoadSceneRequest>>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot load scenes.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot load scenes.")
+    {
         return response;
     }
     let recall_scope = body.map(|Json(req)| req.scope).unwrap_or_default();
@@ -344,10 +342,9 @@ pub async fn delete_scene(
     claims: Option<Extension<crate::jwt::Claims>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot delete scenes.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot delete scenes.")
+    {
         return response;
     }
     let mut store = s.scenes.write().await;
@@ -396,10 +393,9 @@ pub async fn put_scene(
     Path(id): Path<String>,
     Json(body): Json<UpdateSceneRequest>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot edit scenes.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot edit scenes.")
+    {
         return response;
     }
     let mut store = s.scenes.write().await;
@@ -508,7 +504,11 @@ pub async fn capture_ab_slot(
     let snapshot = match source_kind {
         "live" => {
             let cfg = s.config.read().await;
-            Scene::from_config(format!("slot_{}", slot.as_str()), &cfg, Some("A/B live capture".to_string()))
+            Scene::from_config(
+                format!("slot_{}", slot.as_str()),
+                &cfg,
+                Some("A/B live capture".to_string()),
+            )
         }
         "scene" => {
             let Some(name) = request.name.as_deref() else {
@@ -579,7 +579,10 @@ pub async fn toggle_ab(
         ab.morph = None;
     }
     broadcast_ab_update(&s).await;
-    Json(AbToggleResponse { active: target_slot }).into_response()
+    Json(AbToggleResponse {
+        active: target_slot,
+    })
+    .into_response()
 }
 
 pub async fn get_ab_diff(State(s): State<AppState>) -> impl IntoResponse {
@@ -650,7 +653,15 @@ pub async fn start_ab_morph(
     }
     let task_state = s.clone();
     let handle = tokio::spawn(async move {
-        morph::run_morph(task_state, from_scene, to_scene, body.direction, duration_ms, body.scope).await;
+        morph::run_morph(
+            task_state,
+            from_scene,
+            to_scene,
+            body.direction,
+            duration_ms,
+            body.scope,
+        )
+        .await;
     });
     {
         let mut task = s.morph_task.lock().await;
@@ -1032,7 +1043,10 @@ async fn ab_state_response(state: &AppState) -> AbStateResponse {
 }
 
 async fn broadcast_ab_update(state: &AppState) {
-    ws_broadcast(state, morph::ab_state_event_payload(state).await.to_string());
+    ws_broadcast(
+        state,
+        morph::ab_state_event_payload(state).await.to_string(),
+    );
 }
 
 async fn cancel_morph_task(state: &AppState) {

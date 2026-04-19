@@ -26,6 +26,10 @@ const _state = {
   shellMode:     'full',
   focusedZoneId: null,
   connState:     'offline',
+  staleData:     false,
+  stateHash:     null,
+  reconnectCount: 0,
+  lastWsReason:  '',
   ptp:           { locked: null, offset_ns: 0 },
   activeSceneId: null,
   sceneAb:       { slot_a: null, slot_b: null, active: 'a', morph: null },
@@ -59,6 +63,11 @@ export function hasBusFeed(srcId, dstId) {
   const dst = parseInt(dstId.replace('bus_', ''), 10);
   return !!_state.busFeedMatrix[dst]?.[src];
 }
+export function setChannels(arr)           { _state.channels = new Map((arr ?? []).map((ch) => [ch.id, ch])); }
+export function setOutputs(arr)            { _state.outputs = new Map((arr ?? []).map((out) => [out.id, out])); }
+export function setRoutes(arr)             { _state.routes = new Map((arr ?? []).map((r) => [`${r.rx_id}|${r.tx_id}`, r])); }
+export function setZones(arr)              { _state.zones = new Map((arr ?? []).map((zone) => [zone.id, zone])); }
+export function setBuses(arr)              { _state.buses = new Map((arr ?? []).map((bus) => [bus.id, bus])); }
 export function setBusRoutingGainCell(busId, rxIdx, db) {
   const bus = _state.buses.get(busId);
   if (!bus) return;
@@ -91,6 +100,12 @@ export function setMetering(rx, tx, gr, bus) {
 export function taskList()               { return _state.tasks; }
 export function setSystem(sys)             { _state.system = sys; }
 export function setConnState(s)            { _state.connState = s; }
+export function setStaleData(stale)        { _state.staleData = !!stale; }
+export function setStateHash(hash)         { _state.stateHash = hash ? String(hash) : null; }
+export function noteWsReconnect(reason)    {
+  _state.reconnectCount += 1;
+  _state.lastWsReason = reason ? String(reason) : '';
+}
 export function setPtp(locked, offset_ns)  { _state.ptp = { locked, offset_ns }; }
 export function setActiveScene(id)         { _state.activeSceneId = id; }
 export function setSceneAb(ab)             {

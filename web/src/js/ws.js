@@ -8,6 +8,8 @@ let _retryMs  = 1000;
 let _retryTmr = null;
 let _meterFilter = null;  // null = all, Set = filtered ids
 let _ballistics = meter.BALLISTICS_PRESETS.Digital;
+let _hasConnected = false;
+let _lastCloseReason = '';
 
 export function setMeteringBallistics(ballistics) {
   _ballistics = ballistics;
@@ -37,8 +39,18 @@ function _connect() {
 
   _ws.onopen = () => {
     _retryMs = 1000;
-    st.setConnState('connected');
-    window.dispatchEvent(new CustomEvent('pb:ws-state', { detail: 'connected' }));
+    clearTimeout(_retryTmr);
+    _retryTmr = null;
+    const reconnected = _hasConnected;
+    _hasConnected = true;
+    if (reconnected) {
+      st.noteWsReconnect(_lastCloseReason || 'connection interrupted');
+      st.setStaleData(true);
+      _emitWsState('resyncing', { reason: _lastCloseReason || 'connection interrupted' });
+    } else {
+      st.setStaleData(false);
+      _emitWsState('connected', { reason: 'initial_connect' });
+    }
     // Re-subscribe if we had a filter
     if (_meterFilter) {
       _ws.send(JSON.stringify({ type: 'subscribe_metering', ids: [..._meterFilter] }));
@@ -51,10 +63,11 @@ function _connect() {
     _dispatch(msg);
   };
 
-  _ws.onclose = () => {
+  _ws.onclose = (event) => {
     _ws = null;
-    st.setConnState('offline');
-    window.dispatchEvent(new CustomEvent('pb:ws-state', { detail: 'offline' }));
+    _lastCloseReason = _formatCloseReason(event);
+    st.setStaleData(true);
+    _emitWsState('reconnecting', { reason: _lastCloseReason, retryMs: _retryMs });
     _scheduleRetry();
   };
 
@@ -75,6 +88,20 @@ function _dispatch(msg) {
     case 'hello':
       _handleHello(msg);
       break;
+
+    case 'resync_state': {
+      const serverHash = msg.state_hash ?? null;
+      const needsRefresh = !serverHash || !st.state.stateHash || serverHash !== st.state.stateHash;
+      if (serverHash) st.setStateHash(serverHash);
+      window.dispatchEvent(new CustomEvent('pb:ws-resync', {
+        detail: {
+          ...msg,
+          reason: _lastCloseReason,
+          needsRefresh,
+        },
+      }));
+      break;
+    }
 
     case 'metering':
       st.setMetering(msg.rx, msg.tx, msg.gr, msg.bus);
@@ -301,13 +328,25 @@ function _dispatch(msg) {
 }
 
 function _handleHello(msg) {
+  const previousHash = st.state.stateHash;
   const sys = st.state.system;
   if (msg.rx_count !== undefined) sys.rx_count = msg.rx_count;
   if (msg.tx_count !== undefined) sys.tx_count = msg.tx_count;
   if (msg.zone_count !== undefined) sys.zone_count = msg.zone_count;
+  if (msg.state_hash !== undefined) st.setStateHash(msg.state_hash);
   (msg.solo_channels ?? []).forEach(rx => st.state.soloSet.add(`rx_${rx}`));
   if (msg.monitor_device !== undefined) sys.monitor_device = msg.monitor_device ?? null;
   if (msg.monitor_volume_db !== undefined) sys.monitor_volume_db = msg.monitor_volume_db ?? 0;
+  if (msg.active_scene_id !== undefined) st.setActiveScene(msg.active_scene_id);
+  if (st.state.connState === 'resyncing') {
+    window.dispatchEvent(new CustomEvent('pb:ws-resync', {
+      detail: {
+        ...msg,
+        reason: _lastCloseReason,
+        needsRefresh: !msg.state_hash || !previousHash || msg.state_hash !== previousHash,
+      },
+    }));
+  }
   window.dispatchEvent(new CustomEvent('pb:status-update'));
 }
 
@@ -323,5 +362,26 @@ function _refreshMatrixCell(rxId, txId) {
 export function sendPing() {
   if (_ws && _ws.readyState === WebSocket.OPEN) {
     _ws.send(JSON.stringify({ type: 'ping' }));
+  }
+}
+
+function _emitWsState(state, extra = {}) {
+  st.setConnState(state);
+  window.dispatchEvent(new CustomEvent('pb:ws-state', { detail: { state, ...extra } }));
+}
+
+function _formatCloseReason(event) {
+  if (event?.reason) return event.reason;
+  switch (event?.code) {
+    case 1000:
+      return 'socket closed';
+    case 1001:
+      return 'server restarting';
+    case 1006:
+      return 'network interruption';
+    case 1011:
+      return 'server error';
+    default:
+      return event?.code ? `socket closed (${event.code})` : 'connection lost';
   }
 }

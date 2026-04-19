@@ -281,10 +281,22 @@ export function updateStatusBar() {
 }
 
 export function updateWsStatus(state) {
+  const detail = _normaliseWsStateDetail(state);
   const el = document.getElementById('sb-ws');
   if (!el) return;
-  const on = state === 'connected';
-  el.innerHTML = `<span class="dot ${on ? 'dot-live' : 'dot-offline'}"></span>WS`;
+  const mode = detail.state;
+  const dot = mode === 'connected'
+    ? 'dot-live'
+    : mode === 'resyncing'
+    ? 'dot-warn'
+    : 'dot-offline';
+  const label = mode === 'connected'
+    ? 'WS'
+    : mode === 'resyncing'
+    ? 'WS SYNC'
+    : 'WS RETRY';
+  el.innerHTML = `<span class="dot ${dot}"></span>${label}`;
+  el.title = detail.reason ? `${mode}: ${detail.reason}` : mode;
 }
 
 function _fmtUptime(s) {
@@ -305,6 +317,122 @@ function _startSystemPoll() {
       updateStatusBar();
     } catch (_) {}
   }, 30000);
+}
+
+function _normaliseWsStateDetail(detail) {
+  if (typeof detail === 'string') return { state: detail };
+  return detail ?? { state: 'offline' };
+}
+
+function _offlineBannerMessage(detail) {
+  if (detail.state === 'resyncing') {
+    return 'Reconnected to Minos — syncing live state…';
+  }
+  if (detail.reason) {
+    return `Connection lost — retrying (${detail.reason}).`;
+  }
+  return 'Connection lost. Retrying…';
+}
+
+async function _renderActiveTab() {
+  await switchTab(st.state.activeTab);
+}
+
+function _applyStateSnapshot({
+  channels,
+  outputs,
+  zones,
+  routes,
+  scenes,
+  system,
+  buses,
+  matrixState,
+  vcaGroups,
+  stereoLinks,
+  outputStereoLinks,
+  gens,
+  amGroups,
+  busFeedMatrix,
+  abState,
+}) {
+  st.setChannels(channels);
+  st.setOutputs(outputs);
+  st.setZones(zones);
+  st.setRoutes(routes);
+  st.setBuses(buses);
+  st.setScenes(Array.isArray(scenes) ? scenes : (scenes.scenes ?? []));
+  st.setActiveScene(scenes?.active ?? null);
+  st.setSystem(system);
+  if (system.ptp_locked !== undefined) {
+    st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
+  }
+  st.setVcaGroups(Array.isArray(vcaGroups) ? vcaGroups : (vcaGroups?.vca_groups ?? []));
+  st.setStereoLinks(Array.isArray(stereoLinks) ? stereoLinks : (stereoLinks?.stereo_links ?? []));
+  st.setOutputStereoLinks(Array.isArray(outputStereoLinks) ? outputStereoLinks : (outputStereoLinks?.stereo_links ?? []));
+  st.setGenerators(gens.signal_generators ?? []);
+  st.setGeneratorMatrix(gens.generator_bus_matrix ?? []);
+  st.setAutomixerGroups(Array.isArray(amGroups) ? amGroups : (amGroups?.automixer_groups ?? []));
+  st.setBusFeedMatrix(Array.isArray(busFeedMatrix) ? busFeedMatrix : []);
+  st.setSceneAb(abState ?? { slot_a: null, slot_b: null, active: 'a', morph: null });
+
+  const busMatrix = {};
+  routes.forEach((r) => {
+    if (r.route_type === 'bus') {
+      if (!busMatrix[r.tx_id]) busMatrix[r.tx_id] = {};
+      busMatrix[r.tx_id][r.rx_id] = true;
+    }
+  });
+  st.setBusMatrix(busMatrix);
+  st.setMatrixGain(matrixState?.gain_db ?? []);
+  updateStatusBar();
+}
+
+async function _hydrateStateSnapshot({ renderTab = true, startRealtime = false } = {}) {
+  const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, outputStereoLinks, gens, amGroups, busFeedMatrix, abState] = await Promise.all([
+    api.getChannels(),
+    api.getOutputs(),
+    api.getZones(),
+    api.getRoutes(),
+    api.getScenes(),
+    api.getSystem(),
+    api.getBuses(),
+    api.getMatrix().catch(() => null),
+    api.getVcaGroups().catch(() => []),
+    api.getStereoLinks().catch(() => []),
+    api.getOutputStereoLinks().catch(() => []),
+    api.getGenerators().catch(() => ({ signal_generators: [], generator_bus_matrix: [] })),
+    api.getAutomixerGroups().catch(() => []),
+    api.getBusFeedMatrix().catch(() => []),
+    api.getAbState().catch(() => ({ slot_a: null, slot_b: null, active: 'a', morph: null })),
+  ]);
+
+  _applyStateSnapshot({
+    channels,
+    outputs,
+    zones,
+    routes,
+    scenes,
+    system,
+    buses,
+    matrixState,
+    vcaGroups,
+    stereoLinks,
+    outputStereoLinks,
+    gens,
+    amGroups,
+    busFeedMatrix,
+    abState,
+  });
+
+  const ctx = _syncShellChrome();
+  if (renderTab) {
+    const tab = ctx.focusedZoneId ? 'zones' : st.state.activeTab;
+    await switchTab(tab);
+  }
+  if (startRealtime) {
+    initWs();
+    _startSystemPoll();
+  }
 }
 
 // ── Login flow ─────────────────────────────────────────────────────────────
@@ -349,65 +477,7 @@ function setupLogin() {
 // ── Bootstrap all data ─────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [channels, outputs, zones, routes, scenes, system, buses, matrixState, vcaGroups, stereoLinks, outputStereoLinks, gens, amGroups, busFeedMatrix] = await Promise.all([
-      api.getChannels(),
-      api.getOutputs(),
-      api.getZones(),
-      api.getRoutes(),
-      api.getScenes(),
-      api.getSystem(),
-      api.getBuses(),
-      api.getMatrix().catch(() => null),
-      api.getVcaGroups().catch(() => []),
-      api.getStereoLinks().catch(() => []),
-      api.getOutputStereoLinks().catch(() => []),
-      api.getGenerators().catch(() => ({ signal_generators: [], generator_bus_matrix: [] })),
-      api.getAutomixerGroups().catch(() => []),
-      api.getBusFeedMatrix().catch(() => []),
-    ]);
-
-    channels.forEach(c => st.setChannel(c));
-    outputs.forEach(o  => st.setOutput(o));
-    zones.forEach(z    => st.setZone(z));
-    routes.forEach(r   => st.setRoute(r));
-    buses.forEach(b    => st.setBus(b));
-    st.setScenes(Array.isArray(scenes) ? scenes : (scenes.scenes ?? []));
-    if (scenes.active) st.setActiveScene(scenes.active);
-    st.setSystem(system);
-    if (system.ptp_locked !== undefined) {
-      st.setPtp(system.ptp_locked, system.ptp_offset_ns ?? 0);
-    }
-    st.setVcaGroups(Array.isArray(vcaGroups) ? vcaGroups : (vcaGroups?.vca_groups ?? []));
-    st.setStereoLinks(Array.isArray(stereoLinks) ? stereoLinks : (stereoLinks?.stereo_links ?? []));
-    st.setOutputStereoLinks(Array.isArray(outputStereoLinks) ? outputStereoLinks : (outputStereoLinks?.stereo_links ?? []));
-    st.setGenerators(gens.signal_generators ?? []);
-    st.setGeneratorMatrix(gens.generator_bus_matrix ?? []);
-    st.setAutomixerGroups(Array.isArray(amGroups) ? amGroups : (amGroups?.automixer_groups ?? []));
-    st.setBusFeedMatrix(Array.isArray(busFeedMatrix) ? busFeedMatrix : []);
-
-    // Build busMatrix from routes with route_type === 'bus'
-    const busMatrix = {};
-    routes.forEach(r => {
-      if (r.route_type === 'bus') {
-        if (!busMatrix[r.tx_id]) busMatrix[r.tx_id] = {};
-        busMatrix[r.tx_id][r.rx_id] = true;
-      }
-    });
-    st.setBusMatrix(busMatrix);
-
-    // Store matrix gain state for crosspoint scroll-wheel control
-    if (matrixState?.gain_db) st.setMatrixGain(matrixState.gain_db);
-
-    updateStatusBar();
-
-    const ctx = _syncShellChrome();
-    const tab = ctx.focusedZoneId ? 'zones' : st.state.activeTab;
-    await switchTab(tab);
-
-    // Start WebSocket
-    initWs();
-    _startSystemPoll();
-
+    await _hydrateStateSnapshot({ renderTab: true, startRealtime: true });
   } catch (e) {
     if (e.message !== '401') {
       toast('Failed to load configuration: ' + e.message, true);
@@ -424,22 +494,60 @@ window.addEventListener('popstate', () => { _syncShellRoute().catch(() => {}); }
 
 // Offline banner with grace period
 let _offlineTimer = null;
+let _wsResyncPromise = null;
 window.addEventListener('pb:ws-state', (e) => {
-  if (e.detail === 'connected') {
+  const detail = _normaliseWsStateDetail(e.detail);
+  const banner = document.getElementById('offline-banner');
+  if (detail.state === 'connected') {
     clearTimeout(_offlineTimer);
     _offlineTimer = null;
     document.body.classList.remove('offline');
-    const banner = document.getElementById('offline-banner');
     if (banner) { banner.hidden = true; banner.style.display = 'none'; }
+  } else if (detail.state === 'resyncing') {
+    clearTimeout(_offlineTimer);
+    _offlineTimer = null;
+    document.body.classList.remove('offline');
+    if (banner) {
+      banner.hidden = false;
+      banner.style.display = 'block';
+      banner.textContent = _offlineBannerMessage(detail);
+    }
   } else {
     if (!_offlineTimer) {
       _offlineTimer = setTimeout(() => {
         document.body.classList.add('offline');
-        const banner = document.getElementById('offline-banner');
-        if (banner) { banner.hidden = false; banner.style.display = 'block'; }
+        if (banner) {
+          banner.hidden = false;
+          banner.style.display = 'block';
+          banner.textContent = _offlineBannerMessage(detail);
+        }
       }, 3000);
     }
   }
+});
+
+window.addEventListener('pb:ws-resync', (e) => {
+  if (_wsResyncPromise) return;
+  _wsResyncPromise = (async () => {
+    const detail = e.detail ?? {};
+    try {
+      if (detail.needsRefresh) {
+        toast('Reconnected - syncing live state…');
+        await _hydrateStateSnapshot({ renderTab: true, startRealtime: false });
+      } else {
+        await _renderActiveTab();
+      }
+      st.setStaleData(false);
+      window.dispatchEvent(new CustomEvent('pb:ws-state', {
+        detail: { state: 'connected', reason: 'resync_complete' },
+      }));
+      toast(detail.needsRefresh ? 'Reconnected - state refreshed.' : 'Reconnected.');
+    } catch (error) {
+      toast('Reconnect sync failed: ' + (error?.message ?? String(error)), true);
+    } finally {
+      _wsResyncPromise = null;
+    }
+  })();
 });
 
 window.addEventListener('pb:metering', e => {

@@ -540,6 +540,31 @@
   overflow-wrap: anywhere;
 }
 
+.sys-config-warning-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sys-config-warning {
+  border-left: 2px solid var(--color-warn);
+  padding-left: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.sys-config-warning-summary {
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.sys-config-warning-details {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  display: grid;
+  gap: 2px;
+}
+
 .sys-backups-list {
   display: grid;
   gap: 8px;

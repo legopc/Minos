@@ -36,8 +36,13 @@ pub fn blend_scenes(from: &Scene, to: &Scene, t: f32, scope: &RecallScope) -> Sc
         blended.insert(key, value);
     }
 
-    let mut scene = serde_json::from_value(Value::Object(blended))
-        .unwrap_or_else(|_| if t >= 1.0 { to.clone() } else { from.clone() });
+    let mut scene = serde_json::from_value(Value::Object(blended)).unwrap_or_else(|_| {
+        if t >= 1.0 {
+            to.clone()
+        } else {
+            from.clone()
+        }
+    });
     scene.schema_version = from.schema_version.max(to.schema_version);
     scene.input_gain_db = if !scene.input_dsp.is_empty() {
         scene.input_dsp.iter().map(|dsp| dsp.gain_db).collect()
@@ -142,7 +147,10 @@ pub async fn run_morph(
         })
         .to_string(),
     );
-    ws_broadcast(&state, serde_json::json!(ab_state_event_payload(&state).await).to_string());
+    ws_broadcast(
+        &state,
+        serde_json::json!(ab_state_event_payload(&state).await).to_string(),
+    );
 }
 
 pub async fn ab_state_event_payload(state: &AppState) -> Value {
@@ -180,7 +188,14 @@ fn scene_field_in_scope(field: &str, scope: &RecallScope) -> bool {
     }
 }
 
-fn blend_value(path: &str, from: &Value, to: &Value, t: f32, from_scene: &Scene, to_scene: &Scene) -> Value {
+fn blend_value(
+    path: &str,
+    from: &Value,
+    to: &Value,
+    t: f32,
+    from_scene: &Scene,
+    to_scene: &Scene,
+) -> Value {
     if from == to {
         return from.clone();
     }
@@ -198,7 +213,10 @@ fn blend_value(path: &str, from: &Value, to: &Value, t: f32, from_scene: &Scene,
                 };
                 let from_entry = from_obj.get(&key).unwrap_or(&Value::Null);
                 let to_entry = to_obj.get(&key).unwrap_or(&Value::Null);
-                blended.insert(key, blend_value(&child_path, from_entry, to_entry, t, from_scene, to_scene));
+                blended.insert(
+                    key,
+                    blend_value(&child_path, from_entry, to_entry, t, from_scene, to_scene),
+                );
             }
             Value::Object(blended)
         }
@@ -215,7 +233,9 @@ fn blend_value(path: &str, from: &Value, to: &Value, t: f32, from_scene: &Scene,
                     .collect(),
             )
         }
-        (Value::Number(from_num), Value::Number(to_num)) => blend_number(path, from_num, to_num, t, from_scene, to_scene),
+        (Value::Number(from_num), Value::Number(to_num)) => {
+            blend_number(path, from_num, to_num, t, from_scene, to_scene)
+        }
         (Value::Bool(from_bool), Value::Bool(to_bool)) => {
             Value::Bool(blend_bool(path, *from_bool, *to_bool, t))
         }
@@ -231,10 +251,8 @@ fn blend_number(
     from_scene: &Scene,
     to_scene: &Scene,
 ) -> Value {
-    let (mut from_value, mut to_value) = (
-        number_to_f64(from_num, path),
-        number_to_f64(to_num, path),
-    );
+    let (mut from_value, mut to_value) =
+        (number_to_f64(from_num, path), number_to_f64(to_num, path));
 
     if let Some((tx, rx)) = parse_matrix_gain_path(path) {
         from_value = if from_scene
@@ -290,7 +308,8 @@ fn blend_number(
         lerp(from_value, to_value, t as f64)
     };
     Value::Number(
-        Number::from_f64(blended.clamp(SILENCE_FLOOR_DB, f32::MAX as f64)).unwrap_or_else(|| Number::from(0)),
+        Number::from_f64(blended.clamp(SILENCE_FLOOR_DB, f32::MAX as f64))
+            .unwrap_or_else(|| Number::from(0)),
     )
 }
 
@@ -319,7 +338,11 @@ fn step_value(from: &Value, to: &Value, t: f32) -> Value {
 }
 
 fn number_to_f64(value: &Number, path: &str) -> f64 {
-    let fallback = if is_gain_like_path(path) { SILENCE_FLOOR_DB } else { 0.0 };
+    let fallback = if is_gain_like_path(path) {
+        SILENCE_FLOOR_DB
+    } else {
+        0.0
+    };
     let numeric = value.as_f64().unwrap_or(fallback);
     if numeric.is_finite() {
         numeric

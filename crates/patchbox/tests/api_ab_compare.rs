@@ -32,7 +32,10 @@ async fn ab_capture_toggle_and_diff_work() {
         cfg.output_muted = cfg.output_dsp.iter().map(|dsp| dsp.muted).collect();
     }
     let capture_a = capture_slot(&app, &tok, "a").await;
-    assert_eq!(capture_a.get("slot").and_then(|value| value.as_str()), Some("a"));
+    assert_eq!(
+        capture_a.get("slot").and_then(|value| value.as_str()),
+        Some("a")
+    );
 
     {
         let mut cfg = state.config.write().await;
@@ -46,7 +49,10 @@ async fn ab_capture_toggle_and_diff_work() {
         cfg.output_muted = cfg.output_dsp.iter().map(|dsp| dsp.muted).collect();
     }
     let capture_b = capture_slot(&app, &tok, "b").await;
-    assert_eq!(capture_b.get("slot").and_then(|value| value.as_str()), Some("b"));
+    assert_eq!(
+        capture_b.get("slot").and_then(|value| value.as_str()),
+        Some("b")
+    );
 
     let (status, state_json) = common::get_json(&app, "/api/v1/scenes/ab", Some(&tok)).await;
     assert_eq!(status, StatusCode::OK);
@@ -55,13 +61,23 @@ async fn ab_capture_toggle_and_diff_work() {
 
     let (status, diff) = common::get_json(&app, "/api/v1/scenes/ab/diff", Some(&tok)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(diff.get("has_changes").and_then(|value| value.as_bool()), Some(true));
+    assert_eq!(
+        diff.get("has_changes").and_then(|value| value.as_bool()),
+        Some(true)
+    );
 
-    let (status, toggled) =
-        common::post_json(&app, "/api/v1/scenes/ab/toggle", serde_json::json!({}), Some(&tok))
-            .await;
+    let (status, toggled) = common::post_json(
+        &app,
+        "/api/v1/scenes/ab/toggle",
+        serde_json::json!({}),
+        Some(&tok),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(toggled.get("active").and_then(|value| value.as_str()), Some("b"));
+    assert_eq!(
+        toggled.get("active").and_then(|value| value.as_str()),
+        Some("b")
+    );
 
     let cfg = state.config.read().await;
     assert_eq!(cfg.matrix, vec![vec![false, true], vec![true, false]]);
@@ -120,7 +136,9 @@ async fn ab_morph_start_and_cancel_leave_valid_state() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        started.get("active_target").and_then(|value| value.as_str()),
+        started
+            .get("active_target")
+            .and_then(|value| value.as_str()),
         Some("a")
     );
 
@@ -134,7 +152,12 @@ async fn ab_morph_start_and_cancel_leave_valid_state() {
         Some(&tok),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "body: {}", String::from_utf8_lossy(&bytes));
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     let cancelled: serde_json::Value = serde_json::from_slice(&bytes).expect("cancel json");
     let cancelled_at_t = cancelled
         .get("cancelled_at_t")
@@ -144,7 +167,10 @@ async fn ab_morph_start_and_cancel_leave_valid_state() {
 
     let (status, state_json) = common::get_json(&app, "/api/v1/scenes/ab", Some(&tok)).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(state_json.get("morph").is_none() || state_json.get("morph") == Some(&serde_json::Value::Null));
+    assert!(
+        state_json.get("morph").is_none()
+            || state_json.get("morph") == Some(&serde_json::Value::Null)
+    );
 
     let cfg = state.config.read().await;
     assert!(cfg.output_dsp[0].gain_db.is_finite());

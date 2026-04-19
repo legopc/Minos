@@ -61,6 +61,7 @@ impl Modify for SecurityAddon {
         crate::api::routes::zones::delete_zone_resource,
         crate::api::routes::zones::delete_zone_template,
         crate::api::routes::routing::get_routes,
+        crate::api::routes::routing::get_route_trace,
         crate::api::routes::routing::post_route,
         crate::api::routes::routing::delete_route,
         crate::api::routes::scenes::list_scenes,

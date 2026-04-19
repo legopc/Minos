@@ -12,6 +12,8 @@ use axum::{
 use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, Quota, RateLimiter};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -191,6 +193,49 @@ async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl Int
     ws.on_upgrade(move |socket| handle_ws(socket, s))
 }
 
+async fn ws_state_hash(s: &AppState) -> String {
+    let cfg_json = {
+        let cfg = s.config.read().await;
+        serde_json::to_string(&*cfg).unwrap_or_default()
+    };
+    let scenes_json = {
+        let scenes = s.scenes.read().await;
+        serde_json::to_string(&*scenes).unwrap_or_default()
+    };
+    let mut hasher = DefaultHasher::new();
+    cfg_json.hash(&mut hasher);
+    scenes_json.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+async fn ws_state_payload(s: &AppState, msg_type: &str) -> serde_json::Value {
+    let state_hash = ws_state_hash(s).await;
+    let (rx_count, tx_count, zone_count, solo_channels, monitor_device, monitor_volume_db) = {
+        let cfg = s.config.read().await;
+        (
+            cfg.rx_channels,
+            cfg.tx_channels,
+            cfg.zone_config.len(),
+            cfg.solo_channels.clone(),
+            cfg.monitor_device.clone(),
+            cfg.monitor_volume_db,
+        )
+    };
+    let active_scene_id = s.scenes.read().await.active.clone();
+    serde_json::json!({
+        "type": msg_type,
+        "version": env!("CARGO_PKG_VERSION"),
+        "state_hash": state_hash,
+        "rx_count": rx_count,
+        "tx_count": tx_count,
+        "zone_count": zone_count,
+        "solo_channels": solo_channels,
+        "monitor_device": monitor_device,
+        "monitor_volume_db": monitor_volume_db,
+        "active_scene_id": active_scene_id,
+    })
+}
+
 /// Per-client WS task. Splits into send + receive halves.
 async fn handle_ws(socket: WebSocket, s: AppState) {
     use axum::extract::ws::Message;
@@ -202,16 +247,7 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
 
     // --- hello ---
     {
-        let cfg = s.config.read().await;
-        let hello = serde_json::json!({
-            "type": "hello",
-            "version": env!("CARGO_PKG_VERSION"),
-            "rx_count": cfg.rx_channels,
-            "tx_count": cfg.tx_channels,
-            "zone_count": cfg.zone_config.len(),
-            "solo_channels": &cfg.solo_channels,
-            "monitor_device": &cfg.monitor_device,
-        });
+        let hello = ws_state_payload(&s, "hello").await;
         let _ = sender.send(Message::Text(hello.to_string())).await;
     }
 
@@ -345,7 +381,7 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                                     *subscribed.lock().await = Some(list);
                                 }
                             }
-                            Some("resync") => { /* no-op for now */ }
+                            Some("resync") => { /* client rehydrates from reconnect hello */ }
                             _ => {}
                         }
                     }
@@ -539,6 +575,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/routes",
             get(get_routes).post(post_route).delete(delete_routes_bulk),
         )
+        .route("/api/v1/routes/trace", get(get_route_trace))
         .route("/api/v1/routes/:id", delete(delete_route))
         .route("/api/v1/bulk", post(post_bulk_mutation))
         .route("/api/v1/metering", get(get_metering))

@@ -267,10 +267,9 @@ pub async fn post_zone(
     claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<CreateZoneRequest>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot create zones.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot create zones.")
+    {
         return response;
     }
     let mut cfg = s.config.write().await;
@@ -497,10 +496,9 @@ pub async fn delete_zone_resource(
     claims: Option<Extension<crate::jwt::Claims>>,
     Path(zone_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot delete zones.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot delete zones.")
+    {
         return response;
     }
     if parse_zone_id(&zone_id).is_none() {
@@ -602,10 +600,9 @@ pub async fn put_source_name(
     Path(idx): Path<usize>,
     Json(u): Json<NameUpdate>,
 ) -> impl IntoResponse {
-    if let Err(response) = auth_api::ensure_not_zone_scoped(
-        claims.as_ref(),
-        "Zone-scoped users cannot rename inputs.",
-    ) {
+    if let Err(response) =
+        auth_api::ensure_not_zone_scoped(claims.as_ref(), "Zone-scoped users cannot rename inputs.")
+    {
         return response;
     }
     let mut cfg = s.config.write().await;

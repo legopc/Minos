@@ -14,8 +14,14 @@ fn assert_zone_scope_forbidden(
     zone_id: &str,
     target_zone_id: Option<&str>,
 ) {
-    assert_eq!(json.get("error").and_then(|value| value.as_str()), Some("zone_scope_forbidden"));
-    assert_eq!(json.get("zone").and_then(|value| value.as_str()), Some(zone_id));
+    assert_eq!(
+        json.get("error").and_then(|value| value.as_str()),
+        Some("zone_scope_forbidden")
+    );
+    assert_eq!(
+        json.get("zone").and_then(|value| value.as_str()),
+        Some(zone_id)
+    );
     assert_eq!(
         json.get("target").and_then(|value| value.as_str()),
         target_zone_id
@@ -78,7 +84,12 @@ async fn zone_scoped_user_is_limited_to_claimed_zone_output_and_route_mutations(
         Some(&zone_tok),
     )
     .await;
-    assert_eq!(status, StatusCode::NO_CONTENT, "body: {}", String::from_utf8_lossy(&bytes));
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
 
     let (status, bytes) = common::put_json(
         &app,
@@ -87,7 +98,12 @@ async fn zone_scoped_user_is_limited_to_claimed_zone_output_and_route_mutations(
         Some(&zone_tok),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", String::from_utf8_lossy(&bytes));
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     let json = json_from_bytes(&bytes);
     assert_zone_scope_forbidden(&json, &zone_a, Some(&zone_b));
 
@@ -98,7 +114,12 @@ async fn zone_scoped_user_is_limited_to_claimed_zone_output_and_route_mutations(
         Some(&zone_tok),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", String::from_utf8_lossy(&bytes));
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     let json = json_from_bytes(&bytes);
     assert_zone_scope_forbidden(&json, &zone_a, Some(&zone_b));
 
@@ -156,7 +177,10 @@ async fn zone_scoped_user_cannot_use_global_zone_catalog_or_scene_mutations() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json.get("affected").and_then(|value| value.as_u64()), Some(1));
+    assert_eq!(
+        json.get("affected").and_then(|value| value.as_u64()),
+        Some(1)
+    );
 
     let (status, json) = common::post_json(
         &app,
@@ -209,7 +233,12 @@ async fn zone_scoped_user_cannot_use_global_zone_catalog_or_scene_mutations() {
         Some(&zone_tok),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "body: {}", String::from_utf8_lossy(&bytes));
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
     let json = json_from_bytes(&bytes);
     assert_zone_scope_forbidden(&json, &zone_a, None);
 }

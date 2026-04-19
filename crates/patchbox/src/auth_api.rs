@@ -214,18 +214,16 @@ struct ZoneScopeForbidden {
     detail: &'static str,
 }
 
-pub fn claimed_zone_id(claims: Option<&axum::extract::Extension<crate::jwt::Claims>>) -> Option<&str> {
+pub fn claimed_zone_id(
+    claims: Option<&axum::extract::Extension<crate::jwt::Claims>>,
+) -> Option<&str> {
     claims
         .and_then(|axum::extract::Extension(claims)| claims.zone.as_deref())
         .map(str::trim)
         .filter(|zone| !zone.is_empty())
 }
 
-pub fn forbid_zone_scope(
-    zone_id: &str,
-    target: Option<&str>,
-    detail: &'static str,
-) -> Response {
+pub fn forbid_zone_scope(zone_id: &str, target: Option<&str>, detail: &'static str) -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(ZoneScopeForbidden {

@@ -8,7 +8,7 @@ use axum::{
     Json,
 };
 use patchbox_core::config::{SignalGenType, SignalGeneratorConfig};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use tracing;
 
 #[derive(serde::Deserialize)]
@@ -45,6 +45,50 @@ pub struct RouteResponse {
 pub struct CreateRouteRequest {
     rx_id: String,
     tx_id: String,
+}
+
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct RouteTraceQuery {
+    tx_id: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteTraceKind {
+    Direct,
+    Bus,
+    Generator,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteTraceHopKind {
+    Input,
+    Bus,
+    Output,
+    Generator,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct RouteTraceHop {
+    id: String,
+    kind: RouteTraceHopKind,
+    name: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct RouteTracePath {
+    kind: RouteTraceKind,
+    summary: String,
+    hops: Vec<RouteTraceHop>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct RouteTraceResponse {
+    output_id: String,
+    output_name: String,
+    paths: Vec<RouteTracePath>,
+    warnings: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -161,6 +205,125 @@ fn ensure_routing_zone_scope(
     detail: &'static str,
 ) -> Result<(), axum::response::Response> {
     auth_api::ensure_zone_scope_tx(cfg, claims, tx, detail)
+}
+
+fn trace_input_name(cfg: &patchbox_core::config::PatchboxConfig, rx: usize) -> String {
+    cfg.sources
+        .get(rx)
+        .cloned()
+        .unwrap_or_else(|| format!("Source {}", rx + 1))
+}
+
+fn trace_output_name(cfg: &patchbox_core::config::PatchboxConfig, tx: usize) -> String {
+    cfg.zones
+        .get(tx)
+        .cloned()
+        .unwrap_or_else(|| format!("Output {}", tx + 1))
+}
+
+fn trace_bus_name(cfg: &patchbox_core::config::PatchboxConfig, bus_idx: usize) -> String {
+    cfg.internal_buses
+        .get(bus_idx)
+        .map(|bus| bus.name.clone())
+        .unwrap_or_else(|| format!("Bus {}", bus_idx + 1))
+}
+
+fn trace_generator_name(cfg: &patchbox_core::config::PatchboxConfig, gen_idx: usize) -> String {
+    cfg.signal_generators
+        .get(gen_idx)
+        .map(|generator| generator.name.clone())
+        .unwrap_or_else(|| format!("Generator {}", gen_idx + 1))
+}
+
+fn format_trace_summary(hops: &[RouteTraceHop]) -> String {
+    hops.iter()
+        .map(|hop| hop.name.as_str())
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
+fn trace_bus_paths(
+    cfg: &patchbox_core::config::PatchboxConfig,
+    bus_idx: usize,
+    visited: &mut Vec<usize>,
+    warnings: &mut BTreeSet<String>,
+) -> Vec<RouteTracePath> {
+    let Some(bus) = cfg.internal_buses.get(bus_idx) else {
+        return vec![];
+    };
+
+    if let Some(loop_start) = visited.iter().position(|existing| *existing == bus_idx) {
+        let cycle = visited[loop_start..]
+            .iter()
+            .copied()
+            .chain(std::iter::once(bus_idx))
+            .map(|idx| trace_bus_name(cfg, idx))
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        warnings.insert(format!("Bus feed loop detected: {cycle}."));
+        return vec![];
+    }
+
+    visited.push(bus_idx);
+    let bus_hop = RouteTraceHop {
+        id: bus.id.clone(),
+        kind: RouteTraceHopKind::Bus,
+        name: bus.name.clone(),
+    };
+    let mut paths = Vec::new();
+
+    for (rx, enabled) in bus.routing.iter().enumerate() {
+        if !enabled {
+            continue;
+        }
+        let input_hop = RouteTraceHop {
+            id: format!("rx_{rx}"),
+            kind: RouteTraceHopKind::Input,
+            name: trace_input_name(cfg, rx),
+        };
+        let hops = vec![input_hop, bus_hop.clone()];
+        paths.push(RouteTracePath {
+            kind: RouteTraceKind::Bus,
+            summary: format_trace_summary(&hops),
+            hops,
+        });
+    }
+
+    if let Some(feed_matrix) = cfg
+        .bus_feed_matrix
+        .as_ref()
+        .and_then(|matrix| matrix.get(bus_idx))
+    {
+        for (upstream_idx, enabled) in feed_matrix.iter().enumerate() {
+            if !enabled {
+                continue;
+            }
+
+            let mut upstream_paths = trace_bus_paths(cfg, upstream_idx, visited, warnings);
+            if upstream_paths.is_empty() {
+                let upstream_hop = RouteTraceHop {
+                    id: format!("bus_{upstream_idx}"),
+                    kind: RouteTraceHopKind::Bus,
+                    name: trace_bus_name(cfg, upstream_idx),
+                };
+                let hops = vec![upstream_hop, bus_hop.clone()];
+                upstream_paths.push(RouteTracePath {
+                    kind: RouteTraceKind::Bus,
+                    summary: format_trace_summary(&hops),
+                    hops,
+                });
+            } else {
+                for path in &mut upstream_paths {
+                    path.hops.push(bus_hop.clone());
+                    path.summary = format_trace_summary(&path.hops);
+                }
+            }
+            paths.extend(upstream_paths);
+        }
+    }
+
+    visited.pop();
+    paths
 }
 
 // PUT /api/v1/matrix
@@ -301,6 +464,149 @@ pub async fn get_routes(State(s): State<AppState>) -> impl IntoResponse {
         }
     }
     Json(routes)
+}
+
+// GET /api/v1/routes/trace?tx_id=tx_N
+#[utoipa::path(
+    get,
+    path = "/api/v1/routes/trace",
+    tag = "routing",
+    security(("bearer_auth" = [])),
+    params(RouteTraceQuery),
+    responses(
+        (status = 200, description = "Resolved trace for one output", body = RouteTraceResponse),
+        (status = 400, description = "Invalid output ID", body = crate::api::ErrorResponse),
+        (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 403, description = "Forbidden", body = crate::api::ErrorResponse),
+        (status = 404, description = "Output not found", body = crate::api::ErrorResponse)
+    )
+)]
+pub async fn get_route_trace(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Query(query): Query<RouteTraceQuery>,
+) -> impl IntoResponse {
+    let Some(tx) = parse_tx_id(&query.tx_id) else {
+        return (StatusCode::BAD_REQUEST, "invalid tx_id").into_response();
+    };
+
+    let cfg = s.config.read().await;
+    if tx >= cfg.tx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_routing_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        tx,
+        "Zone-scoped users can only trace outputs in their own zone.",
+    ) {
+        return response;
+    }
+
+    let output_id = format!("tx_{tx}");
+    let output_name = trace_output_name(&cfg, tx);
+    let output_hop = RouteTraceHop {
+        id: output_id.clone(),
+        kind: RouteTraceHopKind::Output,
+        name: output_name.clone(),
+    };
+    let mut paths = Vec::new();
+    let mut warnings = BTreeSet::new();
+
+    if let Some(row) = cfg.matrix.get(tx) {
+        for (rx, enabled) in row.iter().enumerate() {
+            if !enabled {
+                continue;
+            }
+            let hops = vec![
+                RouteTraceHop {
+                    id: format!("rx_{rx}"),
+                    kind: RouteTraceHopKind::Input,
+                    name: trace_input_name(&cfg, rx),
+                },
+                output_hop.clone(),
+            ];
+            paths.push(RouteTracePath {
+                kind: RouteTraceKind::Direct,
+                summary: format_trace_summary(&hops),
+                hops,
+            });
+        }
+    }
+
+    if let Some(bus_matrix) = cfg.bus_matrix.as_ref().and_then(|matrix| matrix.get(tx)) {
+        for (bus_idx, enabled) in bus_matrix.iter().enumerate() {
+            if !enabled {
+                continue;
+            }
+            let mut visited = Vec::new();
+            let mut bus_paths = trace_bus_paths(&cfg, bus_idx, &mut visited, &mut warnings);
+            if bus_paths.is_empty() {
+                let hops = vec![
+                    RouteTraceHop {
+                        id: format!("bus_{bus_idx}"),
+                        kind: RouteTraceHopKind::Bus,
+                        name: trace_bus_name(&cfg, bus_idx),
+                    },
+                    output_hop.clone(),
+                ];
+                bus_paths.push(RouteTracePath {
+                    kind: RouteTraceKind::Bus,
+                    summary: format_trace_summary(&hops),
+                    hops,
+                });
+                warnings.insert(format!(
+                    "Bus '{}' feeds '{}', but no upstream sources were traced.",
+                    trace_bus_name(&cfg, bus_idx),
+                    output_name.as_str()
+                ));
+            } else {
+                for path in &mut bus_paths {
+                    path.hops.push(output_hop.clone());
+                    path.summary = format_trace_summary(&path.hops);
+                }
+            }
+            paths.extend(bus_paths);
+        }
+    }
+
+    for (gen_idx, row) in cfg.generator_bus_matrix.iter().enumerate() {
+        if !row
+            .get(tx)
+            .copied()
+            .unwrap_or(f32::NEG_INFINITY)
+            .is_finite()
+        {
+            continue;
+        }
+        let hops = vec![
+            RouteTraceHop {
+                id: cfg
+                    .signal_generators
+                    .get(gen_idx)
+                    .map(|generator| generator.id.clone())
+                    .unwrap_or_else(|| format!("generator_{gen_idx}")),
+                kind: RouteTraceHopKind::Generator,
+                name: trace_generator_name(&cfg, gen_idx),
+            },
+            output_hop.clone(),
+        ];
+        paths.push(RouteTracePath {
+            kind: RouteTraceKind::Generator,
+            summary: format_trace_summary(&hops),
+            hops,
+        });
+    }
+
+    paths.sort_by(|left, right| left.summary.cmp(&right.summary));
+
+    Json(RouteTraceResponse {
+        output_id,
+        output_name,
+        paths,
+        warnings: warnings.into_iter().collect(),
+    })
+    .into_response()
 }
 
 // POST /api/v1/routes

@@ -232,6 +232,7 @@ async fn validate_post_returns_diff_without_mutating_config() {
 
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("response should be JSON");
     assert_eq!(json["valid"], true);
+    assert_eq!(json["warnings"].as_array().map(|arr| arr.len()), Some(0));
     assert_eq!(json["summary"]["total_changes"], 1);
     assert!(json["summary"]["description"]
         .as_str()
@@ -260,6 +261,7 @@ async fn validate_post_invalid_toml_reports_error() {
 
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("response should be JSON");
     assert_eq!(json["valid"], false);
+    assert_eq!(json["warnings"].as_array().map(|arr| arr.len()), Some(0));
     assert_eq!(json["summary"]["total_changes"], 0);
     assert!(json["errors"]
         .as_array()
@@ -268,6 +270,41 @@ async fn validate_post_invalid_toml_reports_error() {
         .and_then(|value| value.as_str())
         .unwrap_or("")
         .contains("invalid config TOML"));
+}
+
+#[tokio::test]
+async fn validate_post_rx_shrink_reports_warning() {
+    let (app, state) = common::test_app_with_state();
+    let tok = common::login_token(&app);
+
+    let original_toml = std::fs::read_to_string(&state.config_path).expect("read config");
+    let mut candidate: PatchboxConfig = toml::from_str(&original_toml).expect("parse config");
+    candidate.rx_channels = candidate.rx_channels.saturating_sub(1).max(1);
+    let candidate_toml = toml::to_string_pretty(&candidate).expect("serialize candidate");
+
+    let (status, bytes) = post_toml_raw(
+        &app,
+        "/api/v1/system/config/validate",
+        &candidate_toml,
+        Some(&tok),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "body: {}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("response should be JSON");
+    assert_eq!(json["valid"], true);
+    let warnings = json["warnings"].as_array().expect("warnings array");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"].as_str() == Some("rx_shrink")),
+        "expected rx shrink warning, got: {json}"
+    );
 }
 
 #[tokio::test]

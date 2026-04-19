@@ -56,7 +56,20 @@ async fn dante_diagnostics_returns_expected_shape() {
         .get("recovery_actions")
         .and_then(|v| v.as_array())
         .expect("recovery_actions array");
+    let roster = json
+        .get("roster")
+        .and_then(|v| v.as_array())
+        .expect("roster array");
+    let subscriptions = json
+        .get("subscriptions")
+        .and_then(|v| v.as_array())
+        .expect("subscriptions array");
     assert!(actions.len() >= 3, "expected recovery actions, got: {json}");
+    assert!(!roster.is_empty(), "expected roster entries, got: {json}");
+    assert!(
+        !subscriptions.is_empty(),
+        "expected subscription health entries, got: {json}"
+    );
     if let Some(entry) = event_log.first().and_then(|v| v.as_object()) {
         assert!(entry.get("ts_ms").and_then(|v| v.as_u64()).is_some());
         assert!(entry.get("level").and_then(|v| v.as_str()).is_some());
@@ -75,6 +88,58 @@ async fn dante_diagnostics_returns_expected_shape() {
         assert!(
             action.get("description").and_then(|v| v.as_str()).is_some(),
             "action.description"
+        );
+    }
+    if let Some(entry) = roster.first().and_then(|v| v.as_object()) {
+        assert!(
+            entry.get("id").and_then(|v| v.as_str()).is_some(),
+            "roster.id"
+        );
+        assert!(
+            entry.get("kind").and_then(|v| v.as_str()).is_some(),
+            "roster.kind"
+        );
+        assert!(
+            entry.get("name").and_then(|v| v.as_str()).is_some(),
+            "roster.name"
+        );
+        assert!(
+            entry.get("linked_count").and_then(|v| v.as_u64()).is_some(),
+            "roster.linked_count"
+        );
+        assert!(
+            entry
+                .get("signal_present")
+                .and_then(|v| v.as_bool())
+                .is_some(),
+            "roster.signal_present"
+        );
+    }
+    if let Some(subscription) = subscriptions.first().and_then(|v| v.as_object()) {
+        assert!(
+            subscription
+                .get("output_id")
+                .and_then(|v| v.as_str())
+                .is_some(),
+            "subscription.output_id"
+        );
+        assert!(
+            subscription.get("state").and_then(|v| v.as_str()).is_some(),
+            "subscription.state"
+        );
+        assert!(
+            subscription
+                .get("sources")
+                .and_then(|v| v.as_array())
+                .is_some(),
+            "subscription.sources"
+        );
+        assert!(
+            subscription
+                .get("estimated")
+                .and_then(|v| v.as_bool())
+                .is_some(),
+            "subscription.estimated"
         );
     }
 

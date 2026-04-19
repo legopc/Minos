@@ -33,7 +33,9 @@ async function req(method, path, body) {
     throw new Error(`${r.status}: ${txt}`);
   }
   if (r.status === 204) return null;
+  const _cl = r.headers.get('content-length');
   const _ct = r.headers.get('content-type') ?? '';
+  if (_cl === '0') return null;
   if (!_ct.includes('json')) return null;
   return r.json();
 }
@@ -568,6 +570,7 @@ export async function applyZoneTemplate(zoneIds, templateId) {
  * @returns {Promise<Array<Route>>} Array of route objects
  */
 export const getRoutes     = ()                    => get('/routes');
+export const getRouteTrace = (tx_id)              => get(`/routes/trace?tx_id=${encodeURIComponent(tx_id)}`);
 
 /**
  * Create a new route.

@@ -797,6 +797,8 @@ async function _validateConfigCandidate(toml) {
       mode: 'unsupported',
       ok: null,
       message: 'Validation endpoint unavailable on this device. Preview uses client-side diff only.',
+      warnings: [],
+      errors: [],
       payload: null,
     };
   }
@@ -809,15 +811,26 @@ async function _validateConfigCandidate(toml) {
         mode: 'unsupported',
         ok: null,
         message: 'Validation endpoint unavailable on this device. Preview uses client-side diff only.',
+        warnings: [],
+        errors: [],
         payload: result.payload,
       };
     }
 
+    const warnings = Array.isArray(result.payload?.warnings) ? result.payload.warnings : [];
+    const errors = Array.isArray(result.payload?.errors) ? result.payload.errors : [];
+    const ok = result.payload?.valid !== false;
     configFlowState.validateAvailable = true;
     return {
       mode: 'server',
-      ok: true,
-      message: 'Validated on device.',
+      ok,
+      message: ok
+        ? warnings.length
+          ? `Validated on device with ${warnings.length} compatibility warning${warnings.length === 1 ? '' : 's'}.`
+          : 'Validated on device.'
+        : (errors[0] ?? 'Validation failed on device.'),
+      warnings,
+      errors,
       payload: result.payload,
     };
   } catch (e) {
@@ -827,6 +840,8 @@ async function _validateConfigCandidate(toml) {
         mode: 'unsupported',
         ok: null,
         message: 'Validation endpoint unavailable on this device. Preview uses client-side diff only.',
+        warnings: [],
+        errors: [],
         payload: e.body ?? null,
       };
     }
@@ -836,6 +851,8 @@ async function _validateConfigCandidate(toml) {
         mode: 'server',
         ok: false,
         message: _extractErrorMessage(e),
+        warnings: [],
+        errors: Array.isArray(e.body?.errors) ? e.body.errors : [],
         payload: e.body ?? null,
       };
     }
@@ -933,13 +950,28 @@ function _renderConfigPreview() {
     : validation?.mode === 'unsupported'
       ? 'is-muted'
       : 'is-ok';
+  const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
 
   return `
     <div class="sys-config-preview-blocks">
       <div class="sys-config-preview-card ${validationClass}">
         <div class="sys-config-preview-title">Validation</div>
         <div class="sys-config-preview-copy">${_esc(validation?.message ?? 'Preview ready.')}</div>
-        ${validation?.payload != null && validation.payload !== '' ? `<pre class="sys-config-server-payload">${_esc(_stringifyPayload(validation.payload))}</pre>` : ''}
+        ${warnings.length ? `
+          <div class="sys-config-warning-list">
+            ${warnings.map((warning) => `
+              <div class="sys-config-warning">
+                <div class="sys-config-warning-summary">${_esc(warning?.summary ?? warning?.code ?? 'Compatibility warning')}</div>
+                <div class="sys-config-warning-details">
+                  ${(warning?.details ?? []).map((detail) => `<div>${_esc(detail)}</div>`).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        ${validation?.payload != null && validation.payload !== '' && (validation?.ok === false || validation?.mode === 'unsupported')
+          ? `<pre class="sys-config-server-payload">${_esc(_stringifyPayload(validation.payload))}</pre>`
+          : ''}
       </div>
 
       <div class="sys-config-preview-card">
@@ -969,6 +1001,9 @@ function _getConfigStatusText() {
   if (!candidate.preview) return 'Preview not generated yet.';
   if (candidate.validation?.ok === false) return 'Validation failed. Fix the config before applying.';
   if (candidate.validation?.mode === 'unsupported') return 'Server validation unavailable. Diff preview is client-side only.';
+  if ((candidate.validation?.warnings?.length ?? 0) > 0) {
+    return `${candidate.validation.warnings.length} compatibility warning${candidate.validation.warnings.length === 1 ? '' : 's'} to review before applying.`;
+  }
   return 'Preview ready.';
 }
 
