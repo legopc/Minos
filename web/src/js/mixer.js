@@ -1498,9 +1498,9 @@ export function updateMetering(rx, tx, bus) {
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
 
 function _meterPct(db) {
-  if (!isFinite(db) || db <= -48) return 0;
+  if (!isFinite(db) || db <= -60) return 0;
   if (db >= 0) return 100;
-  return ((db + 48) / 48) * 100;
+  return ((db + 60) / 60) * 100;
 }
 
 function _meterColour(db) {

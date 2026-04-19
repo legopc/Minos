@@ -18,12 +18,12 @@ export const BALLISTICS_PRESETS = {
 };
 
 // ─── Conversion helpers ───────────────────────────────────────────────────
-// Floor at -48 dBFS: keeps the full bar within the normal working range.
-// -48 → 0%, -24 → 50%, -12 → 75%, -6 → 87.5%, 0 → 100%
+// Floor at -60 dBFS to preserve low-level movement on quieter outputs.
+// -60 → 0%, -30 → 50%, -15 → 75%, -7.5 → 87.5%, 0 → 100%
 export function dbToPercent(db) {
-  if (!isFinite(db) || db <= -48) return 0;
+  if (!isFinite(db) || db <= -60) return 0;
   if (db >= 0) return 100;
-  return ((db + 48) / 48) * 100;
+  return ((db + 60) / 60) * 100;
 }
 
 export function dbToColour(db) {
@@ -38,7 +38,7 @@ const _anim = new Map();  // id → { displayDb, targetDb, peakLevel, peakTime }
 function _getAnim(id) {
   let a = _anim.get(id);
   if (!a) {
-    a = { displayDb: -48, targetDb: -48, peakLevel: -48, peakTime: 0 };
+    a = { displayDb: -60, targetDb: -60, peakLevel: -60, peakTime: 0 };
     _anim.set(id, a);
   }
   return a;
@@ -96,9 +96,9 @@ function _tick(now) {
       if (b.peakDecayDbPerSec > 0) {
         peakDb = a.peakLevel - b.peakDecayDbPerSec * ((elapsed - holdMs) / 1000);
       }
-      if (peakDb <= -48) {
-        a.peakLevel = -48;
-        peakDb = -48;
+      if (peakDb <= -60) {
+        a.peakLevel = -60;
+        peakDb = -60;
       }
       anyMoving = true;
     }
