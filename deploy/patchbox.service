@@ -1,0 +1,16 @@
+[Unit]
+Description=Minos Dante Patchbay
+Documentation=https://github.com/legopc/dante-patchbox
+After=network.target statime.service
+
+[Service]
+ExecStart=/home/legopc/dante-patchbox/target/release/patchbox --config /etc/patchbox/config.toml
+Restart=always
+RestartSec=0.5
+AmbientCapabilities=CAP_NET_RAW CAP_SYS_NICE
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchbox
+
+[Install]
+WantedBy=multi-user.target
