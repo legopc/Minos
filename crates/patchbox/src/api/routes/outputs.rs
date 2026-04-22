@@ -8,7 +8,8 @@ use axum::{
     Json,
 };
 use patchbox_core::config::{
-    CompressorConfig, DelayConfig, DynamicEqConfig, EqConfig, FilterConfig, LimiterConfig,
+    CompressorConfig, DelayConfig, DuckerConfig, DynamicEqConfig, EqConfig, FilterConfig,
+    LimiterConfig, OutputChannelDsp,
 };
 use patchbox_core::dsp::DspBlock;
 use tracing;
@@ -638,4 +639,63 @@ pub(crate) async fn put_output_deq(
     drop(cfg);
     s.schedule_persist().await;
     StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/outputs/:ch/dsp/ducker
+pub(crate) async fn get_output_ducker(
+    State(s): State<AppState>,
+    Path(ch): Path<usize>,
+) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    if ch >= cfg.tx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    Json(cfg.output_dsp.get(ch).map(|d| d.ducker.clone()).unwrap_or_default()).into_response()
+}
+
+// PUT /api/v1/outputs/:ch/dsp/ducker
+pub(crate) async fn put_output_ducker(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(ch): Path<usize>,
+    Json(body): Json<DuckerConfig>,
+) -> impl IntoResponse {
+    let mut cfg = s.config.write().await;
+    if ch >= cfg.tx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if let Err(response) = ensure_output_zone_scope(
+        &cfg,
+        claims.as_ref(),
+        ch,
+        "Zone-scoped users can only update output DSP in their own zone.",
+    ) {
+        return response;
+    }
+    while cfg.output_dsp.len() <= ch {
+        cfg.output_dsp.push(OutputChannelDsp::default());
+    }
+    cfg.output_dsp[ch].ducker = body;
+    drop(cfg);
+    s.schedule_persist().await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// GET /api/v1/outputs/:ch/dsp/lufs
+pub(crate) async fn get_output_lufs(
+    State(s): State<AppState>,
+    Path(ch): Path<usize>,
+) -> impl IntoResponse {
+    let cfg = s.config.read().await;
+    if ch >= cfg.tx_channels {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    drop(cfg);
+    let m = s.meters.read().await;
+    Json(serde_json::json!({
+        "lufs_momentary": m.lufs_momentary.get(ch).copied().unwrap_or(-144.0),
+        "lufs_short_term": m.lufs_short_term.get(ch).copied().unwrap_or(-144.0),
+        "lufs_integrated": m.lufs_integrated.get(ch).copied().unwrap_or(-144.0),
+    }))
+    .into_response()
 }

@@ -1,0 +1,9 @@
+{
+  "has_metadata": true,
+  "created_at": "2026-04-20T00:42:14+00:00",
+  "source": "restore",
+  "version": "0.1.0",
+  "requested_by": "admin-user",
+  "note": "Created before config restore.",
+  "summary": "No config changes."
+}

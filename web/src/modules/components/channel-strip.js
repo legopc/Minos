@@ -10,13 +10,31 @@
  */
 
 import { inputDsp, outputDsp, apiErrorMessage } from '/modules/api.js';
-import { FilterSection }    from '/modules/components/filter-section.js';
-import { EqSection }        from '/modules/components/eq-section.js';
-import { GateSection }      from '/modules/components/gate-section.js';
-import { CompressorSection } from '/modules/components/compressor-section.js';
-import { LimiterSection }   from '/modules/components/limiter-section.js';
-import { DelaySection }     from '/modules/components/delay-section.js';
-import { VuMeter }          from '/modules/components/vu-meter.js';
+import { FilterSection }        from '/modules/components/filter-section.js';
+import { EqSection }            from '/modules/components/eq-section.js';
+import { GateSection }          from '/modules/components/gate-section.js';
+import { CompressorSection }    from '/modules/components/compressor-section.js';
+import { LimiterSection }       from '/modules/components/limiter-section.js';
+import { DelaySection }         from '/modules/components/delay-section.js';
+import { DynamicEqSection }     from '/modules/components/dynamic-eq-section.js';
+import { AutomixerSection }     from '/modules/components/automixer-section.js';
+import { AecSection }           from '/modules/components/aec-section.js';
+import { AfsSection }           from '/modules/components/afs-section.js';
+import { VuMeter }              from '/modules/components/vu-meter.js';
+
+// DSP default parameter values — generated from Rust config structs.
+// Used as fallback when the API doesn't return a given block's config.
+let _dspDefaults = null;
+async function getDspDefaults() {
+  if (_dspDefaults) return _dspDefaults;
+  try {
+    const res = await fetch('/generated/dsp-defaults.json');
+    _dspDefaults = res.ok ? await res.json() : {};
+  } catch {
+    _dspDefaults = {};
+  }
+  return _dspDefaults;
+}
 
 export class ChannelStrip {
   constructor(containerEl, channelIndex, type, channelName) {
@@ -113,14 +131,30 @@ export class ChannelStrip {
     this._gateWrap    = null;
     this._limiterWrap = null;
     this._delayWrap   = null;
+    this._deqWrap     = null;
+    this._aecWrap     = null;
+    this._axmWrap     = null;
+    this._afsWrap     = null;
 
     this._filter     = new FilterSection(this._filterWrap, this.ch, this.type);
     this._eq         = new EqSection(this._eqWrap, this.ch, this.type);
     this._compressor = new CompressorSection(this._compWrap, this.ch, this.type);
 
+    this._deqWrap = makeWrap();
+    this._deq     = new DynamicEqSection(this._deqWrap, this.ch, this.type);
+
     if (this.type === 'input') {
       this._gateWrap = makeWrap();
       this._gate = new GateSection(this._gateWrap, this.ch);
+
+      this._aecWrap = makeWrap();
+      this._aec = new AecSection(this._aecWrap, this.ch, this.type);
+
+      this._axmWrap = makeWrap();
+      this._axm = new AutomixerSection(this._axmWrap, this.ch, this.type);
+
+      this._afsWrap = makeWrap();
+      this._afs = new AfsSection(this._afsWrap, this.ch, this.type);
     } else {
       this._limiterWrap = makeWrap();
       this._delayWrap   = makeWrap();
@@ -141,12 +175,17 @@ export class ChannelStrip {
       ? [
           { key: 'filter',     label: 'FILT', section: () => this._filterWrap,  getEnabled: () => !!(this._filter?.state?.hpf?.enabled || this._filter?.state?.lpf?.enabled) },
           { key: 'eq',         label: 'EQ',   section: () => this._eqWrap,      getEnabled: () => !!(this._eq?.state?.enabled) },
+          { key: 'deq',        label: 'DEQ',  section: () => this._deqWrap,     getEnabled: () => !!(this._deq?.state?.enabled) },
           { key: 'gate',       label: 'GATE', section: () => this._gateWrap,    getEnabled: () => !!(this._gate?.state?.enabled) },
           { key: 'compressor', label: 'COMP', section: () => this._compWrap,    getEnabled: () => !!(this._compressor?.state?.enabled) },
+          { key: 'aec',        label: 'AEC',  section: () => this._aecWrap,     getEnabled: () => !!(this._aec?.state?.enabled) },
+          { key: 'axm',        label: 'AXM',  section: () => this._axmWrap,     getEnabled: () => !!(this._axm?.state?.enabled) },
+          { key: 'afs',        label: 'AFS',  section: () => this._afsWrap,     getEnabled: () => !!(this._afs?.state?.enabled) },
         ]
       : [
           { key: 'filter',     label: 'FILT', section: () => this._filterWrap,  getEnabled: () => !!(this._filter?.state?.hpf?.enabled || this._filter?.state?.lpf?.enabled) },
           { key: 'eq',         label: 'EQ',   section: () => this._eqWrap,      getEnabled: () => !!(this._eq?.state?.enabled) },
+          { key: 'deq',        label: 'DEQ',  section: () => this._deqWrap,     getEnabled: () => !!(this._deq?.state?.enabled) },
           { key: 'compressor', label: 'COMP', section: () => this._compWrap,    getEnabled: () => !!(this._compressor?.state?.enabled) },
           { key: 'limiter',    label: 'LIM',  section: () => this._limiterWrap, getEnabled: () => !!(this._limiter?.state?.enabled) },
           { key: 'delay',      label: 'DLY',  section: () => this._delayWrap,   getEnabled: () => !!(this._delay?.state?.enabled) },
@@ -344,14 +383,14 @@ export class ChannelStrip {
   }
 
   async load() {
-    let data;
-    try {
-      data = await this._dsp.get(this.ch);
-    } catch (err) {
-      console.warn(`ChannelStrip[${this.type}:${this.ch}] load failed:`, err);
-      this._toast(apiErrorMessage(err), 'warn');
-      data = null;
-    }
+    const [data, defs] = await Promise.all([
+      this._dsp.get(this.ch).catch(err => {
+        console.warn(`ChannelStrip[${this.type}:${this.ch}] load failed:`, err);
+        this._toast(apiErrorMessage(err), 'warn');
+        return null;
+      }),
+      getDspDefaults(),
+    ]);
 
     if (!data) return;
 
@@ -368,31 +407,26 @@ export class ChannelStrip {
       this._updatePolarityUI();
     }
 
-    // Sub-sections
-    if (data.hpf !== undefined || data.lpf !== undefined) {
-      this._filter.setState({ hpf: data.hpf, lpf: data.lpf });
-    }
+    // Sub-sections — fall back to generated defaults when API omits a block
+    const flt = data.hpf !== undefined || data.lpf !== undefined
+      ? { hpf: data.hpf, lpf: data.lpf }
+      : defs.flt;
+    if (flt) this._filter.setState(flt);
 
-    if (data.eq) {
-      this._eq.setState(data.eq);
-    }
+    if (this._eq) this._eq.setState(data.eq ?? defs.peq ?? {});
 
     if (this.type === 'input') {
-      if (data.gate && this._gate) {
-        this._gate.setState(data.gate);
-      }
+      if (this._gate) this._gate.setState(data.gate ?? defs.gte ?? {});
     } else {
-      if (data.limiter && this._limiter) {
-        this._limiter.setState(data.limiter);
-      }
-      if (data.delay && this._delay) {
-        this._delay.setState(data.delay);
-      }
+      if (this._limiter) this._limiter.setState(data.limiter ?? defs.lim ?? {});
+      if (this._delay)   this._delay.setState(data.delay   ?? defs.dly ?? {});
     }
 
-    if (data.compressor && this._compressor) {
-      this._compressor.setState(data.compressor);
-    }
+    if (this._compressor) this._compressor.setState(data.compressor ?? defs.cmp ?? {});
+    if (this._deq)        this._deq.setState(data.deq               ?? defs.deq ?? {});
+    if (this._aec)        this._aec.setState(data.aec               ?? defs.aec ?? {});
+    if (this._axm)        this._axm.setState(data.automixer         ?? defs.axm ?? {});
+    if (this._afs)        this._afs.setState(data.afs               ?? defs.afs ?? {});
 
     // Attach gain listeners after data is loaded (idempotent — remove first)
     this._gainSlider.removeEventListener('input',  this._onGainInput);

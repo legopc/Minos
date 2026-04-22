@@ -22,7 +22,7 @@ This document intentionally biases toward work that improves operator trust: acc
 
 | ID | Category | Title | Status | Notes |
 |---|---|---|---|---|
-| RES-01 | Scenes | Diff preview and confirm-on-load modal | ✅ Implemented | `web/src/js/scenes.js` already shows a diff panel and confirm modal before destructive recalls. |
+| RES-01 | Scenes | Diff preview and confirm-on-load modal | ✅ Implemented | `web/src/modules/pages/scenes.js` already shows a diff panel and confirm modal before destructive recalls. |
 | RES-02 | Scenes | Rename / favourite / delete with undo | ✅ Implemented | Scene cards support rename, favourite toggle, delete, and undo wiring. |
 | RES-03 | Zones | Zone drilldown panels with output masters | ✅ Implemented | Zone cards open a detail view with full output master strips. |
 | RES-04 | System | Config export / import / backup list / restore UI | ✅ Implemented | The System tab already exposes export/import plus backup listing and restore actions. |
@@ -202,7 +202,7 @@ Reject blank names, trim whitespace, cap length, and validate descriptions befor
 Overly strict validation can annoy operators who rely on punctuation-heavy naming. Keep the rule set broad enough for real venue labels and only block obviously bad input.
 
 ##### Implementation notes
-Add shared validation in `crates/patchbox/src/api/routes/scenes.rs` for `SaveSceneRequest` and `UpdateSceneRequest`, then mirror it in `web/src/js/scenes.js`. Return structured `400` JSON so the modal can show a precise error.
+Add shared validation in `crates/patchbox/src/api/routes/scenes.rs` for `SaveSceneRequest` and `UpdateSceneRequest`, then mirror it in `web/src/modules/pages/scenes.js`. Return structured `400` JSON so the modal can show a precise error.
 
 ---
 
@@ -224,7 +224,7 @@ The current UI can store scenes, but operators cannot answer simple questions li
 Metadata does not directly improve audio quality. If the immediate goal is only fault correction, this can wait behind status and safety work.
 
 ##### Implementation notes
-Add metadata fields to `Scene` in `crates/patchbox/src/scenes.rs`, populate them from auth claims in the save path, and persist them in `config.toml.scenes.toml`. Extend `web/src/js/scenes.js` list rendering and store sort preference in `localStorage`.
+Add metadata fields to `Scene` in `crates/patchbox/src/scenes.rs`, populate them from auth claims in the save path, and persist them in `config.toml.scenes.toml`. Extend `web/src/modules/pages/scenes.js` list rendering and store sort preference in `localStorage`.
 
 ---
 
@@ -246,7 +246,7 @@ Expand `/api/v1/scenes/:id/diff` so it compares matrix gain, output mutes, buses
 The data model is wider than the current diff response, so the implementation touches both backend and frontend. If the team wants only fast UI polish, it is more than a cosmetic change.
 
 ##### Implementation notes
-Add diff sections for `matrix_gain_db`, `output_muted`, `bus_matrix`, and any newly managed scene metadata. In `web/src/js/scenes.js`, render grouped sections like Routing, Gains, Buses, and Mutes instead of a single "field: old → new" list.
+Add diff sections for `matrix_gain_db`, `output_muted`, `bus_matrix`, and any newly managed scene metadata. In `web/src/modules/pages/scenes.js`, render grouped sections like Routing, Gains, Buses, and Mutes instead of a single "field: old → new" list.
 
 ---
 
@@ -268,7 +268,7 @@ Today there is no fast visual answer to "am I still on the saved state?" That cr
 The heuristic must be well chosen or it will flicker on harmless changes like meter-only updates. Keep the comparison scoped to persisted state only.
 
 ##### Implementation notes
-Use the same core comparison data as Item 2, but memoise a boolean dirty flag in `web/src/js/state.js`. Update it after `api.put*`, route changes, scene load, and scene save; render a lightweight banner in `web/src/js/scenes.js` and the shell.
+Use the same core comparison data as Item 2, but memoise a boolean dirty flag in `web/src/modules/pages/state.js`. Update it after `api.put*`, route changes, scene load, and scene save; render a lightweight banner in `web/src/modules/pages/scenes.js` and the shell.
 
 ---
 
@@ -290,7 +290,7 @@ The current flow only supports "save current" or "rename existing". That is clum
 It is convenience, not platform safety. If time is tight, ship the trust/safety work first.
 
 ##### Implementation notes
-Expose a `POST /api/v1/scenes/:id/clone` endpoint or reuse existing save/get endpoints server-side. In `web/src/js/scenes.js`, add a modal that pre-fills the source name and optional description.
+Expose a `POST /api/v1/scenes/:id/clone` endpoint or reuse existing save/get endpoints server-side. In `web/src/modules/pages/scenes.js`, add a modal that pre-fills the source name and optional description.
 
 ---
 
@@ -312,7 +312,7 @@ This is one of the highest-value workflow upgrades for real venues. A full recal
 Selective recall changes how scenes are understood and tested. It needs excellent preview and very clear UX to avoid "I thought this scene would change X but not Y" incidents.
 
 ##### Implementation notes
-Extend `Scene::apply_to_config()` in `crates/patchbox/src/scenes.rs` to accept a scope object instead of always applying the full snapshot. Feed the same scope object from a new recall modal in `web/src/js/scenes.js`, backed by the richer diff from Item 2.
+Extend `Scene::apply_to_config()` in `crates/patchbox/src/scenes.rs` to accept a scope object instead of always applying the full snapshot. Feed the same scope object from a new recall modal in `web/src/modules/pages/scenes.js`, backed by the richer diff from Item 2.
 
 ---
 
@@ -415,7 +415,7 @@ The backend already exposes `/api/v1/zones` CRUD, but the current UI mostly trea
 Changing zone membership is more dangerous than muting a zone. Without stable IDs and clear confirmation UX, it becomes a source of routing mistakes.
 
 ##### Implementation notes
-Use a modal or side drawer in `web/src/js/zones.js` backed by `postZone()` and `putZoneResource()`. Let users assign `tx_ids` by selecting outputs from `st.outputList()` rather than typing IDs manually.
+Use a modal or side drawer in `web/src/modules/pages/zones.js` backed by `postZone()` and `putZoneResource()`. Let users assign `tx_ids` by selecting outputs from `st.outputList()` rather than typing IDs manually.
 
 ---
 
@@ -459,7 +459,7 @@ Zone control without level visibility is incomplete. The current drilldown is us
 Extra metering in the zone grid adds rendering load. Keep the display compact and reuse the existing metering pipeline instead of inventing a second one.
 
 ##### Implementation notes
-Aggregate `tx_*` meter data in `web/src/js/zones.js` and reuse existing meter rendering helpers from `mixer.js`/`metering.js`. Show peak hold and clip state only, not full mixer-style strips, in the grid cards.
+Aggregate `tx_*` meter data in `web/src/modules/pages/zones.js` and reuse existing meter rendering helpers from `mixer.js`/`metering.js`. Show peak hold and clip state only, not full mixer-style strips, in the grid cards.
 
 ---
 
@@ -597,7 +597,7 @@ Share the PTP/Dante status helper between `get_health()` and `get_system()` so t
 **Prerequisites:** BUG-05
 
 ##### What is it?
-Rebuild `web/src/js/dante.js` around cards for Dante link, PTP, device discovery, active routes, engine health, and recent events. The tab should answer "is the network side healthy?" without forcing users into System plus SSH.
+Rebuild `web/src/modules/pages/dante.js` around cards for Dante link, PTP, device discovery, active routes, engine health, and recent events. The tab should answer "is the network side healthy?" without forcing users into System plus SSH.
 
 ##### Why implement?
 Right now the Dante tab is effectively a pretty table of the same fields already shown elsewhere. That is the clearest placeholder in the target scope.
@@ -768,7 +768,7 @@ Start with read-only trace output on click from the Dante dashboard or zone card
 Collapse the duplicate config sections into a clearer workflow: export current, inspect backups, upload candidate, validate candidate, restore candidate, restart/apply. Use one consistent vocabulary and one place for warnings.
 
 ##### Why implement?
-`web/src/js/system.js` currently exposes overlapping controls for export/import and backup/restore. It is functional, but the flow is harder to understand than it needs to be.
+`web/src/modules/pages/system.js` currently exposes overlapping controls for export/import and backup/restore. It is functional, but the flow is harder to understand than it needs to be.
 
 ##### Why NOT implement (or defer)?
 This is mostly UX cleanup. If time is tight, it can wait behind trust and correctness bugs.
@@ -862,7 +862,7 @@ A bare list of timestamped `.toml` names is better than nothing, but it does not
 It is an operator-quality improvement rather than a correctness fix. If the restore path itself still needs hardening, do that first.
 
 ##### Implementation notes
-Persist metadata alongside the backup or embed it in a small manifest. Extend `get_config_backups()` to return structured data and render notes in `web/src/js/system.js`.
+Persist metadata alongside the backup or embed it in a small manifest. Extend `get_config_backups()` to return structured data and render notes in `web/src/modules/pages/system.js`.
 
 ---
 
@@ -966,7 +966,7 @@ Stop returning password hashes, JWT secrets, or any future secret-bearing fields
 Some operators may expect exact round-trip backups. If so, keep a clearly labelled full-fidelity path behind extra confirmation and admin-only scope.
 
 ##### Implementation notes
-Create a redacted export struct instead of serialising `PatchboxConfig` directly. Update `web/src/js/system.js` labels so "Download backup" clearly means a safe operational export unless an explicit full-export mode is chosen.
+Create a redacted export struct instead of serialising `PatchboxConfig` directly. Update `web/src/modules/pages/system.js` labels so "Download backup" clearly means a safe operational export unless an explicit full-export mode is chosen.
 
 ---
 
@@ -1010,7 +1010,7 @@ The audits found mixed token handling patterns in the frontend history. That is 
 If the frontend architecture is about to be heavily consolidated, you may prefer to fix this alongside that larger cleanup. Still, the change itself is small and high leverage.
 
 ##### Implementation notes
-Keep token access centralised in `web/src/js/api.js` and remove any parallel storage usage from older codepaths. Decide explicitly whether sessions should survive a browser restart on the deployment target.
+Keep token access centralised in `web/src/modules/api.js` and remove any parallel storage usage from older codepaths. Decide explicitly whether sessions should survive a browser restart on the deployment target.
 
 ---
 
@@ -1176,7 +1176,7 @@ The API already exposes `in_memory: true` in error responses. The UI mostly trea
 Too much alarm UI can become noisy. Restrict it to real persist failures, not ordinary validation errors.
 
 ##### Implementation notes
-Centralise error handling in `web/src/js/api.js` or a thin wrapper so tabs do not each invent their own treatment. Add a shell-level banner that can include a "download diagnostics" shortcut once Item 27 exists.
+Centralise error handling in `web/src/modules/api.js` or a thin wrapper so tabs do not each invent their own treatment. Add a shell-level banner that can include a "download diagnostics" shortcut once Item 27 exists.
 
 ---
 
@@ -1198,7 +1198,7 @@ There is already an offline banner, but the target tabs still rely heavily on im
 It touches shared frontend plumbing and can ripple into several tabs. Still, it is well worth it because the work is cross-cutting and highly visible.
 
 ##### Implementation notes
-Enhance `web/src/js/ws.js` and `main.js` so reconnect triggers a targeted refresh of scenes/zones/system state and a user-visible banner. Avoid full-page reload unless the state model truly cannot be recovered.
+Enhance `web/src/modules/ws.js` and `main.js` so reconnect triggers a targeted refresh of scenes/zones/system state and a user-visible banner. Avoid full-page reload unless the state model truly cannot be recovered.
 
 ---
 

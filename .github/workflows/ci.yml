@@ -43,6 +43,4 @@ jobs:
         with:
           node-version: '20'
       - name: eslint
-        # continue-on-error while codebase is pre-lint; flip off once clean.
-        continue-on-error: true
-        run: npx --yes eslint@9 web/src/js --no-eslintrc --config web/.eslintrc.json || true
+        run: npx --yes eslint@9 web/src/modules --no-eslintrc --config web/.eslintrc.json

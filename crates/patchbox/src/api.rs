@@ -82,6 +82,7 @@ pub mod routes;
 use routes::buses::*;
 use routes::inputs::*;
 use routes::outputs::*;
+use routes::presets::*;
 use routes::routing::*;
 use routes::scenes::*;
 use routes::system::*;
@@ -318,6 +319,14 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                     for (i, &v) in meters.tx_clip_count.iter().enumerate() {
                         clip_map.insert(format!("tx_{}", i), serde_json::json!(v));
                     }
+                    let mut lufs_m_map = serde_json::Map::new();
+                    let mut lufs_i_map = serde_json::Map::new();
+                    for (i, &v) in meters.lufs_momentary.iter().enumerate() {
+                        lufs_m_map.insert(format!("tx_{}", i), serde_json::json!(v));
+                    }
+                    for (i, &v) in meters.lufs_integrated.iter().enumerate() {
+                        lufs_i_map.insert(format!("tx_{}", i), serde_json::json!(v));
+                    }
                     drop(filter);
                     drop(meters);
 
@@ -328,7 +337,9 @@ async fn handle_ws(socket: WebSocket, s: AppState) {
                         "gr": gr_map,
                         "bus": bus_map,
                         "peak": peak_map,
-                        "clip": clip_map
+                        "clip": clip_map,
+                        "lufs_m": lufs_m_map,
+                        "lufs_i": lufs_i_map
                     });
                     if sender.send(Message::Text(msg.to_string())).await.is_err() {
                         break;
@@ -578,6 +589,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/routes/trace", get(get_route_trace))
         .route("/api/v1/routes/:id", delete(delete_route))
         .route("/api/v1/bulk", post(post_bulk_mutation))
+        .route("/api/v1/batch-update", post(post_batch_update))
+        .route("/api/v1/system/log-level", put(put_log_level))
         .route("/api/v1/metering", get(get_metering))
         .route("/api/v1/system", get(get_system))
         .route("/api/v1/system/audit", get(get_audit_log))
@@ -698,12 +711,21 @@ pub fn router(state: AppState) -> Router {
             get(get_output_deq).put(put_output_deq),
         )
         .route(
+            "/api/v1/outputs/:ch/dsp/ducker",
+            get(get_output_ducker).put(put_output_ducker),
+        )
+        .route("/api/v1/outputs/:ch/dsp/lufs", get(get_output_lufs))
+        .route(
             "/api/v1/solo",
             get(get_solo).put(put_solo).delete(delete_solo),
         )
         .route("/api/v1/solo/toggle/:rx", post(toggle_solo))
         .route("/api/v1/system/monitor", get(get_monitor).put(put_monitor))
         .route("/api/v1/system/audio-devices", get(list_audio_devices))
+        // Preset library
+        .route("/api/v1/presets", get(list_presets))
+        .route("/api/v1/presets/:name", post(save_preset).delete(delete_preset))
+        .route("/api/v1/presets/:name/recall", post(recall_preset))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth_api::require_auth,

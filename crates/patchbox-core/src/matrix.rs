@@ -8,11 +8,13 @@ use crate::dsp::automixer::AutomixerProcessor;
 use crate::dsp::compressor::Compressor;
 use crate::dsp::delay::DelayLine;
 use crate::dsp::deq::DynamicEq;
+use crate::dsp::ducker::Ducker;
 use crate::dsp::eq::ParametricEq;
 use crate::dsp::feedback::FeedbackSuppressor;
 use crate::dsp::filters::{ButterworthFilter, FilterMode};
 use crate::dsp::gate::GateExpander;
 use crate::dsp::limiter::BrickWallLimiter;
+use crate::dsp::lufs::Lufs;
 
 /// Convert dB gain to linear amplitude multiplier
 #[inline]
@@ -85,6 +87,10 @@ pub struct PerOutputDsp {
     /// Xorshift32 RNG state for TPDF dither. Never zero.
     dither_rng: u32,
     pub deq: DynamicEq,
+    pub ducker: Ducker,
+    /// Resolved sidechain input channel index (set during sync from sidechain_source_id).
+    pub ducker_sidechain_ch: Option<usize>,
+    pub lufs: Lufs,
 }
 
 impl PerOutputDsp {
@@ -102,6 +108,9 @@ impl PerOutputDsp {
             dither_amp: 0.0,
             dither_rng: 0xDEAD_BEEF,
             deq: DynamicEq::new(),
+            ducker: Ducker::new(Default::default(), 48000.0),
+            ducker_sidechain_ch: None,
+            lufs: Lufs::new(48000, 1),
         }
     }
 
@@ -122,6 +131,8 @@ impl PerOutputDsp {
             0.0
         };
         self.deq.sync(&cfg.deq, sample_rate);
+        self.ducker.update_config(cfg.ducker.clone(), sample_rate);
+        self.ducker_sidechain_ch = cfg.ducker.sidechain_source_id.as_deref().and_then(parse_channel_id);
     }
 
     /// Legacy sync from separate EQ/limiter configs. Kept for backward compat.
@@ -133,8 +144,9 @@ impl PerOutputDsp {
     /// Process one block through the full DSP chain. RT-safe: no allocations.
     ///
     /// `muted` — if true, zeroes the buffer and returns immediately.
+    /// `sidechain_rms` — linear RMS of the sidechain input (0 = no sidechain).
     #[inline]
-    pub fn process_block(&mut self, buf: &mut [f32], muted: bool) {
+    pub fn process_block(&mut self, buf: &mut [f32], muted: bool, sidechain_rms: f32) {
         if muted {
             for s in buf.iter_mut() {
                 *s = 0.0;
@@ -165,6 +177,7 @@ impl PerOutputDsp {
         } else {
             20.0 * min_gr.log10()
         };
+        self.ducker.process_block(buf, sidechain_rms);
         self.delay.process_block(buf);
 
         // TPDF dither: two independent white noise sources minus each other = triangular PDF
@@ -183,6 +196,8 @@ impl PerOutputDsp {
                 *s += (r1 - r2) * amp;
             }
         }
+
+        self.lufs.process_block(buf);
     }
 }
 
@@ -911,9 +926,21 @@ impl MatrixProcessor {
                 }
             }
 
+            // Compute sidechain RMS for ducker (read ducker_sidechain_ch before mutable borrow).
+            let sidechain_ch = self.output_dsp.get(tx_idx).and_then(|d| d.ducker_sidechain_ch);
+            let sidechain_rms = sidechain_ch
+                .filter(|&ch| ch < MAX_INPUT_CHANNELS)
+                .map(|ch| {
+                    let buf = &self.scratch[ch][..nf];
+                    if buf.is_empty() { 0.0 } else {
+                        (buf.iter().map(|&s| s * s).sum::<f32>() / buf.len() as f32).sqrt()
+                    }
+                })
+                .unwrap_or(0.0);
+
             if let Some(d) = self.output_dsp.get_mut(tx_idx) {
                 // sync_output_dsp called from MatrixProcessor::sync(); just process
-                d.process_block(&mut output[..nf], false);
+                d.process_block(&mut output[..nf], false, sidechain_rms);
             }
 
             // Snapshot TX output for AEC reference on the next block
@@ -977,7 +1004,7 @@ pub fn process(
         // Apply per-output DSP chain: Gain → HPF → LPF → EQ → Compressor → Limiter → Delay
         // NOTE: sync_output_dsp must be called separately before this function (not in hot path).
         if let Some(d) = dsp.get_mut(tx_idx) {
-            d.process_block(&mut output[..nframes], false);
+            d.process_block(&mut output[..nframes], false, 0.0);
         }
     }
 }

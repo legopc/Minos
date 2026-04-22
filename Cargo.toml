@@ -4,5 +4,6 @@ members = [
     "crates/patchbox-core",
     "crates/patchbox-dante",
     "crates/patchbox",
+    "crates/patchbox-control-surface",
 ]
 

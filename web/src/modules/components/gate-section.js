@@ -1,14 +1,23 @@
 /**
- * GateSection — noise gate/expander controls
- * 
+ * GateSection — noise gate / expander with SVG transfer curve
+ *
  * Usage:
  *   import { GateSection } from '/modules/components/gate-section.js';
- *   const gs = new GateSection(containerEl, channelIndex);  // input-only
- *   gs.setState({ enabled: false, threshold_db: -40, ... });
+ *   const gs = new GateSection(containerEl, channelIndex, 'input');
+ *   gs.setState({ enabled: false, threshold_db: -40, ratio: 4,
+ *                 attack_ms: 5, hold_ms: 50, release_ms: 100, range_db: 80 });
  *   gs.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §7):
+ *   1. Import DynamicsCanvas from dsp-canvas.js
+ *   2. Add dsp-dynamics-layout: 200×200 SVG left, params right
+ *   3. Call DynamicsCanvas.buildGrid() + drawGateCurve() on init and param change
+ *   4. Wire threshold drag via startThresholdDrag
+ *   5. Fix stepper pattern — use delegated click listener
  */
 
 import { inputDsp, apiErrorMessage } from '/modules/api.js';
+// TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class GateSection {
   constructor(containerEl, ch) {
@@ -39,7 +48,7 @@ export class GateSection {
         <div class="section-body">
           <div class="filter-row">
             <label class="filter-label">Enable</label>
-            <input type="checkbox" class="toggle-cb" id="gate-enable-${this.ch}">
+            <input type="checkbox" class="toggle-cb">
           </div>
           <div class="filter-row">
             <label class="filter-label">Thr</label>

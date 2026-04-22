@@ -1,0 +1,54 @@
+active = "legacy"
+
+[scenes.legacy]
+schema_version = 1
+name = "legacy"
+description = "legacy scene"
+is_favourite = false
+matrix = [
+    [
+    true,
+    false,
+],
+    [
+    false,
+    true,
+],
+]
+input_gain_db = [
+    1.5,
+    -2.5,
+]
+output_gain_db = [
+    -3.0,
+    4.5,
+]
+matrix_gain_db = [
+    [
+    0.0,
+    -6.0,
+],
+    [
+    0.0,
+    0.0,
+],
+]
+input_dsp_gain_db = [
+    1.5,
+    -2.5,
+]
+output_dsp_gain_db = [
+    -3.0,
+    4.5,
+]
+output_muted = [
+    true,
+    false,
+]
+input_dsp = []
+output_dsp = []
+internal_buses = []
+vca_groups = []
+stereo_links = []
+output_stereo_links = []
+automixer_groups = []

@@ -137,12 +137,12 @@ Derived from gap analysis; scaffolded in repo. See `files/S7_ROADMAP.md` in sess
 
 | Item | Status | Description |
 |---|---|---|
-| Split api.rs | ⬜ | 3049 lines → `api/routes/{inputs,outputs,buses,zones,scenes,routing,system,dsp}.rs`. |
-| Shared strip component | ⬜ | Kill mixer.js ↔ matrix.js duplication via `web/src/js/components/strip.js`. |
+| Split api.rs | ✅ | `api/routes/{inputs,outputs,buses,zones,scenes,routing,system}.rs` done; `dsp.rs` still a stub — handlers remain in api.rs (762 lines). |
+| Shared strip component | ⬜ | V3: use `/modules/components/channel-strip.js`. |
 | Rename api.patch → api.put | ⬜ | Helper actually sends PUT. |
 | JSDoc API payload types | ⬜ | Typedefs for state + API shapes. |
-| DSP block registry | ⬜ | Single source of truth in `web/src/js/dsp/registry.js`. |
-| Codegen JS defaults from Rust | ⬜ | `ts-rs` or build-script emit. |
+| DSP block registry | ⬜ | Single source of truth in `web/src/modules/components/`. |
+| Codegen JS defaults from Rust | ✅ | `gen-dsp-defaults.rs` emits `web/src/generated/dsp-defaults.json`; CI codegen-check wired. Consumer import in DSP sections still missing. |
 | Collapse input_/output_dsp_to_value | ⬜ | 90% identical — trait/macro. |
 | Uniform DSP JSON envelope | ⬜ | Replace ad-hoc `params:` wrapper. |
 | Fix 7 rustc warnings | ⬜ | No blanket allow. |

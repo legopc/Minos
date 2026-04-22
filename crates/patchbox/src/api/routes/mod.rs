@@ -18,6 +18,7 @@ pub mod buses;
 pub mod dsp;
 pub mod inputs;
 pub mod outputs;
+pub mod presets;
 pub mod routing;
 pub mod scenes;
 pub mod system;

@@ -194,6 +194,7 @@ impl Scene {
         }
     }
 
+    #[allow(dead_code)]
     pub fn apply_to_config(&self, config: &mut PatchboxConfig) {
         self.apply_to_config_scoped(config, &RecallScope::default());
     }

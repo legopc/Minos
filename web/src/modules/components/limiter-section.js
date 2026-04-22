@@ -1,14 +1,23 @@
 /**
- * LimiterSection — output brick-wall limiter
- * 
+ * LimiterSection — brick-wall output limiter with SVG transfer curve
+ *
  * Usage:
  *   import { LimiterSection } from '/modules/components/limiter-section.js';
- *   const ls = new LimiterSection(containerEl, channelIndex);  // output-only
- *   ls.setState({ enabled: false, threshold_db: -3, release_ms: 50 });
+ *   const ls = new LimiterSection(containerEl, channelIndex, 'output');
+ *   ls.setState({ enabled: false, threshold_db: -3, lookahead_ms: 1, release_ms: 50 });
  *   ls.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §8):
+ *   1. Import DynamicsCanvas from dsp-canvas.js
+ *   2. Add dsp-dynamics-layout: 200×160 SVG left, params right
+ *   3. Call DynamicsCanvas.buildGrid() + drawLimiterCurve() on init and param change
+ *   4. Wire threshold drag via startThresholdDrag
+ *   5. Add missing lookahead_ms param (not in current scaffold)
+ *   6. Fix stepper pattern — use delegated click listener
  */
 
 import { outputDsp, apiErrorMessage } from '/modules/api.js';
+// TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class LimiterSection {
   constructor(containerEl, ch) {
@@ -35,7 +44,7 @@ export class LimiterSection {
         <div class="section-body">
           <div class="filter-row">
             <label class="filter-label">Enable</label>
-            <input type="checkbox" class="toggle-cb" id="limiter-enable-${this.ch}">
+            <input type="checkbox" class="toggle-cb">
           </div>
           <div class="filter-row">
             <label class="filter-label">Thr</label>

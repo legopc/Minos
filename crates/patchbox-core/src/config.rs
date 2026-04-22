@@ -5,6 +5,10 @@ use utoipa::ToSchema;
 
 use crate::gain;
 
+/// The current supported config schema version.
+/// Configs with a higher schema_version are rejected at load time.
+pub const CURRENT_CONFIG_SCHEMA_VERSION: u32 = 1;
+
 /// EQ band filter type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, Default)]
 pub enum EqBandType {
@@ -641,6 +645,9 @@ pub struct OutputChannelDsp {
     /// Dynamic EQ — up to 4 bands.
     #[serde(default)]
     pub deq: DynamicEqConfig,
+    /// Sidechain ducker.
+    #[serde(default)]
+    pub ducker: DuckerConfig,
 }
 
 impl Default for OutputChannelDsp {
@@ -658,6 +665,7 @@ impl Default for OutputChannelDsp {
             delay: DelayConfig::default(),
             dither_bits: 0,
             deq: DynamicEqConfig::default(),
+            ducker: DuckerConfig::default(),
         }
     }
 }
@@ -680,6 +688,7 @@ impl DspChain for OutputChannelDsp {
                 "dither_bits": self.dither_bits,
             })},
             "deq": {"kind": "deq", "version": 1, "enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "params": {"enabled": self.deq.enabled, "bypassed": self.deq.bypassed, "bands": &self.deq.bands}},
+            "duck": {"kind": "duck", "version": 1, "enabled": self.ducker.enabled, "bypassed": self.ducker.bypassed, "params": &self.ducker},
         })
     }
 }
@@ -704,6 +713,52 @@ impl Default for LimiterConfig {
             attack_ms: 1.0,
             release_ms: 100.0,
             enabled: false,
+        }
+    }
+}
+
+/// Sidechain volume ducker — ducks the output when a sidechain source exceeds threshold.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct DuckerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub bypassed: bool,
+    #[serde(default = "DuckerConfig::default_threshold_db")]
+    pub threshold_db: f32,
+    #[serde(default = "DuckerConfig::default_ratio")]
+    pub ratio: f32,
+    #[serde(default = "DuckerConfig::default_attack_ms")]
+    pub attack_ms: f32,
+    #[serde(default = "DuckerConfig::default_release_ms")]
+    pub release_ms: f32,
+    /// Maximum attenuation in dB (negative value, e.g. -30.0).
+    #[serde(default = "DuckerConfig::default_range_db")]
+    pub range_db: f32,
+    /// Input channel ID to follow as sidechain signal.
+    #[serde(default)]
+    pub sidechain_source_id: Option<String>,
+}
+
+impl DuckerConfig {
+    fn default_threshold_db() -> f32 { -20.0 }
+    fn default_ratio() -> f32 { 4.0 }
+    fn default_attack_ms() -> f32 { 10.0 }
+    fn default_release_ms() -> f32 { 150.0 }
+    fn default_range_db() -> f32 { -30.0 }
+}
+
+impl Default for DuckerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bypassed: false,
+            threshold_db: Self::default_threshold_db(),
+            ratio: Self::default_ratio(),
+            attack_ms: Self::default_attack_ms(),
+            release_ms: Self::default_release_ms(),
+            range_db: Self::default_range_db(),
+            sidechain_source_id: None,
         }
     }
 }
@@ -1022,6 +1077,10 @@ pub struct PatchboxConfig {
     /// If non-empty, login checks these before falling back to PAM.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub users: Vec<UserConfig>,
+    /// Schema version for forward/backward compatibility.
+    /// Default: 1. Reject configs with version > CURRENT_CONFIG_SCHEMA_VERSION.
+    #[serde(default = "PatchboxConfig::default_schema_version")]
+    pub schema_version: u32,
 }
 
 impl Default for PatchboxConfig {
@@ -1071,6 +1130,7 @@ impl Default for PatchboxConfig {
             generator_bus_matrix: vec![],
             automixer_groups: vec![],
             users: vec![],
+            schema_version: CURRENT_CONFIG_SCHEMA_VERSION,
         }
     }
 }
@@ -1335,6 +1395,23 @@ impl PatchboxConfig {
             return Err("port must be > 0".into());
         }
         Ok(())
+    }
+
+    fn default_schema_version() -> u32 {
+        1
+    }
+
+    /// Migrate config from an older schema version to the current one.
+    /// Called automatically after deserialization when schema_version < CURRENT_CONFIG_SCHEMA_VERSION.
+    /// Add match arms here as schema evolves.
+    pub fn migrate_config(&mut self) {
+        match self.schema_version {
+            v if v >= CURRENT_CONFIG_SCHEMA_VERSION => {}
+            _ => {
+                // v1 is the first version — nothing to migrate yet.
+                self.schema_version = CURRENT_CONFIG_SCHEMA_VERSION;
+            }
+        }
     }
 
     pub fn apply_crosspoint(

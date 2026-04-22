@@ -6,9 +6,19 @@
  *   const eq = new EqSection(containerEl, channelIndex, 'input');  // type: 'input'|'output'
  *   eq.setState({ enabled: true, bands: [...] });
  *   eq.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §4):
+ *   1. Replace inline biquad math with imports from dsp-canvas.js
+ *   2. Replace SVG curve with FreqCanvas (draggable handles, wider canvas H:200)
+ *   3. Add user-selectable band type <select> per band (DSP_PANELS.md §4 HTML)
+ *   4. Add per-band BYP button — bypass flag preserved in state, gain NOT zeroed
+ *   5. Add BYPASS ALL + RESET ALL footer buttons
+ *   6. Fix stepper pattern: use delegated click on .dsp-section-bd (DSP_PANELS.md §3)
+ *   7. Fix id= if any exist — use this.el.querySelector only
  */
 
 import { inputDsp, outputDsp } from '/modules/api.js';
+// TODO: import { FreqCanvas, computeCurveDb, BAND_COLORS, bandCoeffs, magSquared } from '/modules/components/dsp-canvas.js';
 
 const SAMPLE_RATE = 48000;
 const SVG_W = 600;

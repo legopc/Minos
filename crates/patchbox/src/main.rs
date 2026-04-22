@@ -13,6 +13,7 @@ mod jwt;
 mod morph;
 mod openapi;
 mod pam_auth;
+mod presets;
 mod ptp;
 mod scenes;
 mod state;
@@ -54,6 +55,15 @@ async fn main() {
     let config: PatchboxConfig = if args.config.exists() {
         let s = std::fs::read_to_string(&args.config).expect("read config");
         let mut c: PatchboxConfig = toml::from_str(&s).expect("parse config");
+        if c.schema_version > patchbox_core::config::CURRENT_CONFIG_SCHEMA_VERSION {
+            eprintln!(
+                "Config schema version {} is newer than supported version {}. Please upgrade patchbox.",
+                c.schema_version,
+                patchbox_core::config::CURRENT_CONFIG_SCHEMA_VERSION
+            );
+            std::process::exit(1);
+        }
+        c.migrate_config();
         c.normalize();
         // After normalize(), validate before use
         if let Err(e) = c.validate() {
@@ -82,7 +92,8 @@ async fn main() {
         "dante-patchbox starting"
     );
 
-    let state = AppState::new(config.clone(), args.config.clone());
+    let mut state = AppState::new(config.clone(), args.config.clone());
+    state.audit_log_path = Some(std::path::PathBuf::from("/var/log/patchbox-audit.log"));
 
     // Startup validation: verify config is writable
     state
@@ -135,6 +146,7 @@ async fn main() {
                     continue;
                 }
             };
+            new_cfg.migrate_config();
             new_cfg.normalize();
             if let Err(e) = new_cfg.validate() {
                 tracing::error!(error = %e, "SIGUSR1 reload: config validation failed — not applied");

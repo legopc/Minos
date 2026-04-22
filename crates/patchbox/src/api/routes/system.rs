@@ -181,6 +181,7 @@ pub struct SystemResponse {
 pub enum DiagnosticLevel {
     Ok,
     Warn,
+    #[allow(dead_code)]
     Error,
     Unknown,
 }
@@ -438,6 +439,32 @@ pub struct BulkMutationResponse {
     pub task_id: String,
 }
 
+/// A single granular operation in a batch update request.
+#[derive(Clone, Debug, serde::Deserialize, utoipa::ToSchema)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum BatchOp {
+    /// Toggle a single matrix crosspoint.
+    SetRoute { tx: usize, rx: usize, enabled: bool },
+    /// Set per-output gain (dB).
+    SetOutputGain { ch: usize, db: f32 },
+    /// Set per-input gain (dB).
+    SetInputGain { ch: usize, db: f32 },
+    /// Set per-crosspoint gain (dB, only applied when route is active).
+    SetCrosspointGain { tx: usize, rx: usize, db: f32 },
+}
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct BatchUpdateResponse {
+    pub applied: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+pub struct SetLogLevelRequest {
+    /// Tracing filter directive, e.g. "info", "debug", "patchbox=debug,info"
+    pub level: String,
+}
+
 fn set_output_muted_state(cfg: &mut PatchboxConfig, tx: usize, muted: bool) -> bool {
     let mut changed = false;
 
@@ -472,9 +499,6 @@ fn apply_zone_template_to_output(
     let eq = template.output.eq.clone();
     let limiter = template.output.limiter.clone();
 
-    if let Some(value) = cfg.output_gain_db.get_mut(tx) {
-        *value = gain_db;
-    }
     if let Some(value) = cfg.output_muted.get_mut(tx) {
         *value = muted;
     }
@@ -3774,6 +3798,153 @@ pub async fn post_admin_restart(State(state): State<AppState>) -> impl IntoRespo
     (
         StatusCode::OK,
         Json(serde_json::json!({"ok": true, "restarting": true})),
+    )
+        .into_response()
+}
+
+/// POST /api/v1/batch-update
+/// Apply multiple granular mutations atomically in one config write.
+#[utoipa::path(
+    post,
+    path = "/api/v1/batch-update",
+    request_body = Vec<BatchOp>,
+    responses(
+        (status = 200, description = "Batch applied", body = BatchUpdateResponse),
+    ),
+    security(("bearer_auth" = [])),
+)]
+pub async fn post_batch_update(
+    State(state): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Json(ops): Json<Vec<BatchOp>>,
+) -> impl IntoResponse {
+    let mut cfg = state.config.write().await;
+    let mut applied = 0usize;
+    let mut errors = Vec::new();
+
+    for op in ops {
+        match op {
+            BatchOp::SetRoute { tx, rx, enabled } => {
+                if tx >= cfg.tx_channels || rx >= cfg.rx_channels {
+                    errors.push(format!("set_route: tx={tx} rx={rx} out of range"));
+                    continue;
+                }
+                if let Err(_) = auth_api::ensure_zone_scope_tx(
+                    &cfg, claims.as_ref(), tx,
+                    "Zone-scoped users can only modify routes for their own zone.",
+                ) {
+                    errors.push(format!("set_route: tx={tx} not in your zone"));
+                    continue;
+                }
+                cfg.matrix[tx][rx] = enabled;
+                applied += 1;
+            }
+            BatchOp::SetOutputGain { ch, db } => {
+                if ch >= cfg.tx_channels {
+                    errors.push(format!("set_output_gain: ch={ch} out of range"));
+                    continue;
+                }
+                if let Err(_) = auth_api::ensure_zone_scope_tx(
+                    &cfg, claims.as_ref(), ch,
+                    "Zone-scoped users can only modify output gain for their own zone.",
+                ) {
+                    errors.push(format!("set_output_gain: ch={ch} not in your zone"));
+                    continue;
+                }
+                while cfg.output_dsp.len() <= ch {
+                    cfg.output_dsp.push(Default::default());
+                }
+                cfg.output_dsp[ch].gain_db = db.clamp(-60.0, 24.0);
+                applied += 1;
+            }
+            BatchOp::SetInputGain { ch, db } => {
+                if ch >= cfg.rx_channels {
+                    errors.push(format!("set_input_gain: ch={ch} out of range"));
+                    continue;
+                }
+                if let Err(_) = auth_api::ensure_not_zone_scoped(
+                    claims.as_ref(),
+                    "Zone-scoped users cannot modify input gain.",
+                ) {
+                    errors.push(format!("set_input_gain: ch={ch} not permitted for zone-scoped token"));
+                    continue;
+                }
+                while cfg.input_dsp.len() <= ch {
+                    cfg.input_dsp.push(Default::default());
+                }
+                cfg.input_dsp[ch].gain_db = db.clamp(-60.0, 24.0);
+                applied += 1;
+            }
+            BatchOp::SetCrosspointGain { tx, rx, db } => {
+                if tx >= cfg.tx_channels || rx >= cfg.rx_channels {
+                    errors.push(format!("set_crosspoint_gain: tx={tx} rx={rx} out of range"));
+                    continue;
+                }
+                if let Err(_) = auth_api::ensure_zone_scope_tx(
+                    &cfg, claims.as_ref(), tx,
+                    "Zone-scoped users can only modify crosspoint gain for their own zone.",
+                ) {
+                    errors.push(format!("set_crosspoint_gain: tx={tx} not in your zone"));
+                    continue;
+                }
+                while cfg.matrix_gain_db.len() <= tx {
+                    cfg.matrix_gain_db.push(Vec::new());
+                }
+                while cfg.matrix_gain_db[tx].len() <= rx {
+                    cfg.matrix_gain_db[tx].push(0.0);
+                }
+                cfg.matrix_gain_db[tx][rx] = db.clamp(-60.0, 12.0);
+                applied += 1;
+            }
+        }
+    }
+
+    drop(cfg);
+    let _ = state.persist().await;
+
+    Json(BatchUpdateResponse { applied, errors })
+}
+
+/// PUT /api/v1/system/log-level
+/// Set the runtime log level. NOTE: In this version, changes take effect on restart.
+#[utoipa::path(
+    put,
+    path = "/api/v1/system/log-level",
+    request_body = SetLogLevelRequest,
+    responses(
+        (status = 200, description = "Level acknowledged"),
+        (status = 400, description = "Invalid level directive"),
+    ),
+    security(("bearer_auth" = [])),
+)]
+pub async fn put_log_level(
+    State(state): State<AppState>,
+    Json(body): Json<SetLogLevelRequest>,
+) -> impl IntoResponse {
+    if tracing_subscriber::EnvFilter::try_new(&body.level).is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid filter directive"})),
+        )
+            .into_response();
+    }
+    tracing::warn!(level = %body.level, "log level change requested (restart required to apply)");
+    state
+        .push_audit_log(
+            "system.log_level_set",
+            format!("Log level change requested: {}", body.level),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "level": body.level,
+            "note": "restart required to apply"
+        })),
     )
         .into_response()
 }

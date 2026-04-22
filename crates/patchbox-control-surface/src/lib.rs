@@ -1,5 +1,6 @@
-// S7 s7-feat-midi-osc — crate scaffold.
-// Not yet in workspace — add to root Cargo.toml [workspace] when ready.
+// S7 s7-feat-midi-osc — crate scaffold (future sprint).
+// In workspace but intentionally empty — implementation starts in S8.
+// Add midir = "0.10", rosc = "0.10", tokio, serde deps when ready.
 
 pub mod mapping;
 pub mod midi;

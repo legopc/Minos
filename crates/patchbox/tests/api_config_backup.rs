@@ -359,6 +359,18 @@ async fn restore_post_creates_backup_metadata_and_returns_it_in_list() {
 }
 
 #[tokio::test]
+async fn backup_schema_version_present() {
+    let (app, _state) = common::test_app_with_state();
+    let tok = common::admin_token();
+    let (status, _headers, bytes) = get_backup_raw(&app, Some(&tok)).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = std::str::from_utf8(&bytes).expect("body should be UTF-8");
+    let backup: toml::Value = toml::from_str(text).expect("response should be valid TOML");
+    let version = backup["schema_version"].as_integer().unwrap_or(0);
+    assert_eq!(version, 1, "schema_version should be 1 in backup");
+}
+
+#[tokio::test]
 async fn backup_list_keeps_legacy_backups_without_metadata() {
     let (app, state) = common::test_app_with_state();
     let tok = common::login_token(&app);

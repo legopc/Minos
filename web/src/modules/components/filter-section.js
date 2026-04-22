@@ -1,14 +1,23 @@
 /**
- * FilterSection — collapsible HPF/LPF controls
- * 
+ * FilterSection — HPF / LPF controls with SVG Butterworth response curve
+ *
  * Usage:
  *   import { FilterSection } from '/modules/components/filter-section.js';
- *   const fs = new FilterSection(containerEl, channelIndex, 'input');  // type: 'input'|'output'
- *   fs.setState({ hpf: { enabled: false, freq_hz: 80 }, lpf: { enabled: false, freq_hz: 18000 } });
- *   // Call fs.destroy() to clean up
+ *   const fs = new FilterSection(containerEl, channelIndex, 'input');
+ *   fs.setState({ hpf: { enabled: false, freq_hz: 80, slope_db_oct: 12 },
+ *                 lpf: { enabled: false, freq_hz: 18000, slope_db_oct: 12 } });
+ *   fs.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §5):
+ *   1. Import FilterCanvas from dsp-canvas.js
+ *   2. Add dsp-filter-svg, call FilterCanvas.buildGrid() + updateHpf/Lpf
+ *   3. Wire horizontal drag via startHpfDrag / startLpfDrag
+ *   4. Add slope_db_oct <select> per filter (6/12/18/24 dB/oct)
+ *   5. Fix stepper pattern — use delegated click listener
  */
 
 import { inputDsp, outputDsp } from '/modules/api.js';
+// TODO: import { FilterCanvas } from '/modules/components/dsp-canvas.js';
 
 export class FilterSection {
   constructor(containerEl, channelIndex, type) {

@@ -26,6 +26,12 @@ pub struct MeterState {
     /// Deprecated: kept for backward compat, same as tx_gr_db
     #[deprecated = "use tx_gr_db instead"]
     pub gr_db: Vec<f32>,
+    /// Per-TX LUFS momentary (EBU R128 M, dB LUFS)
+    pub lufs_momentary: Vec<f32>,
+    /// Per-TX LUFS short-term (EBU R128 S, dB LUFS)
+    pub lufs_short_term: Vec<f32>,
+    /// Per-TX LUFS integrated (EBU R128 I, dB LUFS)
+    pub lufs_integrated: Vec<f32>,
 }
 
 impl MeterState {
@@ -43,6 +49,9 @@ impl MeterState {
             tx_clip_count: vec![0; tx],
             #[allow(deprecated)]
             gr_db: vec![0.0; tx],
+            lufs_momentary: vec![-144.0; tx],
+            lufs_short_term: vec![-144.0; tx],
+            lufs_integrated: vec![-144.0; tx],
         }
     }
 }

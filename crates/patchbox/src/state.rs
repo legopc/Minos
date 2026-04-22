@@ -1,5 +1,6 @@
 use crate::ab_compare::AbCompareState;
 use crate::jwt;
+use crate::presets::PresetLibrary;
 use crate::scenes::SceneStore;
 use patchbox_core::config::PatchboxConfig;
 pub use patchbox_core::meters::MeterState;
@@ -184,6 +185,8 @@ pub struct AppState {
     pub meters: Arc<RwLock<MeterState>>,
     pub scenes: Arc<RwLock<SceneStore>>,
     pub scenes_path: PathBuf,
+    pub presets: Arc<RwLock<PresetLibrary>>,
+    pub presets_path: PathBuf,
     /// JWT secret — regenerated on every server restart
     pub jwt_secret: Arc<RwLock<Vec<u8>>>,
     /// Set to true in main.rs after DanteDevice::start_with_state() succeeds
@@ -216,11 +219,28 @@ pub struct AppState {
     pub morph_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// Disable process exit for restart-style API calls in tests.
     pub exit_on_restart: bool,
+    /// Optional path for persistent audit log. Entries with category "audit" are appended here.
+    pub audit_log_path: Option<PathBuf>,
 }
 
 impl AppState {
     pub async fn push_event_log(&self, entry: EventLogEntry) {
         const MAX_EVENTS: usize = 200;
+        // Append audit entries to file before acquiring the in-memory lock.
+        if entry.category == "audit" {
+            if let Some(path) = &self.audit_log_path {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    if let Ok(line) = serde_json::to_string(&entry) {
+                        let _ = writeln!(f, "{}", line);
+                    }
+                }
+            }
+        }
         let mut log = self.event_log.write().await;
         log.push_back(entry);
         while log.len() > MAX_EVENTS {
@@ -252,6 +272,8 @@ impl AppState {
     pub fn new(config: PatchboxConfig, config_path: PathBuf) -> Self {
         let scenes_path = config_path.with_extension("scenes.toml");
         let scenes = SceneStore::load(&scenes_path);
+        let presets_path = config_path.with_extension("presets.toml");
+        let presets = PresetLibrary::load_from_file(&presets_path).unwrap_or_default();
         let meters = MeterState::new(config.rx_channels, config.tx_channels);
         let jwt_secret = jwt::load_or_generate_secret();
         let (ws_tx, _) = broadcast::channel(256);
@@ -262,6 +284,8 @@ impl AppState {
             meters: Arc::new(RwLock::new(meters)),
             scenes: Arc::new(RwLock::new(scenes)),
             scenes_path,
+            presets: Arc::new(RwLock::new(presets)),
+            presets_path,
             jwt_secret: Arc::new(RwLock::new(jwt_secret)),
             dante_connected: Arc::new(AtomicBool::new(false)),
             ptp_history: Arc::new(RwLock::new(VecDeque::new())),
@@ -276,6 +300,7 @@ impl AppState {
             persist_task: Arc::new(Mutex::new(None)),
             morph_task: Arc::new(Mutex::new(None)),
             exit_on_restart: true,
+            audit_log_path: None,
         }
     }
 

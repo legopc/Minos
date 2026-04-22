@@ -1,9 +1,40 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const username = process.env.PATCHBOX_TEST_USERNAME;
 const password = process.env.PATCHBOX_TEST_PASSWORD;
 
-async function loginAndGetToken(request: any, baseURL: string): Promise<string> {
+// Minimal API fixtures — enough for every page to render its structural DOM.
+const MOCK_CONFIG = {
+  sources: [
+    { id: 'rx_0', name: 'IN 1' },
+    { id: 'rx_1', name: 'IN 2' },
+  ],
+  zones: [
+    { id: 'tx_0', name: 'Zone 1', gain_db: -10, muted: false },
+  ],
+  // matrix[tx][rx] — 1 zone × 2 sources, both unrouted
+  matrix: [[0, 0]],
+};
+
+const MOCK_HEALTH = {
+  dante: { connected: true, device: 'dante-test', nic: 'eth0', rx_channels: 2, tx_channels: 1 },
+  ptp: { synced: true, offset_ns: 100, socket: '/run/ptp.sock' },
+  uptime_secs: 3661,
+  audio: { rx_channels: 2, tx_channels: 1, active_routes: 0 },
+};
+
+async function mockApis(page: Page): Promise<void> {
+  await page.route('**/api/v1/config',       route => route.fulfill({ json: MOCK_CONFIG }));
+  await page.route('**/api/v1/health',       route => route.fulfill({ json: MOCK_HEALTH }));
+  await page.route('**/api/v1/scenes',       route => route.fulfill({ json: { scenes: [] } }));
+  await page.route('**/api/v1/system/logs',  route => route.fulfill({ json: [] }));
+  await page.route('**/api/v1/system/reload',route => route.fulfill({ status: 204, body: '' }));
+  // DSP endpoints used by ChannelStrip.load() — return empty so strips render without error
+  await page.route('**/api/v1/inputs/**',    route => route.fulfill({ json: {} }));
+  await page.route('**/api/v1/outputs/**',   route => route.fulfill({ json: [] }));
+}
+
+async function loginAndGetToken(request: APIRequestContext, baseURL: string): Promise<string> {
   const res = await request.post(new URL('/api/v1/login', baseURL).toString(), {
     data: { username, password },
   });
@@ -13,7 +44,7 @@ async function loginAndGetToken(request: any, baseURL: string): Promise<string> 
   return body.token as string;
 }
 
-test.describe('Minos UI smoke', () => {
+test.describe('Minos V3 UI smoke', () => {
   test.skip(!username || !password, 'Set PATCHBOX_TEST_USERNAME/PATCHBOX_TEST_PASSWORD to run UI smoke tests');
 
   test.beforeAll(async ({ request, baseURL }) => {
@@ -24,496 +55,154 @@ test.describe('Minos UI smoke', () => {
   test.beforeEach(async ({ page }) => {
     const token = process.env.__PATCHBOX_TEST_TOKEN;
     expect(token).toBeTruthy();
-    await page.addInitScript((t) => localStorage.setItem('pb_token', t), token);
-
+    // V3 uses sessionStorage (not localStorage)
+    await page.addInitScript((t) => sessionStorage.setItem('pb_token', t), token);
+    await mockApis(page);
     await page.goto('/');
-    await expect(page.locator('#tabbar')).toBeVisible();
+    await expect(page.locator('#sidebar')).toBeVisible();
     await expect(page.locator('#login-overlay')).toBeHidden();
   });
 
-  test('loads shell + tab bar + docs link', async ({ page }) => {
-    await expect(page).toHaveTitle('dante-patchbox');
+  // ── Shell ──────────────────────────────────────────────────────────────────
 
-    // Skip link is the first focusable element.
+  test('shell: title, sidebar, skip link, all 9 nav items present', async ({ page }) => {
+    await expect(page).toHaveTitle('Minos — Dante Patchbox');
+
+    // Skip link must be the first focusable element
     await page.keyboard.press('Tab');
     await expect(page.locator('#skip-link')).toBeFocused();
 
-    const docs = page.locator('a.tabbar-docs-link');
-    await expect(docs).toHaveAttribute('href', '/docs/');
-    await expect(docs).toHaveAttribute('target', '_blank');
+    const routes = ['dashboard', 'matrix', 'inputs', 'outputs', 'buses', 'zones', 'scenes', 'dante', 'system'];
+    for (const route of routes) {
+      await expect(page.locator(`.nav-item[data-route="${route}"]`)).toBeVisible();
+    }
 
-    await expect(page.locator('.tab-btn[data-tab="matrix"]')).toBeVisible();
-    await expect(page.locator('.tab-btn[data-tab="mixer"]')).toBeVisible();
-    await expect(page.locator('.tab-btn[data-tab="scenes"]')).toBeVisible();
-    await expect(page.locator('.tab-btn[data-tab="zones"]')).toBeVisible();
-    await expect(page.locator('.tab-btn[data-tab="system"]')).toBeVisible();
+    // WS status indicators present in sidebar footer
+    await expect(page.locator('#ws-dot')).toBeAttached();
+    await expect(page.locator('#ws-label')).toBeAttached();
   });
 
-  test('can switch core tabs and see basic landmarks', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="matrix"]').click();
-    await expect(page.locator('#tab-matrix .matrix-filter-bar')).toBeVisible();
+  // ── Page navigation landmarks ──────────────────────────────────────────────
 
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
-    await expect(page.locator('#tab-mixer .mixer-body')).toBeVisible();
-
-    await page.locator('.tab-btn[data-tab="scenes"]').click();
-    await expect(page.locator('#tab-scenes .scenes-layout')).toBeVisible();
-
-    await page.locator('.tab-btn[data-tab="zones"]').click();
-    await expect(page.locator('#tab-zones #zones-grid')).toBeVisible();
-
-    await page.locator('.tab-btn[data-tab="system"]').click();
-    await expect(page.locator('#tab-system #meter-ballistics-group')).toBeVisible();
+  test('navigate to matrix: .matrix-toolbar and #matrix-table visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="matrix"]').click();
+    await expect(page.locator('.matrix-toolbar')).toBeVisible();
+    await expect(page.locator('#matrix-table')).toBeVisible();
   });
 
-  test('matrix Ctrl+F focuses filter, Escape clears', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="matrix"]').click();
-
-    const filter = page.locator('#tab-matrix .matrix-filter-bar .filter-input').first();
-    await page.keyboard.press('Control+F');
-    await expect(filter).toBeFocused();
-
-    await filter.fill('Zone');
-    await expect(filter).toHaveValue('Zone');
-
-    await page.keyboard.press('Escape');
-    await expect(filter).toHaveValue('');
+  test('navigate to inputs: .strips-page and #inputs-row visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="inputs"]').click();
+    await expect(page.locator('.strips-page')).toBeVisible();
+    await expect(page.locator('#inputs-row')).toBeVisible();
   });
 
-  test('matrix disabled DSP badges stay dim after re-render', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="matrix"]').click();
-
-    const channelId = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const matrix = await import('/js/matrix.js');
-      const first = st.channelList()[0];
-      if (!first) return null;
-
-      st.setChannel({
-        ...first,
-        dsp: {
-          ...(first.dsp ?? {}),
-          cmp: {
-            ...(first.dsp?.cmp ?? {}),
-            enabled: false,
-            bypassed: false,
-          },
-        },
-      });
-
-      matrix.render(document.getElementById('tab-matrix'));
-      return first.id;
-    });
-
-    expect(channelId).toBeTruthy();
-
-    const badge = page.locator(
-      `#tab-matrix .ch-label[data-ch-id="${channelId}"] .ch-dsp-badge[data-block="cmp"]`
-    ).first();
-
-    await expect(badge).toBeVisible();
-    await expect(badge).toHaveClass(/byp/);
-    await expect(badge).toHaveAttribute('title', /disabled/);
+  test('navigate to outputs: .strips-page with .strips-scroll visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="outputs"]').click();
+    await expect(page.locator('.strips-page')).toBeVisible();
+    await expect(page.locator('.strips-scroll')).toBeVisible();
   });
 
-  test('AM panel resets to neutral state and marks itself bypassed', async ({ page }) => {
-    const state = await page.evaluate(async () => {
-      const { buildContent } = await import('/js/dsp/am.js');
-      const host = document.createElement('div');
-      host.id = 'ui-smoke-am';
-      document.body.appendChild(host);
-
-      let last = null;
-      const panel = buildContent('rx_0', {
-        gain_db: 3.0,
-        invert_polarity: true,
-        bypassed: false,
-      }, '#888', {
-        onChange: (_block, params) => { last = params; },
-        onBypass: () => {},
-      });
-      host.appendChild(panel);
-
-      panel.querySelector('.dsp-byp-btn')?.click();
-
-      return {
-        opacity: panel.style.opacity,
-        bypActive: panel.querySelector('.dsp-byp-btn')?.classList.contains('active'),
-        polarityLabel: panel.querySelector('.dsp-toggle-btn')?.textContent,
-        gainValue: panel.querySelector('.dsp-slider')?.value,
-        last,
-      };
-    });
-
-    expect(state.opacity).toBe('0.22');
-    expect(state.bypActive).toBeTruthy();
-    expect(state.polarityLabel).toBe('NORM');
-    expect(state.gainValue).toBe('0');
-    expect(state.last).toMatchObject({
-      gain_db: 0,
-      invert_polarity: false,
-      bypassed: true,
-    });
+  test('navigate to scenes: .scenes-page and #scenes-grid visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="scenes"]').click();
+    await expect(page.locator('.scenes-page')).toBeVisible();
+    await expect(page.locator('#scenes-grid')).toBeVisible();
   });
 
-  test('mixer fader updates aria-valuenow on input', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
-
-    const fader = page.locator('#tab-mixer .strip-fader').first();
-    await expect(fader).toBeVisible();
-
-    const before = await fader.getAttribute('aria-valuenow');
-    await fader.evaluate((el: HTMLInputElement) => {
-      const next = Math.min(1000, Number(el.value) + 25);
-      el.value = String(next);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    const after = await fader.getAttribute('aria-valuenow');
-
-    expect(after).not.toBe(before);
+  test('navigate to zones: .zones-page and .zones-grid visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="zones"]').click();
+    await expect(page.locator('.zones-page')).toBeVisible();
+    await expect(page.locator('.zones-grid')).toBeVisible();
   });
 
-  test('mixer inputs do not render zone route buttons', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
-    await expect(page.locator('#tab-mixer .strip-zone-btn')).toHaveCount(0);
+  test('navigate to system: .system-page, #sp-reload-btn, #sp-log-body visible', async ({ page }) => {
+    await page.locator('.nav-item[data-route="system"]').click();
+    await expect(page.locator('.system-page')).toBeVisible();
+    await expect(page.locator('#sp-reload-btn')).toBeVisible();
+    await expect(page.locator('#sp-log-body')).toBeVisible();
   });
 
-  test('linked input fader mirrors paired strip slider', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
+  // ── Matrix ─────────────────────────────────────────────────────────────────
 
-    const mirrored = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const mixer = await import('/js/mixer.js');
-      const channels = st.channelList();
-      if (channels.length < 2) return null;
+  test('matrix: cells rendered with data-tx and data-rx attributes', async ({ page }) => {
+    await page.locator('.nav-item[data-route="matrix"]').click();
+    await expect(page.locator('#matrix-table')).toBeVisible();
 
-      const [left, right] = channels;
-      const leftIdx = parseInt(left.id.replace('rx_', ''), 10);
-      const rightIdx = parseInt(right.id.replace('rx_', ''), 10);
-      const makeAm = (ch) => ({
-        ...(ch.dsp ?? {}),
-        am: {
-          ...(ch.dsp?.am ?? {}),
-          enabled: true,
-          bypassed: false,
-          params: {
-            ...(ch.dsp?.am?.params ?? {}),
-            gain_db: 0,
-          },
-        },
-      });
-
-      st.setChannel({ ...left, gain_db: 0, dsp: makeAm(left) });
-      st.setChannel({ ...right, gain_db: 0, dsp: makeAm(right) });
-      st.setStereoLinks([{ left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }]);
-      mixer.render(document.getElementById('tab-mixer'));
-
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = async (input, init) => {
-        const url = typeof input === 'string' ? input : input.url;
-        if (url.includes(`/inputs/${leftIdx}/gain`)) {
-          return new Response(null, { status: 204 });
-        }
-        return originalFetch(input, init);
-      };
-
-      try {
-        const targetDb = 6;
-        const targetSlider = String(st.dbToSlider(targetDb));
-        const leftStrip = document.getElementById(`strip-${left.id}`);
-        const rightStrip = document.getElementById(`strip-${right.id}`);
-        const leftFader = leftStrip?.querySelector('.strip-fader');
-        const rightFader = rightStrip?.querySelector('.strip-fader');
-        const rightLabel = rightStrip?.querySelector('.strip-fader-label');
-
-        if (!leftFader || !rightFader || !rightLabel) return { error: 'missing-strip' };
-
-        leftFader.value = targetSlider;
-        leftFader.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 140));
-
-        return {
-          targetSlider,
-          targetLabel: '+6.0',
-          rightValue: rightFader.value,
-          rightLabel: rightLabel.textContent,
-          rightAria: rightFader.getAttribute('aria-valuenow'),
-          rightGain: st.state.channels.get(right.id)?.gain_db,
-        };
-      } finally {
-        window.fetch = originalFetch;
-      }
-    });
-
-    expect(mirrored).toBeTruthy();
-    expect(mirrored?.error).toBeUndefined();
-    expect(mirrored?.rightValue).toBe(mirrored?.targetSlider);
-    expect(mirrored?.rightLabel).toBe(mirrored?.targetLabel);
-    expect(mirrored?.rightAria).toBe(mirrored?.targetLabel);
-    expect(mirrored?.rightGain).toBe(6);
+    const cell = page.locator('.matrix-cell[data-tx][data-rx]').first();
+    await expect(cell).toBeVisible();
   });
 
-  test('linked output fader mirrors paired strip slider', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
+  test('matrix: clicking unrouted cell toggles .routed class (optimistic UI)', async ({ page }) => {
+    await page.route('**/api/v1/matrix', route =>
+      route.request().method() === 'PUT'
+        ? route.fulfill({ status: 204, body: '' })
+        : route.continue()
+    );
 
-    const mirrored = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const mixer = await import('/js/mixer.js');
-      const outputs = st.outputList();
-      if (outputs.length < 2) return null;
+    await page.locator('.nav-item[data-route="matrix"]').click();
+    await expect(page.locator('#matrix-table')).toBeVisible();
 
-      const [left, right] = outputs;
-      const leftIdx = parseInt(left.id.replace('tx_', ''), 10);
-      const rightIdx = parseInt(right.id.replace('tx_', ''), 10);
-
-      st.setOutput({ ...left, volume_db: 0, muted: false });
-      st.setOutput({ ...right, volume_db: 0, muted: false });
-      st.setOutputStereoLinks([{ left_channel: leftIdx, right_channel: rightIdx, linked: true, pan: 0.0 }]);
-      mixer.render(document.getElementById('tab-mixer'));
-
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = async (input, init) => {
-        const url = typeof input === 'string' ? input : input.url;
-        if (url.includes(`/outputs/${leftIdx}/gain`)) {
-          return new Response(null, { status: 204 });
-        }
-        return originalFetch(input, init);
-      };
-
-      try {
-        const targetDb = 4;
-        const targetSlider = String(st.dbToSlider(targetDb));
-        const leftStrip = document.getElementById(`strip-${left.id}`);
-        const rightStrip = document.getElementById(`strip-${right.id}`);
-        const leftFader = leftStrip?.querySelector('.strip-fader');
-        const rightFader = rightStrip?.querySelector('.strip-fader');
-        const rightLabel = rightStrip?.querySelector('.strip-fader-label');
-
-        if (!leftFader || !rightFader || !rightLabel) return { error: 'missing-strip' };
-
-        leftFader.value = targetSlider;
-        leftFader.dispatchEvent(new Event('input', { bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 140));
-
-        return {
-          targetSlider,
-          targetLabel: '+4.0',
-          rightValue: rightFader.value,
-          rightLabel: rightLabel.textContent,
-          rightAria: rightFader.getAttribute('aria-valuenow'),
-          rightVolume: st.state.outputs.get(right.id)?.volume_db,
-        };
-      } finally {
-        window.fetch = originalFetch;
-      }
-    });
-
-    expect(mirrored).toBeTruthy();
-    expect(mirrored?.error).toBeUndefined();
-    expect(mirrored?.rightValue).toBe(mirrored?.targetSlider);
-    expect(mirrored?.rightLabel).toBe(mirrored?.targetLabel);
-    expect(mirrored?.rightAria).toBe(mirrored?.targetLabel);
-    expect(mirrored?.rightVolume).toBe(4);
+    const cell = page.locator('.matrix-cell:not(.routed)').first();
+    await expect(cell).toBeVisible();
+    await cell.click();
+    await expect(cell).toHaveClass(/routed/);
   });
 
-  test('stereo links render as pair controls instead of strip buttons', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
+  // ── Scenes ─────────────────────────────────────────────────────────────────
 
-    const layout = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const mixer = await import('/js/mixer.js');
-      const channels = st.channelList();
-      const outputs = st.outputList();
-      if (channels.length < 2 || outputs.length < 2) return null;
+  test('scenes: + NEW SCENE button shows create form with #form-name input', async ({ page }) => {
+    await page.locator('.nav-item[data-route="scenes"]').click();
+    await expect(page.locator('.scenes-page')).toBeVisible();
 
-      const [leftIn, rightIn] = channels;
-      const [leftOut, rightOut] = outputs;
-      const leftInIdx = parseInt(leftIn.id.replace('rx_', ''), 10);
-      const rightInIdx = parseInt(rightIn.id.replace('rx_', ''), 10);
-      const leftOutIdx = parseInt(leftOut.id.replace('tx_', ''), 10);
-      const rightOutIdx = parseInt(rightOut.id.replace('tx_', ''), 10);
+    const newBtn = page.locator('#new-scene-btn');
+    await expect(newBtn).toBeVisible();
+    await expect(newBtn).toContainText('NEW SCENE');
 
-      st.setStereoLinks([{ left_channel: leftInIdx, right_channel: rightInIdx, linked: true, pan: 0.0 }]);
-      st.setOutputStereoLinks([{ left_channel: leftOutIdx, right_channel: rightOutIdx, linked: true, pan: 0.0 }]);
-      mixer.render(document.getElementById('tab-mixer'));
-
-      const inputPair = document.querySelector('.mixer-strips .mixer-strip-pair .stereo-pair-btn');
-      const outputPair = document.querySelector('.mixer-zone-masters .mixer-strip-pair .stereo-pair-btn');
-      const inputStrip = document.getElementById(`strip-${leftIn.id}`);
-      const outputStrip = document.getElementById(`strip-${leftOut.id}`);
-
-      return {
-        inputPairLabel: inputPair?.textContent ?? null,
-        outputPairLabel: outputPair?.textContent ?? null,
-        inputButtonInsideStrip: !!document.querySelector(`#strip-${leftIn.id} .stereo-pair-btn`),
-        outputButtonInsideStrip: !!document.querySelector(`#strip-${leftOut.id} .stereo-pair-btn`),
-        inputMaxWidth: inputStrip ? getComputedStyle(inputStrip).maxWidth : null,
-        outputMaxWidth: outputStrip ? getComputedStyle(outputStrip).maxWidth : null,
-      };
-    });
-
-    expect(layout).toBeTruthy();
-    expect(layout?.inputPairLabel).toBeTruthy();
-    expect(layout?.outputPairLabel).toBeTruthy();
-    expect(layout?.inputButtonInsideStrip).toBeFalsy();
-    expect(layout?.outputButtonInsideStrip).toBeFalsy();
-    expect(layout?.inputMaxWidth).toBe(layout?.outputMaxWidth);
+    await newBtn.click();
+    await expect(page.locator('#form-name')).toBeVisible();
   });
 
-  test('stereo pair toggle does not activate matrix tab', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
+  // ── Zones ──────────────────────────────────────────────────────────────────
 
-    const stayedHidden = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const mixer = await import('/js/mixer.js');
-      const channels = st.channelList();
-      if (channels.length < 2) return null;
-
-      const [left, right] = channels;
-      const leftIdx = parseInt(left.id.replace('rx_', ''), 10);
-      const rightIdx = parseInt(right.id.replace('rx_', ''), 10);
-      st.setStereoLinks([]);
-      mixer.render(document.getElementById('tab-mixer'));
-
-      const matrixTab = document.getElementById('tab-matrix');
-      const pairBtn = document.querySelector('.mixer-strip-pair .stereo-pair-btn');
-      if (!matrixTab || !pairBtn) return { error: 'missing-elements' };
-
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = async (input, init) => {
-        const url = typeof input === 'string' ? input : input.url;
-        if (url.includes('/stereo-links') && (init?.method === 'POST' || init?.method === 'PUT')) {
-          return new Response(JSON.stringify({
-            left_channel: leftIdx,
-            right_channel: rightIdx,
-            linked: true,
-            pan: 0.0,
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return originalFetch(input, init);
-      };
-
-      try {
-        pairBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 50));
-        return {
-          matrixActive: matrixTab.classList.contains('active'),
-          mixerActive: document.getElementById('tab-mixer')?.classList.contains('active') ?? false,
-        };
-      } finally {
-        window.fetch = originalFetch;
-      }
-    });
-
-    expect(stayedHidden).toBeTruthy();
-    expect(stayedHidden?.error).toBeUndefined();
-    expect(stayedHidden?.matrixActive).toBeFalsy();
-    expect(stayedHidden?.mixerActive).toBeTruthy();
+  test('zones: .zone-card elements rendered for configured zones', async ({ page }) => {
+    await page.locator('.nav-item[data-route="zones"]').click();
+    await expect(page.locator('.zones-page')).toBeVisible();
+    await expect(page.locator('.zones-grid')).toBeVisible();
+    // MOCK_CONFIG provides 1 zone
+    await expect(page.locator('.zone-card')).toHaveCount(1);
   });
 
-  test('utility strips expose delete action in utility menu', async ({ page }) => {
-    await page.locator('.tab-btn[data-tab="mixer"]').click();
+  // ── System ─────────────────────────────────────────────────────────────────
 
-    const menuState = await page.evaluate(async () => {
-      const st = await import('/js/state.js');
-      const mixer = await import('/js/mixer.js');
-      st.setVcaGroups([{
-        id: 'vca_smoke',
-        name: 'Smoke VCA',
-        group_type: 'input',
-        members: [],
-        gain_db: 0,
-        muted: false,
-      }]);
-      st.setAutomixerGroups([{
-        id: 'am_smoke',
-        name: 'Smoke AXM',
-        enabled: true,
-        gating_enabled: false,
-        gate_threshold_db: -40,
-        off_attenuation_db: -60,
-        hold_ms: 300,
-      }]);
-      st.setGenerators([{
-        id: 'gen_smoke',
-        name: 'Smoke generator',
-        gen_type: 'sine',
-        freq_hz: 1000,
-        level_db: -20,
-        enabled: false,
-      }]);
-      st.setBus({
-        id: 'bus_smoke',
-        name: 'Smoke bus',
-        routing: [],
-        routing_gain: [],
-        dsp: {
-          am: {
-            enabled: true,
-            bypassed: true,
-            params: { gain_db: 0, invert_polarity: false },
-          },
-        },
-        muted: false,
-      });
-      mixer.render(document.getElementById('tab-mixer'));
-
-      const destructiveLabelFor = (selector) => {
-        const menuBtn = document.querySelector(selector);
-        menuBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        return document.querySelector('.strip-action-menu-item.destructive')?.textContent ?? null;
-      };
-
-      return {
-        busLabel: destructiveLabelFor('#strip-bus_smoke .strip-menu-btn'),
-        vcaLabel: destructiveLabelFor('#vca-strip-vca_smoke .strip-menu-btn'),
-        amLabel: destructiveLabelFor('#am-strip-am_smoke .strip-menu-btn'),
-        genLabel: destructiveLabelFor('#gen-strip-gen_smoke .strip-menu-btn'),
-      };
-    });
-
-    expect(menuState?.busLabel).toBe('Delete bus');
-    expect(menuState?.vcaLabel).toBe('Delete VCA group');
-    expect(menuState?.amLabel).toBe('Delete automixer group');
-    expect(menuState?.genLabel).toBe('Delete generator');
+  test('system: dante + ptp status dots and log body present', async ({ page }) => {
+    await page.locator('.nav-item[data-route="system"]').click();
+    await expect(page.locator('.system-page')).toBeVisible();
+    await expect(page.locator('#sp-dante-dot')).toBeVisible();
+    await expect(page.locator('#sp-ptp-dot')).toBeVisible();
+    await expect(page.locator('#sp-log-body')).toBeVisible();
+    await expect(page.locator('#sp-reload-btn')).toBeVisible();
   });
 
-  test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {
-    await expect(page.locator('#tb-undo')).toBeDisabled();
-    await expect(page.locator('#tb-redo')).toBeDisabled();
+  // ── Hash routing ───────────────────────────────────────────────────────────
 
-    await page.evaluate(async () => {
-      const { undo } = await import('/js/undo.js');
-      (window as any).__uiSmokeUndoState = 1;
-      undo.push({
-        label: 'UI smoke change',
-        apply: async () => {
-          (window as any).__uiSmokeUndoState = 1;
-        },
-        revert: async () => {
-          (window as any).__uiSmokeUndoState = 0;
-        },
-      });
-    });
+  test('hash navigation: loading /#/matrix directly renders matrix page', async ({ page }) => {
+    // addInitScript from beforeEach re-fires on this second navigation,
+    // so sessionStorage token is set before the router boots.
+    await page.goto('/#/matrix');
+    await expect(page.locator('.matrix-toolbar')).toBeVisible();
+    await expect(page.locator('#matrix-table')).toBeVisible();
+  });
 
-    await expect(page.locator('#tb-undo')).toBeEnabled();
-    await expect(page.locator('#tb-redo')).toBeDisabled();
+  // ── Shell interactions ─────────────────────────────────────────────────────
 
-    await page.keyboard.press('Control+Z');
-    await expect(page.locator('#tb-undo')).toBeDisabled();
-    await expect(page.locator('#tb-redo')).toBeEnabled();
+  test('sidebar toggle: clicking #btn-sidebar-toggle adds .sidebar-collapsed to body', async ({ page }) => {
+    await expect(page.locator('body')).not.toHaveClass(/sidebar-collapsed/);
+    await page.locator('#btn-sidebar-toggle').click();
+    await expect(page.locator('body')).toHaveClass(/sidebar-collapsed/);
+  });
 
-    const stateAfterUndo = await page.evaluate(() => (window as any).__uiSmokeUndoState);
-    expect(stateAfterUndo).toBe(0);
-
-    await page.keyboard.press('Control+Y');
-    await expect(page.locator('#tb-undo')).toBeEnabled();
-    await expect(page.locator('#tb-redo')).toBeDisabled();
-
-    const stateAfterRedo = await page.evaluate(() => (window as any).__uiSmokeUndoState);
-    expect(stateAfterRedo).toBe(1);
+  test('logout: clicking #btn-logout shows #login-overlay', async ({ page }) => {
+    await expect(page.locator('#login-overlay')).toBeHidden();
+    await page.locator('#btn-logout').click();
+    await expect(page.locator('#login-overlay')).toBeVisible();
   });
 });

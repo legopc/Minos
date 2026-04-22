@@ -1,51 +1,87 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Minos Design System — Canonical Tokens
+ * See docs/DESIGN.md for full usage guidelines before writing any UI code.
+ * ───────────────────────────────────────────────────────────────────────── */
 :root {
-  /* ── responsive v2: breakpoint tokens ──────────────────────────────────── */
+
+  /* ── Breakpoints ────────────────────────────────────────────────────────── */
   --bp-sm: 600px;
   --bp-md: 900px;
   --bp-lg: 1200px;
 
-  /* ── Colors: Backgrounds ───────────────────────────────────────────────── */
-  --bg-workspace:   #1a1d24;
-  --bg-surface:     #1e2230;
-  --bg-dark:        #13151c;
-  --bg-row-hover:   #1f2330;
-  --bg-row-sel:     #1e2740;
-  --bg-input:       #0f1117;
-  --bg-hover:       #2a2a2a;
+  /* ── Backgrounds ────────────────────────────────────────────────────────── */
+  /* darkest → lightest — use these for depth layering, never hardcode hex     */
+  --bg-dark:        #13151c;   /* sidebar, nav, deepest layer                 */
+  --bg-workspace:   #1a1d24;   /* main page background                        */
+  --bg-surface:     #1e2230;   /* cards, panels, channel strip bodies          */
+  --bg-input:       #0f1117;   /* text inputs, select boxes, meter bg          */
+  --bg-row-hover:   #1f2330;   /* hovered row/strip                           */
+  --bg-row-sel:     #1e2740;   /* selected / focused row                       */
 
-  /* ── Colors: Borders ───────────────────────────────────────────────────– */
-  --border-primary: #2d3140;
-  --border-subtle:  #1a1d2a;
+  /* ── Borders ────────────────────────────────────────────────────────────── */
+  --border-primary: #2d3140;   /* standard dividers, panel outlines            */
+  --border-subtle:  #1a1d2a;   /* subtle separation within dark surfaces       */
 
-  /* ── Colors: Text ─────────────────────────────────────────────────────── */
-  --text-primary:   #e6edf3;
-  --text-secondary: #c9d1d9;
-  --text-muted:     #8b949e;
-  --text-dim:       #484f58;
-  --text-accent:    #58a6ff;
-  --focus:          #58a6ff;
+  /* ── Text ───────────────────────────────────────────────────────────────── */
+  --text-primary:   #e6edf3;   /* body text, labels, channel names             */
+  --text-secondary: #c9d1d9;   /* secondary labels, less-important values      */
+  --text-muted:     #8b949e;   /* placeholder, disabled, inactive              */
+  --text-dim:       #484f58;   /* timestamps, decorative, very faint           */
+  --text-accent:    #58a6ff;   /* links, accent text (= --color-accent)        */
 
-  /* ── Colors: Status indicators ─────────────────────────────────────────── */
-  --vu-green:       #3fb950;
-  --vu-amber:       #d29922;
-  --vu-red:         #f85149;
-  --dot-live:       #3fb950;
-  --dot-offline:    #484f58;
-  --dot-error:      #f85149;
+  /* ── Semantic / Status ──────────────────────────────────────────────────── */
+  --color-accent:   #58a6ff;   /* active nav, focus ring, local badge          */
+  --color-ok:       #3fb950;   /* connected, synced, passing, Dante badge      */
+  --color-warn:     #d29922;   /* warning, active crosspoint, dante source     */
+  --color-danger:   #f85149;   /* error, mute active, clip, offline            */
+  --focus:          #58a6ff;   /* keyboard focus ring (= --color-accent)       */
 
-  /* ── Colors: Crosspoint routing ────────────────────────────────────────── */
-  --xp-local:       #58a6ff;
-  --xp-dante:       #d29922;
+  /* ── Status dots ────────────────────────────────────────────────────────── */
+  --dot-live:       #3fb950;   /* connected / synced                           */
+  --dot-offline:    #484f58;   /* offline / disconnected                       */
+  --dot-error:      #f85149;   /* error state                                  */
 
-  /* ── Colors: Controls ─────────────────────────────────────────────────── */
-  --fader-track:    #2d3140;
-  --fader-thumb:    #8b949e;
-  --fader-thumb-sel:#58a6ff;
-  --meter-bg:       #0f1117;
-  --mute-active:    #f85149;
-  --solo-active:    #d29922;
+  /* ── VU Meter & Signal Level ────────────────────────────────────────────── */
+  --vu-green:       #3fb950;   /* normal signal (–60 to –9 dBFS)               */
+  --vu-amber:       #d29922;   /* high signal (–9 to –3 dBFS)                  */
+  --vu-red:         #f85149;   /* clip / over (above –3 dBFS)                  */
+  --meter-bg:       #0f1117;   /* meter bar track background                   */
 
-  /* ── Colors: Zone palette ──────────────────────────────────────────────── */
+  /* ── Matrix Crosspoints ─────────────────────────────────────────────────── */
+  --xp-local:       #58a6ff;   /* active route — local ALSA source             */
+  --xp-dante:       #d29922;   /* active route — Dante source                  */
+
+  /* ── Controls ───────────────────────────────────────────────────────────── */
+  --fader-track:    #2d3140;   /* fader rail background                        */
+  --fader-thumb:    #8b949e;   /* fader knob — idle                            */
+  --fader-thumb-sel:#58a6ff;   /* fader knob — selected / dragging             */
+  --mute-active:    #f85149;   /* MUTE button when engaged                     */
+  --solo-active:    #d29922;   /* SOLO button when engaged                     */
+
+  /* ── DSP Chip Colors ────────────────────────────────────────────────────── */
+  /* Each chip has a dark background + distinctly-hued text for color-at-glance */
+  /* CSS targets via: [data-dsp="aec"] { background: var(--chip-aec-bg); color: #c96060; } */
+  --chip-aec-bg:    #3d1414;   /* Acoustic Echo Cancellation — dark crimson    */
+  --chip-afs-bg:    #3d2408;   /* Adaptive Feedback Suppression — dark orange  */
+  --chip-am-bg:     #38103a;   /* Ambient Mic gain rider — dark magenta        */
+  --chip-axm-bg:    #0c3030;   /* Automixer (Dugan) — dark teal                */
+  --chip-cmp-bg:    #123018;   /* Compressor — dark green                      */
+  --chip-deq-bg:    #2a2e08;   /* Dynamic EQ — olive/yellow-green              */
+  --chip-flt-bg:    #082030;   /* Filter (HPF/LPF) — dark cyan-blue            */
+  --chip-gte-bg:    #0a2818;   /* Gate / Expander — dark forest green          */
+  --chip-peq-bg:    #0a2030;   /* Parametric EQ — dark teal-blue               */
+
+  /* ── Section Accent Colors ──────────────────────────────────────────────── */
+  --vca-color:      #a855f7;   /* VCA group headers and borders                */
+  --color-bus:      #d29922;   /* Bus section headers and borders              */
+
+  /* ── Generator badge colors ─────────────────────────────────────────────── */
+  --gen-sine:       #0891b2;   /* Sine wave                                    */
+  --gen-white:      #94a3b8;   /* White noise                                  */
+  --gen-pink:       #f472b6;   /* Pink noise                                   */
+  --gen-sweep:      #f59e0b;   /* Frequency sweep                              */
+
+  /* ── Zone Palette (10 colors, assigned by zone index mod 10) ────────────── */
   --zone-color-0:   #58a6ff;
   --zone-color-1:   #3fb950;
   --zone-color-2:   #d29922;
@@ -57,67 +93,26 @@
   --zone-color-8:   #56d364;
   --zone-color-9:   #e3b341;
 
-  /* ── Colors: Semantic ──────────────────────────────────────────────────– */
-  --color-accent:   #58a6ff;
-  --color-danger:   #f85149;
-  --color-ok:       #3fb950;
-  --color-warn:     #d29922;
-  --color-text-dim: #484f58;
+  /* ── Spacing (4px grid) ─────────────────────────────────────────────────── */
+  --sp-1:    2px;   /* intra-element micro-spacing                             */
+  --sp-2:    4px;   /* tight gap: chips row, badge padding                     */
+  --sp-3:    6px;   /* default input padding                                   */
+  --sp-4:    8px;   /* row padding, label gap                                  */
+  --sp-5:   12px;   /* section inner padding                                   */
+  --sp-6:   16px;   /* section separation                                      */
 
-  /* ── Colors: Matrix UI ─────────────────────────────────────────────────── */
-  --matrix-gen-color: #0891b2;
-  --color-error:    #ef4444;
-  --accent-gold:    #e3b341;
+  /* ── Radius ─────────────────────────────────────────────────────────────── */
+  --r-1:     2px;   /* default: buttons, chips                                 */
+  --r-2:     3px;   /* inputs, modals                                          */
+  --r-3:     4px;   /* cards, panels                                           */
+  --r-full:  50%;   /* dots, status indicators                                 */
 
-  /* ── Colors: DSP & Generators ──────────────────────────────────────────── */
-  --gen-sine:       #0891b2;
-  --gen-white-noise:#94a3b8;
-  --gen-pink-noise: #f472b6;
-  --gen-freq-sweep: #f59e0b;
-  --accent-primary: #a371f7;
-  --accent-secondary: #e3b341;
-  --vca-color:      #a855f7;
-  --danger-soft:    #e05050;
-  --accent-blue-alt:#1a73e8;
-  --danger-critical:#c0392b;
-
-  /* ── Colors: Mixer visuals ─────────────────────────────────────────────── */
-  --color-level-white: #e8e8e8;
-  --color-level-dark: #d0d0d0;
-  --color-level-mid: #c0c0c0;
-  --color-level-shadow: #a0a0a0;
-  --color-level-lowlight: #b0b0b0;
-  --color-level-highlight: #94a3b8;
-  --accent-gold-muted: #c99500;
-  --accent-gold-bright: #e8b500;
-  --meter-saturation: #f5a623;
-
-  /* ── Colors: Extended palette ──────────────────────────────────────────── */
-  --color-level-1: #1a1f2e;
-  --color-level-2: #2d3348;
-  --color-level-3: #30363d;
-  --color-level-4: #3d4451;
-  --color-level-5: #6e7681;
-
-  /* ── Spacing (px) ──────────────────────────────────────────────────────– */
-  --sp-1:    2px;
-  --sp-2:    4px;
-  --sp-3:    6px;
-  --sp-4:    8px;
-  --sp-5:   12px;
-  --sp-6:   16px;
-
-  /* ── Radius ────────────────────────────────────────────────────────────– */
-  --r-1:     2px;
-  --r-2:     3px;
-  --r-3:     4px;
-  --r-full:  50%;
-
-  /* ── Layout dimensions ─────────────────────────────────────────────────── */
-  --row-h:        64px;
-  --col-w:        44px;
-  --ch-w:         240px;
-  --ch-w-out:     120px;
+  /* ── Layout Dimensions ──────────────────────────────────────────────────── */
+  --row-h:        64px;    /* matrix row height                                */
+  --col-w:        44px;    /* matrix crosspoint column width                   */
+  --ch-w:         240px;   /* input channel strip width (mixer)                */
+  --ch-w-out:     120px;   /* output channel strip width (mixer)               */
+  /* --sidebar-w is defined in shell.css (200px / 48px collapsed) */
 }
 
 @font-face {
@@ -280,6 +275,18 @@ input[type="range"] {
 .dot-warn {
   background: var(--color-warn);
 }
+
+/* ── DSP chip color targeting (data-dsp attribute) ─────────────────────── */
+/* See docs/DESIGN.md §6.3 for full pattern and state descriptions          */
+[data-dsp="aec"] { background: var(--chip-aec-bg); color: #c96060; }
+[data-dsp="afs"] { background: var(--chip-afs-bg); color: #c97840; }
+[data-dsp="am"]  { background: var(--chip-am-bg);  color: #b060b0; }
+[data-dsp="axm"] { background: var(--chip-axm-bg); color: #38a8a8; }
+[data-dsp="cmp"] { background: var(--chip-cmp-bg); color: #42a055; }
+[data-dsp="deq"] { background: var(--chip-deq-bg); color: #9aa830; }
+[data-dsp="flt"] { background: var(--chip-flt-bg); color: #2e90b0; }
+[data-dsp="gte"] { background: var(--chip-gte-bg); color: #307850; }
+[data-dsp="peq"] { background: var(--chip-peq-bg); color: #2e809a; }
 
 /* ── Button primitives ─────────────────────────────────────────────────── */
 .btn-accent, .btn-secondary, .btn-danger {

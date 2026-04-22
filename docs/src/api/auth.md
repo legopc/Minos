@@ -27,7 +27,7 @@ Content-Type: application/json
 
 **TODO**: Documentation for JWT token generation, refresh flow, and credential management will be published when the `s7-ops-openapi` project is complete.
 
-For now, refer to the `/web/src/js/api.js` source code to see how the web UI obtains and manages tokens.
+For now, refer to the `/web/src/modules/api.js` source code to see how the web UI obtains and manages tokens.
 
 ## Token Expiration
 
@@ -35,4 +35,4 @@ Tokens have an expiration time. Expired tokens also return 401; refresh the toke
 
 ## Development / Testing
 
-For local testing, check the backend source code for token generation functions, or see how the web UI login flow works in `web/src/js/api.js`.
+For local testing, check the backend source code for token generation functions, or see how the web UI login flow works in `web/src/modules/api.js`.

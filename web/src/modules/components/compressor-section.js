@@ -1,14 +1,23 @@
 /**
- * CompressorSection — RMS compressor controls
- * 
+ * CompressorSection — RMS compressor with SVG transfer curve
+ *
  * Usage:
  *   import { CompressorSection } from '/modules/components/compressor-section.js';
- *   const cs = new CompressorSection(containerEl, channelIndex, 'input');  // type: 'input'|'output'
- *   cs.setState({ enabled: false, threshold_db: -20, ... });
+ *   const cs = new CompressorSection(containerEl, channelIndex, 'input');
+ *   cs.setState({ enabled: false, threshold_db: -20, ratio: 4, knee_db: 6,
+ *                 attack_ms: 10, release_ms: 100, makeup_db: 0 });
  *   cs.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §6):
+ *   1. Import DynamicsCanvas from dsp-canvas.js
+ *   2. Add dsp-dynamics-layout with 200×200 dsp-dynamics-svg on left
+ *   3. Call DynamicsCanvas.buildGrid() + drawCompressorCurve() on init and param change
+ *   4. Wire threshold drag via startThresholdDrag
+ *   5. Fix stepper pattern — use delegated click listener
  */
 
 import { inputDsp, outputDsp, apiErrorMessage } from '/modules/api.js';
+// TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class CompressorSection {
   constructor(containerEl, ch, type = 'input') {
@@ -41,7 +50,7 @@ export class CompressorSection {
         <div class="section-body">
           <div class="filter-row">
             <label class="filter-label">Enable</label>
-            <input type="checkbox" class="toggle-cb" id="comp-enable-${this.ch}">
+            <input type="checkbox" class="toggle-cb">
           </div>
           <div class="filter-row">
             <label class="filter-label">Thr</label>

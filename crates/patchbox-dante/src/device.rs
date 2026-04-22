@@ -425,6 +425,16 @@ impl DanteDevice {
                             }
                         }
 
+                        // LUFS metering
+                        if m.lufs_momentary.len() != n_tx { m.lufs_momentary.resize(n_tx, -144.0); }
+                        if m.lufs_short_term.len() != n_tx { m.lufs_short_term.resize(n_tx, -144.0); }
+                        if m.lufs_integrated.len() != n_tx { m.lufs_integrated.resize(n_tx, -144.0); }
+                        for (i, d) in matrix_proc.output_dsp.iter().enumerate() {
+                            if i < m.lufs_momentary.len() { m.lufs_momentary[i] = d.lufs.momentary_lufs() as f32; }
+                            if i < m.lufs_short_term.len() { m.lufs_short_term[i] = d.lufs.short_term_lufs() as f32; }
+                            if i < m.lufs_integrated.len() { m.lufs_integrated[i] = d.lufs.integrated_lufs() as f32; }
+                        }
+
                         // Bus metering
                         let n_buses = cfg
                             .internal_buses

@@ -72,7 +72,7 @@ function renderPlaceholder(route) {
 
 function currentRoute() {
   const hash = window.location.hash.replace('#/', '') || 'dashboard';
-  const valid = ['dashboard', 'matrix', 'inputs', 'outputs', 'scenes', 'system'];
+  const valid = ['dashboard', 'matrix', 'inputs', 'outputs', 'buses', 'mixer', 'zones', 'scenes', 'dante', 'system', 'style-guide'];
   return valid.includes(hash) ? hash : 'dashboard';
 }
 

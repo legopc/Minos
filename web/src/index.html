@@ -3,98 +3,94 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>dante-patchbox</title>
+  <title>Minos — Dante Patchbox</title>
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/shell.css">
   <link rel="stylesheet" href="/css/matrix.css">
   <link rel="stylesheet" href="/css/mixer.css">
-  <link rel="stylesheet" href="/css/zones.css">
   <link rel="stylesheet" href="/css/scenes.css">
-  <link rel="stylesheet" href="/css/panels.css">
+  <link rel="stylesheet" href="/css/zones.css">
   <link rel="stylesheet" href="/css/dante.css">
   <link rel="stylesheet" href="/css/system.css">
-  <link rel="stylesheet" href="/css/reorder.css">
+  <link rel="stylesheet" href="/css/panels.css">
 </head>
 <body>
-<!-- Skip to content link (hidden until focused) -->
-<a href="#tabbar" id="skip-link" class="skip-link">Skip to main content</a>
+<!-- Skip to main content -->
+<a href="#page-container" id="skip-link" class="skip-link">Skip to main content</a>
 
-<!-- Live regions for screen reader announcements -->
+<!-- Screen reader live regions -->
 <div id="sr-live-polite" aria-live="polite" aria-atomic="true" class="sr-only"></div>
 <div id="sr-live-assertive" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
-<div id="offline-banner" hidden aria-live="assertive" role="alert" style="display:none">
-  ⚠ OFFLINE — reconnecting…
-</div>
+<!-- Offline banner -->
+<div id="offline-banner" hidden aria-live="assertive" role="alert">⚠ OFFLINE — reconnecting…</div>
 
-<!-- Login overlay -->
-<div id="login-page" style="display:none">
+<!-- Login overlay (hidden until auth check fails) -->
+<div id="login-overlay" hidden>
   <div class="login-box">
-    <h2>dante-patchbox</h2>
-    <input type="text" id="login-user" placeholder="username" autocomplete="username">
-    <input type="password" id="login-pass" placeholder="password" autocomplete="current-password">
-    <button class="login-btn" id="login-btn">Sign In</button>
-    <div class="login-error" id="login-error"></div>
+    <h2>Minos</h2>
+    <input type="text"     id="login-username" placeholder="username" autocomplete="username">
+    <input type="password" id="login-password" placeholder="password" autocomplete="current-password">
+    <button id="login-btn" class="btn-login">Sign In</button>
+    <div id="login-error" class="login-error"></div>
   </div>
 </div>
 
+<!-- Application shell -->
 <div id="app-shell">
-  <!-- Tab bar -->
-  <div id="tabbar">
-    <button class="tab-btn active" data-tab="matrix">Matrix</button>
-    <button class="tab-btn" data-tab="mixer">Mixer</button>
-    <button class="tab-btn" data-tab="scenes">Scenes</button>
-    <button class="tab-btn" data-tab="zones">Zones</button>
-    <button class="tab-btn" data-tab="dante">Dante</button>
-    <button class="tab-btn" data-tab="system">System</button>
-    <span class="tabbar-spacer"></span>
-    <span class="tabbar-logo">&#9679; dante-patchbox</span>
-    <span class="tabbar-device" id="tb-device"></span>
-    <span class="tabbar-sep">|</span>
-    <span class="tabbar-user" id="tb-user"></span>
-    <div class="tabbar-actions">
-      <button class="tabbar-undo-btn" id="tb-undo" type="button" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo" disabled>↺</button>
-      <button class="tabbar-undo-btn" id="tb-redo" type="button" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo" disabled>↻</button>
-      <a class="tabbar-help" href="/docs/" target="_blank" rel="noopener" title="Open user manual">?</a>
+  <nav id="sidebar" aria-label="Main navigation">
+    <div class="nav-logo">
+      <span class="nav-logo-mark" aria-hidden="true">▸</span>
+      <span class="nav-logo-text">Minos</span>
     </div>
-  </div>
-  <!-- Main content area -->
-  <div id="app">
-    <div id="tab-matrix"  class="tab-content active"></div>
-    <div id="tab-mixer"   class="tab-content"></div>
-    <div id="tab-scenes"  class="tab-content"></div>
-    <div id="tab-zones"   class="tab-content"></div>
-    <div id="tab-dante"   class="tab-content"></div>
-    <div id="tab-system"  class="tab-content"></div>
+    <div class="nav-list" role="list">
+      <div class="nav-item" data-route="dashboard" role="listitem" tabindex="0" aria-label="Dashboard">
+        <span class="nav-item-label">Dashboard</span>
+      </div>
+      <div class="nav-item" data-route="matrix" role="listitem" tabindex="0" aria-label="Routing Matrix">
+        <span class="nav-item-label">Matrix</span>
+      </div>
+      <div class="nav-item" data-route="inputs" role="listitem" tabindex="0" aria-label="Input channels">
+        <span class="nav-item-label">Inputs</span>
+      </div>
+      <div class="nav-item" data-route="outputs" role="listitem" tabindex="0" aria-label="Output channels">
+        <span class="nav-item-label">Outputs</span>
+      </div>
+      <div class="nav-item" data-route="buses" role="listitem" tabindex="0" aria-label="Submix buses">
+        <span class="nav-item-label">Buses</span>
+      </div>
+      <div class="nav-item" data-route="mixer" role="listitem" tabindex="0" aria-label="Mixer — VCA groups, stereo links, generators">
+        <span class="nav-item-label">Mixer</span>
+      </div>
+      <div class="nav-item" data-route="zones" role="listitem" tabindex="0" aria-label="Zone control">
+        <span class="nav-item-label">Zones</span>
+      </div>
+      <div class="nav-item" data-route="scenes" role="listitem" tabindex="0" aria-label="Scenes">
+        <span class="nav-item-label">Scenes</span>
+      </div>
+      <div class="nav-item" data-route="dante" role="listitem" tabindex="0" aria-label="Dante diagnostics">
+        <span class="nav-item-label">Dante</span>
+      </div>
+      <div class="nav-item" data-route="system" role="listitem" tabindex="0" aria-label="System">
+        <span class="nav-item-label">System</span>
+      </div>
+    </div>
+    <div class="nav-footer">
+      <div class="ws-status" title="WebSocket connection status">
+        <span id="ws-dot" class="ws-dot ws-connecting" aria-hidden="true"></span>
+        <span id="ws-label" class="ws-label">connecting…</span>
+      </div>
+      <button id="btn-sidebar-toggle" class="nav-collapse-btn" title="Toggle sidebar (Ctrl+\)" aria-label="Toggle sidebar">⇦</button>
+      <button id="btn-logout" class="nav-logout-btn" title="Sign out" aria-label="Sign out">Sign out</button>
+    </div>
+  </nav>
 
-    <!-- Toast container -->
-    <div class="toast-container" id="toasts"></div>
-  </div>
+  <main id="page-container" tabindex="-1" aria-live="polite"></main>
 
-  <!-- Status bar -->
-  <div id="statusbar">
-    <span class="status-item" id="sb-ptp">
-      <span class="dot dot-offline"></span>PTP
-    </span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-rate">—</span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-rx">—</span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-tx">—</span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-zones">—</span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-drops" title="Audio drop count since last restart">Drops: —</span>
-    <span class="status-sep">|</span>
-    <span class="status-item status-monitor" id="sb-monitor">MON off</span>
-    <span class="status-sep">|</span>
-    <span class="status-item" id="sb-ws">
-      <span class="dot dot-offline"></span>WS
-    </span>
-  </div>
+  <!-- Toast notifications -->
+  <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 </div>
 
-<script type="module" src="/js/main.js"></script>
+<script type="module" src="/modules/router.js"></script>
 </body>
 </html>

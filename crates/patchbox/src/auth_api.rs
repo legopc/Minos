@@ -333,6 +333,7 @@ fn required_role_for(method: &axum::http::Method, path: &str) -> jwt::Role {
     jwt::Role::Operator
 }
 
+#[allow(dead_code)]
 pub async fn check_min_role(
     state: AppState,
     min_role: jwt::Role,

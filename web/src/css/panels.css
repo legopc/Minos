@@ -297,3 +297,207 @@
     max-height: calc(90vh - 56px);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DSP SECTION STRUCTURE
+   Used by all section components. See docs/DSP_PANELS.md §14 for class ref.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dsp-section { /* TODO: spacing, border-top separator */ }
+
+.dsp-section-hd {
+  /* TODO: flex row, section title + inline enable toggle */
+}
+
+.dsp-section-name {
+  /* TODO: uppercase, monospace, text-muted */
+}
+
+.dsp-inline-toggle {
+  /* TODO: small checkbox + label inline */
+}
+
+.dsp-section-bd {
+  /* TODO: padding, flex column, gap */
+}
+
+.dsp-section-footer {
+  /* TODO: flex row, gap, bottom action buttons */
+}
+
+/* ── Dynamics side-by-side layout ──────────────────────────────────────── */
+.dsp-dynamics-layout {
+  /* TODO: display grid, grid-template-columns: 200px 1fr, gap: 12px */
+}
+
+/* ── Canvas elements ────────────────────────────────────────────────────── */
+
+.dsp-freq-svg   { display: block; width: 100%; height: 200px; background: rgba(0,0,0,0.3); border-radius: 4px; }
+.dsp-filter-svg { display: block; width: 100%; height: 140px; background: rgba(0,0,0,0.3); border-radius: 4px; }
+.dsp-dynamics-svg { display: block; width: 200px; height: 200px; background: rgba(0,0,0,0.3); border-radius: 4px; flex-shrink: 0; }
+
+/* ── FreqCanvas SVG internals ───────────────────────────────────────────── */
+/* All drawn in JS via dsp-canvas.js FreqCanvas — these classes style the elements it creates */
+
+.fc-grid  { /* TODO: stroke colour, stroke-width, opacity */ }
+.fc-zero  { /* TODO: 0dB line, slightly brighter than grid */ }
+.fc-curve { /* TODO: stroke accent, stroke-width 2, fill none */ }
+.fc-label { /* TODO: font-size ~9px, fill text-dim */ }
+
+.fc-handle          { cursor: grab; pointer-events: all; }
+.fc-handle:active   { cursor: grabbing; }
+.fc-handle-circle   { /* TODO: r=8, stroke=band-color, fill semi-dark, stroke-width 2 */ }
+.fc-handle-label    { /* TODO: text-anchor middle, dominant-baseline central, font 9px bold, fill band-color */ pointer-events: none; }
+.fc-handle--bypassed { opacity: 0.25; }
+
+/* ── FilterCanvas SVG internals ─────────────────────────────────────────── */
+
+.flt-hpf-curve  { /* TODO: stroke #d29922, fill none, stroke-width 2 */ }
+.flt-lpf-curve  { /* TODO: stroke #58a6ff, fill none, stroke-width 2 */ }
+.flt-hpf-handle { cursor: ew-resize; /* TODO: fill #d29922 */ }
+.flt-lpf-handle { cursor: ew-resize; /* TODO: fill #58a6ff */ }
+.flt-curve--disabled { opacity: 0.25; stroke-dasharray: 4 4; }
+
+/* ── DynamicsCanvas SVG internals ───────────────────────────────────────── */
+
+.dc-grid      { /* TODO: grid strokes */ }
+.dc-unity     { /* TODO: 1:1 dashed line, text-dim */ }
+.dc-curve     { /* TODO: stroke accent, stroke-width 2, fill none */ }
+.dc-thr-line  { /* TODO: stroke #d29922, dashed, stroke-width 1 */ }
+.dc-thr-handle { cursor: ew-resize; /* TODO: diamond shape, fill #d29922 */ }
+.dc-gr-line   { /* TODO: stroke danger, hidden when gr=0 */ }
+.dc-label     { /* TODO: font-size 9px, fill text-dim */ }
+
+/* ── Param rows ──────────────────────────────────────────────────────────── */
+
+.dsp-param-row {
+  /* TODO: display flex, align-items center, gap 6px, min-height 28px */
+}
+
+.dsp-param-label {
+  /* TODO: width 5ch, font 10px, text-muted, uppercase, flex-shrink 0 */
+}
+
+.dsp-stepper {
+  /* TODO: display flex, align-items center, gap 2px */
+}
+
+.dsp-stepper-dec,
+.dsp-stepper-inc {
+  /* TODO: small square button, border, bg-dark, text-primary, hover bg-hover */
+}
+
+.dsp-stepper-inp {
+  /* TODO: width ~56px, text-align right, tabular-nums, bg-dark, border, no spinners */
+}
+
+/* Hide browser number-input spinners */
+.dsp-stepper-inp::-webkit-outer-spin-button,
+.dsp-stepper-inp::-webkit-inner-spin-button { -webkit-appearance: none; }
+.dsp-stepper-inp[type=number] { -moz-appearance: textfield; }
+
+.dsp-param-unit {
+  /* TODO: font 10px, text-dim, min-width 2ch */
+}
+
+/* ── Band rows (EQ / DEQ) ────────────────────────────────────────────────── */
+
+.dsp-band-row {
+  /* TODO: display grid, columns: badge type freq-stepper gain-stepper q-stepper byp-btn */
+}
+
+.dsp-band-badge {
+  /* TODO: 18px circle, bg var(--band-color), text 9px bold white, text-align center */
+}
+
+.dsp-band-type-sel {
+  /* TODO: extend .dsp-select, min-width 72px */
+}
+
+.dsp-band-byp-btn {
+  /* TODO: extend .dsp-byp-btn */
+}
+
+/* ── Delay section ───────────────────────────────────────────────────────── */
+
+.dsp-delay-slider-wrap {
+  /* TODO: full-width range slider with thick track */
+}
+
+.dly-range {
+  /* TODO: width 100%, accent-color var(--text-accent) */
+}
+
+.dsp-delay-info {
+  /* TODO: flex row, space-between, text-dim, font 9px */
+}
+
+/* ── Automixer group grid ────────────────────────────────────────────────── */
+
+.axm-group-grid {
+  /* TODO: display flex, gap 4px */
+}
+
+.axm-slot {
+  /* TODO: 16px square, border, rounded, bg-dark */
+}
+
+.axm-slot--active {
+  /* TODO: background accent, border-color accent */
+}
+
+/* ── DSP Presets Manager ────────────────────────────────────────────── */
+.preset-manager-section {
+  padding: 1rem;
+  border-top: 1px solid var(--border, #333);
+}
+.preset-manager-header {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim, #888);
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+.preset-manager-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.preset-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+.preset-list-table th,
+.preset-list-table td {
+  padding: 4px 8px;
+  text-align: left;
+}
+.preset-list-table tr:hover td {
+  background: var(--surface-hover, #2a2a2a);
+}
+.preset-save-section {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.preset-name-input {
+  flex: 1;
+  min-width: 120px;
+}
+.preset-ch-input {
+  width: 60px;
+}
+.preset-params-preview {
+  font-size: 0.7rem;
+  max-height: 150px;
+  overflow-y: auto;
+  background: var(--surface, #1a1a1a);
+  padding: 0.5rem;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

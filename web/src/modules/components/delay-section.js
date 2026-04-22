@@ -1,11 +1,18 @@
 /**
- * DelaySection — collapsible output delay control
- * 
+ * DelaySection — output delay with range slider and distance display
+ *
  * Usage:
  *   import { DelaySection } from '/modules/components/delay-section.js';
- *   const ds = new DelaySection(containerEl, channelIndex);
+ *   const ds = new DelaySection(containerEl, channelIndex, 'output');
  *   ds.setState({ enabled: false, delay_ms: 0 });
- *   // Call ds.destroy() to clean up
+ *   ds.destroy();
+ *
+ * TODO (sprint — see docs/DSP_PANELS.md §9):
+ *   1. Replace current plain number input with large range slider + stepper combo
+ *   2. Sync slider ↔ stepper bidirectionally on input events
+ *   3. Add distance display: meters = delay_ms / 1000 * 344
+ *   4. Add samples display: Math.round(delay_ms / 1000 * 48000)
+ *   5. Fix stepper pattern — use delegated click listener
  */
 
 import { outputDsp, apiErrorMessage } from '/modules/api.js';
@@ -31,7 +38,7 @@ export class DelaySection {
         <div class="section-body">
           <div class="filter-row">
             <label class="filter-label">Enable</label>
-            <input type="checkbox" class="toggle-cb" id="delay-enable-${this.ch}">
+            <input type="checkbox" class="toggle-cb">
           </div>
           <div class="filter-row">
             <label class="filter-label">Delay</label>
