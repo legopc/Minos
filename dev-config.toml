@@ -1,0 +1,58 @@
+rx_channels = 8
+tx_channels = 8
+zones = [
+    "Main Bar L",
+    "Main Bar R",
+    "Terrace L",
+    "Terrace R",
+    "Stage L",
+    "Stage R",
+    "Boiler Room",
+    "Office",
+]
+sources = [
+    "Main Bar Spotify",
+    "DVS Left",
+    "DVS Right",
+    "Stage Aux L",
+    "Stage Aux R",
+    "AUX Input 1",
+    "AUX Input 2",
+    "Bluetooth",
+]
+input_gain_db = [
+    -6.5,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+output_gain_db = [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+]
+matrix = [
+    [true, false, false, false, false, false, false, false],
+    [true, false, false, false, false, false, false, false],
+    [false, false, true, false, false, false, false, false],
+    [false, false, true, false, false, false, false, false],
+    [false, false, false, false, true, false, false, false],
+    [false, false, false, false, true, false, false, false],
+    [false, false, false, false, false, false, true, false],
+    [false, false, false, false, false, false, false, true],
+]
+dante_name = "patchbox-test"
+dante_nic = "eth0"
+port = 9191
+
+rx_jitter_samples = 96
+lead_samples = 96
