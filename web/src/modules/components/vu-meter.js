@@ -79,18 +79,21 @@ export class VuMeter {
     
     // Extract data for this channel
     const isInput = this.type === 'input';
-    const rmsArray = isInput ? frameData.rx_rms : frameData.tx_rms;
-    const peakArray = isInput ? frameData.rx_peak : frameData.tx_peak;
+    // WebSocket sends: {rx: {"rx_0": -45.0, ...}, tx: {"tx_0": -40.0, ...}}
+    const key = isInput ? `rx_${this.channelIndex}` : `tx_${this.channelIndex}`;
+    const peakKey = isInput ? `rx_${this.channelIndex}` : `tx_${this.channelIndex}`;
+    const rmsObj = isInput ? frameData.rx : frameData.tx;
+    const peakObj = isInput ? frameData.rx_peak : frameData.tx_peak;
     const grArray = isInput ? frameData.rx_gr_db : frameData.tx_gr_db;
     const gateArray = isInput ? frameData.rx_gate_open : undefined;
-    
+
     // Exponential smoothing helpers
     const emaAttack  = (raw, prev, α) => α * raw + (1 - α) * prev;
     const emaRelease = (raw, prev, α) => α * raw + (1 - α) * prev;
 
-    // Update smoothed RMS
-    if (rmsArray && rmsArray[this.channelIndex] !== undefined) {
-      const raw = this.linearToDb(rmsArray[this.channelIndex]);
+    // Update smoothed RMS (backend sends dBFS, no conversion needed)
+    if (rmsObj && rmsObj[key] !== undefined) {
+      const raw = rmsObj[key]; // Already in dBFS
       const α = raw > this._smoothRms ? 0.25 : 0.04;
       this._smoothRms = emaAttack(raw, this._smoothRms, α);
       this.rmsDb = this._smoothRms;
@@ -99,9 +102,9 @@ export class VuMeter {
       this.rmsDb = this._smoothRms;
     }
 
-    // Update smoothed peak
-    if (peakArray && peakArray[this.channelIndex] !== undefined) {
-      const raw = this.linearToDb(peakArray[this.channelIndex]);
+    // Update smoothed peak (backend sends dBFS, no conversion needed)
+    if (peakObj && peakObj[peakKey] !== undefined) {
+      const raw = peakObj[peakKey]; // Already in dBFS
       const α = raw > this._smoothPeak ? 0.3 : 0.03;
       this._smoothPeak = emaAttack(raw, this._smoothPeak, α);
       this.peakDb = this._smoothPeak;
@@ -109,17 +112,17 @@ export class VuMeter {
         this.peakHoldDb = this.peakDb;
       }
     }
-    
+
     // Update GR
-    if (grArray && grArray[this.channelIndex] !== undefined) {
-      this.grDb = grArray[this.channelIndex];
+    if (grArray && grArray[key] !== undefined) {
+      this.grDb = grArray[key];
     } else {
       this.grDb = 0;
     }
-    
+
     // Update gate state
-    if (gateArray && gateArray[this.channelIndex] !== undefined) {
-      this.gateOpen = gateArray[this.channelIndex];
+    if (gateArray && gateArray[key] !== undefined) {
+      this.gateOpen = gateArray[key];
     }
   }
   
