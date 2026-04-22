@@ -18,7 +18,7 @@
  */
 
 import { inputDsp, outputDsp } from '/modules/api.js';
-import { getDspDefaults } from '/modules/dsp-defaults.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 // TODO: import { FreqCanvas, computeCurveDb, BAND_COLORS, bandCoeffs, magSquared } from '/modules/components/dsp-canvas.js';
 
 const SAMPLE_RATE = 48000;

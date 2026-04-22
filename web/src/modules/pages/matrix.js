@@ -128,7 +128,7 @@ export async function init(container) {
   }
 
   function isSourceRouted(rx) {
-    return zones.some((_, tx) => matrixData[tx]?.[rx]);
+    return zones.some((_, tx) => (matrixData[tx] ?? [])[rx]);
   }
 
   function renderZonePills() {
@@ -165,7 +165,7 @@ export async function init(container) {
     let html = '<thead><tr><th class="matrix-corner-th" scope="col"></th>';
     visibleZoneList.forEach(({ zone, tx }) => {
       const color = zoneColor(tx);
-      const txRms   = meterData.tx_rms[tx]  ?? -Infinity;
+      const txRms   = meterData.tx_rms && meterData.tx_rms[tx] !== undefined ? meterData.tx_rms[tx] : -Infinity;
       const barW    = getRmsBarWidth(txRms);
       html += `
         <th class="matrix-th-zone" data-tx="${tx}" scope="col"
@@ -179,14 +179,14 @@ export async function init(container) {
     html += '</tr></thead><tbody>';
 
     rows.forEach(({ source, rx }) => {
-      const rxRms = meterData.rx_rms[rx] ?? -Infinity;
+      const rxRms = meterData.rx_rms && meterData.rx_rms[rx] !== undefined ? meterData.rx_rms[rx] : -Infinity;
       const barW  = getRmsBarWidth(rxRms);
       const badge = dspEnabled[rx]
         ? '<span class="matrix-dsp-badge" title="DSP active">DSP</span>'
         : '';
       const routed = isSourceRouted(rx);
       const unroutedWarn = !routed ? '<span class="matrix-unrouted-dot" title="Unrouted to any zone" aria-label="Unrouted"></span>' : '';
-      const gateOpen = meterData.rx_gate_open[rx];
+      const gateOpen = meterData.rx_gate_open && meterData.rx_gate_open[rx] !== undefined ? meterData.rx_gate_open[rx] : undefined;
       const gateClass = gateOpen === false ? ' gate-closed' : '';
 
       html += `
@@ -202,7 +202,7 @@ export async function init(container) {
           </th>`;
 
       visibleZoneList.forEach(({ zone, tx }) => {
-        const routed  = matrixData[tx]?.[rx] ? 1 : 0;
+        const routed  = (matrixData[tx] ?? [])[rx] ? 1 : 0;
         const color   = zoneColor(tx);
         const focused = focusedCell?.tx === tx && focusedCell?.rx === rx;
         html += `
@@ -212,7 +212,7 @@ export async function init(container) {
               tabindex="${focused ? '0' : '-1'}"
               aria-label="${esc((source.name || source))} → ${esc(zone.name || zone)}"
               aria-pressed="${routed ? 'true' : 'false'}"
-              ${routed ? `style="background:${getRmsColor(meterData.rx_rms[rx] ?? -Infinity, color)}"` : ''}>
+              ${routed ? `style="background:${getRmsColor(meterData.rx_rms && meterData.rx_rms[rx] !== undefined ? meterData.rx_rms[rx] : -Infinity, color)}"` : ''}>
             ${routed ? '<span class="matrix-cell-dot" aria-hidden="true"></span>' : ''}
           </td>`;
       });
@@ -257,29 +257,26 @@ export async function init(container) {
   function updateTableVisuals() {
     tableEl.querySelectorAll('.matrix-th-zone').forEach(th => {
       const tx   = +th.dataset.tx;
-      const barW = getRmsBarWidth(meterData.tx_rms[tx] ?? -Infinity);
+      const barW = getRmsBarWidth(meterData.tx_rms && meterData.tx_rms[tx] !== undefined ? meterData.tx_rms[tx] : -Infinity);
       const bar  = th.querySelector('.matrix-th-bar');
       if (bar) bar.style.width = `${barW}%`;
     });
-
     tableEl.querySelectorAll('.matrix-th-source').forEach(th => {
       const rx   = +th.dataset.rx;
-      const barW = getRmsBarWidth(meterData.rx_rms[rx] ?? -Infinity);
+      const barW = getRmsBarWidth(meterData.rx_rms && meterData.rx_rms[rx] !== undefined ? meterData.rx_rms[rx] : -Infinity);
       const bar  = th.querySelector('.matrix-th-bar');
       if (bar) bar.style.width = `${barW}%`;
     });
-
     tableEl.querySelectorAll('.matrix-cell.routed').forEach(cell => {
       const rx    = +cell.dataset.rx;
       const tx    = +cell.dataset.tx;
       const color = zoneColor(tx);
-      cell.style.background = getRmsColor(meterData.rx_rms[rx] ?? -Infinity, color);
+      cell.style.background = getRmsColor(meterData.rx_rms && meterData.rx_rms[rx] !== undefined ? meterData.rx_rms[rx] : -Infinity, color);
     });
-
     // Gate state on rows
     tableEl.querySelectorAll('.matrix-row').forEach(row => {
       const rx = +row.dataset.rx;
-      const gateOpen = meterData.rx_gate_open[rx];
+      const gateOpen = meterData.rx_gate_open && meterData.rx_gate_open[rx] !== undefined ? meterData.rx_gate_open[rx] : undefined;
       row.classList.toggle('gate-closed', gateOpen === false);
     });
   }
@@ -299,7 +296,7 @@ export async function init(container) {
       cell.setAttribute('aria-pressed', next ? 'true' : 'false');
       if (next) {
         cell.innerHTML = '<span class="matrix-cell-dot" aria-hidden="true"></span>';
-        cell.style.background = getRmsColor(meterData.rx_rms[rx] ?? -Infinity, zoneColor(tx));
+        cell.style.background = getRmsColor(meterData.rx_rms && meterData.rx_rms[rx] !== undefined ? meterData.rx_rms[rx] : -Infinity, zoneColor(tx));
       } else {
         cell.innerHTML = '';
         cell.style.background = '';
@@ -379,7 +376,15 @@ export async function init(container) {
   }
 
   function onMeterUpdate(evt) {
-    meterData = evt.detail;
+    const incoming = evt.detail;
+    if (!incoming) return;
+    if (incoming.rx) meterData.rx_rms = incoming.rx;
+    if (incoming.tx) meterData.tx_rms = incoming.tx;
+    if (incoming.rx_peak) meterData.rx_peak = incoming.rx_peak;
+    if (incoming.tx_peak) meterData.tx_peak = incoming.tx_peak;
+    if (incoming.rx_gr_db) meterData.rx_gr_db = incoming.rx_gr_db;
+    if (incoming.tx_gr_db) meterData.tx_gr_db = incoming.tx_gr_db;
+    if (incoming.rx_gate_open) meterData.rx_gate_open = incoming.rx_gate_open;
     updateTableVisuals();
   }
 
@@ -395,10 +400,12 @@ export async function init(container) {
     try {
       const newConfig = await matrix.get();
       config     = newConfig;
-      matrixData.length = 0;
-      Object.assign(matrixData, config.matrix || []);
+      sources    = config.sources || [];
+      zones      = config.zones   || [];
+      matrixData = config.matrix  || [];
       await refreshDspBadges();
       renderTable();
+      renderZonePills();
     } catch (err) {
       console.error('Failed to refresh matrix:', err);
     }

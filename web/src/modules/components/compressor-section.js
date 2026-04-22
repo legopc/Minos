@@ -17,7 +17,7 @@
  */
 
 import { inputDsp, outputDsp, apiErrorMessage } from '/modules/api.js';
-import { getDspDefaults } from '/modules/dsp-defaults.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 // TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class CompressorSection {

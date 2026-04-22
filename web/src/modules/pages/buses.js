@@ -37,7 +37,7 @@ export async function init(container) {
   async function loadBuses() {
     try {
       const data = await busApiFetch('GET', '/api/v1/buses');
-      buses = data?.buses ?? data ?? [];
+      buses = Array.isArray(data) ? data : (Array.isArray(data?.buses) ? data.buses : []);
     } catch (err) {
       buses = [];
       console.error('Failed to load buses:', err);

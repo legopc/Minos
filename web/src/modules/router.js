@@ -113,7 +113,7 @@ const PAGE_CACHE = {};
 async function loadPage(route) {
   if (!PAGE_CACHE[route]) {
     try {
-      const mod = await import(`/modules/pages/${route}.js`);
+      const mod = await import(`/modules/pages/${route}.js?t=${Date.now()}`);
       PAGE_CACHE[route] = mod;
     } catch (e) {
       console.warn(`Failed to load page module: ${route}`, e);
