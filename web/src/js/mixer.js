@@ -1473,26 +1473,6 @@ export function buildOutputMaster(out) { return _buildOutputMaster(out); }
 export function fmtDb(v) { return _db(v); }
 
 export function updateMetering(rx, tx, bus) {
-  if (!rx && !tx && !bus) return;
-  const update = (map) => {
-    if (!map) return;
-    Object.entries(map).forEach(([id, db]) => {
-      const bar  = document.getElementById(`vu-bar-${id}`);
-      const peak = document.getElementById(`vu-peak-${id}`);
-      if (!bar) return;
-      const pct = _meterPct(db);
-      const col = _meterColour(db);
-      bar.style.transform = `scaleY(${pct / 100})`;
-      bar.style.background = col;
-      if (peak) {
-        peak.style.bottom = pct + '%';
-        peak.style.background = col;
-      }
-    });
-  };
-  update(rx);
-  update(tx);
-  update(bus);
 }
 
 function _db(v) { if (!isFinite(v)) return '-∞'; return (v>=0?'+':'')+Number(v).toFixed(1); }
