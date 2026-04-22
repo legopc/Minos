@@ -6,6 +6,7 @@
  */
 
 import { inputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 
 export class AutomixerSection {
   constructor(el, ch, _type) {
@@ -64,12 +65,13 @@ export class AutomixerSection {
   }
 
   setState(data) {
-    this.state = data;
-    if (!data) return;
-    if (this._cb)       this._cb.checked       = !!data.enabled;
-    if (this._groupInp) this._groupInp.value    = data.group ?? 0;
-    if (this._priInp)   this._priInp.value      = data.priority ?? 0;
-    if (this._holdInp)  this._holdInp.value     = data.last_mic_hold_ms ?? 0;
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.axm ?? {}), ...data };
+    if (!this.state) return;
+    if (this._cb)       this._cb.checked       = !!this.state.enabled;
+    if (this._groupInp) this._groupInp.value    = this.state.group ?? 0;
+    if (this._priInp)   this._priInp.value      = this.state.priority ?? 0;
+    if (this._holdInp)  this._holdInp.value     = this.state.last_mic_hold_ms ?? 0;
   }
 
   destroy() {

@@ -145,7 +145,7 @@
 .mixer-zone-master {
   min-width: 60px;
   max-width: 160px;
-  border-top: 3px solid var(--zone-card-color, #444);
+  border-top: 3px solid var(--zone-card-color);
 }
 
 .strip-name,
@@ -373,9 +373,9 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   border-radius: 3px;
-  background: var(--bg-control, #2a2a2a);
+  background: var(--bg-control);
   color: var(--text-muted);
-  border: 1px solid var(--border-dim, #333);
+  border: 1px solid var(--border-dim);
   cursor: pointer;
   user-select: none;
   touch-action: none;
@@ -384,8 +384,8 @@
 
 .mixer-solo-btn:hover,
 .mixer-solo-btn:focus-visible {
-  background: var(--bg-control-hover, #333);
-  color: var(--text-primary, #ddd);
+  background: var(--bg-control-hover);
+  color: var(--text-primary);
 }
 
 .mixer-solo-btn.active {
@@ -590,7 +590,7 @@
 }
 
 .mixer-output-strip {
-  border-top: 3px solid var(--zone-card-color, #444);
+  border-top: 3px solid var(--zone-card-color);
 }
 
 .mixer-zone-label {
@@ -601,7 +601,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
-  border-left: 3px solid var(--zone-sep-color, #444);
+  border-left: 3px solid var(--zone-sep-color);
   padding-left: 3px;
 }
 
@@ -631,7 +631,6 @@
 }
 
 /* === Recovered sprint features === */
-:root { --solo-active: #e6b800; }
 
 .mixer-strip.solo-dimmed { opacity: 0.28; transition: opacity 0.15s; }
 
@@ -780,7 +779,7 @@
 
 /* 0 dBFS tick is red */
 .strip-vu-scale span:first-child {
-  color: var(--vu-red, #e05050);
+  color: var(--vu-red);
   opacity: 1;
   font-weight: bold;
 }
@@ -839,7 +838,7 @@
 }
 
 .mixer-output-separator {
-  border-left: 2px solid var(--border-primary, #555);
+  border-left: 2px solid var(--border-primary);
 }
 
 .bus-strip {
@@ -882,8 +881,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: var(--bg-panel, #1e1e2e);
-  border: 1px solid var(--border, #444);
+  background: var(--bg-panel);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
@@ -970,7 +969,7 @@
 
 .bus-route-label {
   font-size: 13px;
-  color: var(--text-primary, #eee);
+  color: var(--text-primary);
 }
 
 
@@ -1213,7 +1212,7 @@
 
 .strip-colour-btn:hover {
   border-color: currentColor;
-  color: var(--ch-accent, #58a6ff);
+  color: var(--ch-accent);
 }
 
 /* VCA member editor popover */

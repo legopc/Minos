@@ -6,6 +6,7 @@
  */
 
 import { inputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 
 export class AfsSection {
   constructor(el, ch, _type) {
@@ -70,12 +71,13 @@ export class AfsSection {
   }
 
   setState(data) {
-    this.state = data;
-    if (!data) return;
-    if (this._cb)         this._cb.checked          = !!data.enabled;
-    if (this._fixedInp)   this._fixedInp.value       = data.fixed_filters ?? 4;
-    if (this._dynamicInp) this._dynamicInp.value     = data.dynamic_filters ?? 8;
-    if (this._sensInp)    this._sensInp.value        = data.sensitivity_db ?? -6;
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.afs ?? {}), ...data };
+    if (!this.state) return;
+    if (this._cb)         this._cb.checked          = !!this.state.enabled;
+    if (this._fixedInp)   this._fixedInp.value       = this.state.fixed_filters ?? 4;
+    if (this._dynamicInp) this._dynamicInp.value     = this.state.dynamic_filters ?? 8;
+    if (this._sensInp)    this._sensInp.value        = this.state.sensitivity_db ?? -6;
   }
 
   destroy() {

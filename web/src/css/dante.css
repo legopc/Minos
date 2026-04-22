@@ -62,7 +62,7 @@
 }
 
 .dante-diag-warn {
-  border-left-color: var(--dot-warn, #d8b000);
+  border-left-color: var(--color-warn);
 }
 
 .dante-diag-error {
@@ -350,7 +350,7 @@
 
 .dante-subscription-badge.is-routed_silent,
 .dante-subscription-badge.is-muted {
-  color: var(--dot-warn, #d8b000);
+  color: var(--color-warn);
 }
 
 .dante-subscription-badge.is-unrouted {
@@ -399,7 +399,7 @@
 }
 
 .dante-trace-warning {
-  border-left: 2px solid var(--dot-warn, #d8b000);
+  border-left: 2px solid var(--color-warn);
   padding-left: 8px;
   color: var(--text-muted);
   font-size: 10px;
@@ -437,7 +437,7 @@
 }
 
 .dante-trace-badge.is-generator {
-  color: var(--dot-warn, #d8b000);
+  color: var(--color-warn);
 }
 
 .dante-trace-summary {
@@ -467,7 +467,7 @@
 }
 
 .dante-trace-hop.is-generator {
-  color: var(--dot-warn, #d8b000);
+  color: var(--color-warn);
 }
 
 .dante-trace-arrow {
@@ -513,7 +513,7 @@
 }
 
 .dante-task-queued {
-  border-left: 3px solid var(--dot-warn, #d8b000);
+  border-left: 3px solid var(--color-warn);
 }
 
 .dante-task-running {
@@ -566,7 +566,7 @@
 }
 
 .ev-warn {
-  color: var(--dot-warn, #d8b000);
+  color: var(--color-warn);
 }
 
 .ev-error {

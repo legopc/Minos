@@ -17,6 +17,7 @@
  */
 
 import { outputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 // TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class LimiterSection {
@@ -114,8 +115,9 @@ export class LimiterSection {
   }
 
   setState(data) {
-    this.state = { ...data };
-    
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.lim ?? {}), ...data };
+
     const panel = this.containerEl.querySelector('[data-section="limiter"]');
     const enableCb = panel.querySelector('input[type="checkbox"]');
 

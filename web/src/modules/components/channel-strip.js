@@ -407,26 +407,22 @@ export class ChannelStrip {
       this._updatePolarityUI();
     }
 
-    // Sub-sections — fall back to generated defaults when API omits a block
-    const flt = data.hpf !== undefined || data.lpf !== undefined
-      ? { hpf: data.hpf, lpf: data.lpf }
-      : defs.flt;
-    if (flt) this._filter.setState(flt);
-
-    if (this._eq) this._eq.setState(data.eq ?? defs.peq ?? {});
+    // Sub-sections — defaults handled internally by each component
+    if (this._filter) this._filter.setState({ hpf: data.hpf, lpf: data.lpf });
+    if (this._eq) this._eq.setState(data.eq ?? {});
 
     if (this.type === 'input') {
-      if (this._gate) this._gate.setState(data.gate ?? defs.gte ?? {});
+      if (this._gate) this._gate.setState(data.gate ?? {});
     } else {
-      if (this._limiter) this._limiter.setState(data.limiter ?? defs.lim ?? {});
-      if (this._delay)   this._delay.setState(data.delay   ?? defs.dly ?? {});
+      if (this._limiter) this._limiter.setState(data.limiter ?? {});
+      if (this._delay)   this._delay.setState(data.delay   ?? {});
     }
 
-    if (this._compressor) this._compressor.setState(data.compressor ?? defs.cmp ?? {});
-    if (this._deq)        this._deq.setState(data.deq               ?? defs.deq ?? {});
-    if (this._aec)        this._aec.setState(data.aec               ?? defs.aec ?? {});
-    if (this._axm)        this._axm.setState(data.automixer         ?? defs.axm ?? {});
-    if (this._afs)        this._afs.setState(data.afs               ?? defs.afs ?? {});
+    if (this._compressor) this._compressor.setState(data.compressor ?? {});
+    if (this._deq)        this._deq.setState(data.deq               ?? {});
+    if (this._aec)        this._aec.setState(data.aec               ?? {});
+    if (this._axm)        this._axm.setState(data.automixer         ?? {});
+    if (this._afs)        this._afs.setState(data.afs               ?? {});
 
     // Attach gain listeners after data is loaded (idempotent — remove first)
     this._gainSlider.removeEventListener('input',  this._onGainInput);

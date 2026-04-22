@@ -1,4 +1,4 @@
-use patchbox_core::config::{PatchboxConfig, StereoLinkConfig};
+use patchbox_core::config::{InternalBusConfig, PatchboxConfig, StereoLinkConfig};
 use patchbox_core::matrix::MatrixProcessor;
 use proptest::prelude::*;
 
@@ -9,7 +9,6 @@ fn base_cfg(rx: usize, tx: usize) -> PatchboxConfig {
     cfg.sources = (0..rx).map(|i| format!("S{i}")).collect();
     cfg.zones = (0..tx).map(|i| format!("Z{i}")).collect();
 
-    // session-only (serde skipped) fields: keep deterministic
     cfg.solo_channels.clear();
     cfg.xp_ramp_ms = 0.0;
 
@@ -20,6 +19,36 @@ fn base_cfg(rx: usize, tx: usize) -> PatchboxConfig {
 
 fn gain_db_strategy() -> impl Strategy<Value = f32> {
     -200.0f32..200.0f32
+}
+
+fn has_cycle(bus_feed: &[Vec<bool>]) -> bool {
+    let n = bus_feed.len();
+    for start in 0..n {
+        let mut visited = vec![false; n];
+        let mut rec_stack = vec![false; n];
+        if dfs_cycle(start, bus_feed, &mut visited, &mut rec_stack) {
+            return true;
+        }
+    }
+    false
+}
+
+fn dfs_cycle(node: usize, bus_feed: &[Vec<bool>], visited: &mut [bool], rec_stack: &mut [bool]) -> bool {
+    if rec_stack[node] {
+        return true;
+    }
+    if visited[node] {
+        return false;
+    }
+    visited[node] = true;
+    rec_stack[node] = true;
+    for (neighbor, &feeds) in bus_feed[node].iter().enumerate() {
+        if feeds && dfs_cycle(neighbor, bus_feed, visited, rec_stack) {
+            return true;
+        }
+    }
+    rec_stack[node] = false;
+    false
 }
 
 proptest! {
@@ -232,5 +261,98 @@ proptest! {
         for &s in out_bufs[tx_idx].iter() {
             prop_assert_eq!(s, 0.0);
         }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 64,
+        failure_persistence: None,
+        .. ProptestConfig::default()
+    })]
+
+    #[test]
+    fn prop_no_bus_feedback_cycles(
+        n_buses in 1usize..=8,
+        feed_raw in prop::collection::vec(
+            prop::collection::vec(any::<bool>(), 0..8),
+            0..8,
+        ),
+    ) {
+        let n = n_buses.min(8);
+        let mut bus_feed: Vec<Vec<bool>> = feed_raw
+            .into_iter()
+            .take(n)
+            .map(|row| {
+                let mut r = row;
+                r.resize(n, false);
+                r
+            })
+            .collect();
+        while bus_feed.len() < n {
+            bus_feed.push(vec![false; n]);
+        }
+        for i in 0..n {
+            bus_feed[i][i] = false;
+        }
+
+        prop_assume!(!has_cycle(&bus_feed));
+
+        let mut cfg = base_cfg(2, 2);
+        cfg.internal_buses = (0..n)
+            .map(|i| InternalBusConfig {
+                id: format!("bus_{}", i),
+                name: format!("Bus {}", i),
+                routing: vec![false; 2],
+                routing_gain: vec![0.0; 2],
+                dsp: Default::default(),
+                muted: false,
+            })
+            .collect();
+        cfg.bus_feed_matrix = Some(bus_feed.clone());
+        cfg.normalize();
+
+        prop_assert!(!has_cycle(&cfg.bus_feed_matrix.unwrap()));
+    }
+
+    #[test]
+    fn prop_bus_matrix_order_independent(
+        n_buses in 1usize..=4,
+        n_tx in 1usize..=4,
+        ops in prop::collection::vec((any::<u8>(), any::<bool>()), 0..=16),
+    ) {
+        let n = n_buses.min(4);
+        let tx = n_tx.min(4);
+
+        let mut cfg1 = base_cfg(2, tx);
+        cfg1.internal_buses = (0..n)
+            .map(|i| InternalBusConfig {
+                id: format!("bus_{}", i),
+                name: format!("Bus {}", i),
+                routing: vec![false; 2],
+                routing_gain: vec![0.0; 2],
+                dsp: Default::default(),
+                muted: false,
+            })
+            .collect();
+        cfg1.normalize();
+
+        let mut cfg2 = cfg1.clone();
+
+        let mut bus_matrix1 = vec![vec![false; n]; tx];
+        let mut bus_matrix2 = vec![vec![false; n]; tx];
+
+        for (bus_raw, enabled) in ops {
+            let bus_idx = (bus_raw as usize) % n;
+            for t in 0..tx {
+                bus_matrix1[t][bus_idx] = enabled;
+                bus_matrix2[t][bus_idx] = enabled;
+            }
+        }
+
+        cfg1.bus_matrix = Some(bus_matrix1);
+        cfg2.bus_matrix = Some(bus_matrix2);
+
+        prop_assert_eq!(cfg1.bus_matrix, cfg2.bus_matrix);
     }
 }

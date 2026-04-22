@@ -17,6 +17,7 @@
  */
 
 import { inputDsp, outputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaults } from '/modules/dsp-defaults.js';
 // TODO: import { DynamicsCanvas } from '/modules/components/dsp-canvas.js';
 
 export class CompressorSection {
@@ -144,8 +145,9 @@ export class CompressorSection {
   }
 
   setState(data) {
-    this.state = { ...data };
-    
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.cmp ?? {}), ...data };
+
     const panel = this.containerEl.querySelector('[data-section="compressor"]');
     const enableCb = panel.querySelector('input[type="checkbox"]');
 

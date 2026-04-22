@@ -1,6 +1,51 @@
 // Patchbox REST API module
 // All functions return the parsed JSON response or throw on error.
 
+/**
+ * @typedef {Object} ChannelDsp
+ * @property {number} [gain_db]
+ * @property {boolean} [polarity]
+ * @property {Object} [hpf] - HPF config { enabled, freq_hz }
+ * @property {Object} [lpf] - LPF config { enabled, freq_hz }
+ * @property {Object} [eq] - EQ config { enabled, bands: [{ band_type, freq_hz, gain_db, q }] }
+ * @property {Object} [gate] - Gate config { enabled, threshold_db, ratio, attack_ms, hold_ms, release_ms, range_db }
+ * @property {Object} [compressor] - Compressor config { enabled, threshold_db, ratio, knee_db, attack_ms, release_ms, makeup_db }
+ * @property {Object} [limiter] - Limiter config { enabled, threshold_db, lookahead_ms, release_ms }
+ * @property {Object} [delay] - Delay config { enabled, delay_ms }
+ * @property {Object} [deq] - Dynamic EQ config { enabled, bands: [...] }
+ * @property {Object} [aec] - AEC config { enabled, tail_ms, nlp_level, comfort_noise }
+ * @property {Object} [afs] - AFS config { enabled, fixed_filters, dynamic_filters, sensitivity_db }
+ * @property {Object} [automixer] - Automixer config { enabled, group, priority, last_mic_hold_ms }
+ */
+
+/**
+ * @typedef {Object} SceneData
+ * @property {string} name
+ * @property {string} [description]
+ * @property {number} [created_at]
+ * @property {number} [updated_at]
+ * @property {boolean} [is_template]
+ */
+
+/**
+ * @typedef {Object} MeterFrame
+ * @property {number[]} [rx_rms] - Input RMS levels (linear)
+ * @property {number[]} [tx_rms] - Output RMS levels (linear)
+ * @property {number[]} [rx_peak] - Input peak levels (linear)
+ * @property {number[]} [tx_peak] - Output peak levels (linear)
+ * @property {number[]} [rx_gr_db] - Input gain reduction (dB)
+ * @property {number[]} [tx_gr_db] - Output gain reduction (dB)
+ * @property {boolean[]} [rx_gate_open] - Gate open state per input
+ */
+
+/**
+ * @typedef {Object} HealthResponse
+ * @property {{ connected: boolean }} [dante]
+ * @property {{ synced: boolean, offset_ns: number }} [ptp]
+ * @property {{ active_routes: number, rx_channels: number, tx_channels: number }} [audio]
+ * @property {number} [uptime_secs]
+ */
+
 const TOKEN_KEY = 'pb_token';
 
 function getToken() {

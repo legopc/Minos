@@ -24,14 +24,16 @@ use std::sync::atomic::Ordering as AOrdering;
 pub struct HealthDante {
     pub name: String,
     pub nic: String,
+    pub card_present: bool,
     pub connected: bool,
-    pub rx_channels: usize,
-    pub tx_channels: usize,
+    pub rx_count: usize,
+    pub tx_count: usize,
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct HealthPtp {
     pub synced: bool,
+    pub locked: bool,
     pub socket_path: String,
     pub offset_ns: Option<i64>,
     pub state: Option<String>,
@@ -107,14 +109,16 @@ pub struct MeteringResponse {
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct MetricsDante {
+    pub card_present: bool,
     pub connected: bool,
-    pub rx_channels: usize,
-    pub tx_channels: usize,
+    pub rx_count: usize,
+    pub tx_count: usize,
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub struct MetricsPtp {
     pub synced: bool,
+    pub locked: bool,
     pub offset_ns: Option<i64>,
     pub state: Option<String>,
 }
@@ -1631,12 +1635,14 @@ async fn build_health_response(s: &AppState) -> HealthResponse {
         dante: HealthDante {
             name: cfg.dante_name.clone(),
             nic: cfg.dante_nic.clone(),
+            card_present: dante_connected,
             connected: dante_connected,
-            rx_channels: dante_rx_channels,
-            tx_channels: dante_tx_channels,
+            rx_count: dante_rx_channels,
+            tx_count: dante_tx_channels,
         },
         ptp: HealthPtp {
             synced: ptp_synced,
+            locked: is_ptp_locked,
             socket_path: cfg.dante_clock_path.clone(),
             offset_ns: ptp_offset_ns,
             state: ptp_state,
@@ -1672,12 +1678,14 @@ fn build_metrics_response(health: &HealthResponse) -> MetricsResponse {
         uptime_secs: health.uptime_secs,
         clients_connected: health.clients_connected,
         dante: MetricsDante {
+            card_present: health.dante.card_present,
             connected: health.dante.connected,
-            rx_channels: health.dante.rx_channels,
-            tx_channels: health.dante.tx_channels,
+            rx_count: health.dante.rx_count,
+            tx_count: health.dante.tx_count,
         },
         ptp: MetricsPtp {
             synced: health.ptp.synced,
+            locked: health.ptp.locked,
             offset_ns: health.ptp.offset_ns,
             state: health.ptp.state.clone(),
         },
@@ -1730,15 +1738,21 @@ fn render_prometheus_metrics(metrics: &MetricsResponse) -> String {
         "patchbox_dante_connected {}\n",
         u8::from(metrics.dante.connected)
     ));
-    body.push_str("# TYPE patchbox_dante_rx_channels gauge\n");
+    body.push_str("# HELP patchbox_dante_card_present Dante hardware present.\n");
+    body.push_str("# TYPE patchbox_dante_card_present gauge\n");
     body.push_str(&format!(
-        "patchbox_dante_rx_channels {}\n",
-        metrics.dante.rx_channels
+        "patchbox_dante_card_present {}\n",
+        u8::from(metrics.dante.card_present)
     ));
-    body.push_str("# TYPE patchbox_dante_tx_channels gauge\n");
+    body.push_str("# TYPE patchbox_dante_rx_count gauge\n");
     body.push_str(&format!(
-        "patchbox_dante_tx_channels {}\n",
-        metrics.dante.tx_channels
+        "patchbox_dante_rx_count {}\n",
+        metrics.dante.rx_count
+    ));
+    body.push_str("# TYPE patchbox_dante_tx_count gauge\n");
+    body.push_str(&format!(
+        "patchbox_dante_tx_count {}\n",
+        metrics.dante.tx_count
     ));
 
     body.push_str("# HELP patchbox_ptp_synced PTP clock socket availability.\n");
@@ -1746,6 +1760,12 @@ fn render_prometheus_metrics(metrics: &MetricsResponse) -> String {
     body.push_str(&format!(
         "patchbox_ptp_synced {}\n",
         u8::from(metrics.ptp.synced)
+    ));
+    body.push_str("# HELP patchbox_ptp_locked PTP lock state.\n");
+    body.push_str("# TYPE patchbox_ptp_locked gauge\n");
+    body.push_str(&format!(
+        "patchbox_ptp_locked {}\n",
+        u8::from(metrics.ptp.locked)
     ));
     if let Some(offset_ns) = metrics.ptp.offset_ns {
         body.push_str("# TYPE patchbox_ptp_offset_nanoseconds gauge\n");

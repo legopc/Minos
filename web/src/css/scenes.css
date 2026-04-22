@@ -813,10 +813,10 @@
 
 /* Scene dialogs */
 .scenes-dialog {
-  border: 1px solid var(--color-border, #444);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-bg, #1a1a1a);
-  color: var(--color-text, #e0e0e0);
+  background: var(--color-bg);
+  color: var(--color-text);
   padding: 0;
   min-width: 320px;
   max-width: 480px;
@@ -849,8 +849,8 @@
 }
 .scenes-dialog input,
 .scenes-dialog textarea {
-  background: var(--color-bg-raised, #2a2a2a);
-  border: 1px solid var(--color-border, #444);
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
   color: inherit;
   padding: 0.4rem 0.6rem;
   border-radius: 2px;
@@ -863,8 +863,8 @@
   margin-top: 0.5rem;
 }
 .scenes-diff-preview {
-  background: var(--color-bg-raised, #2a2a2a);
-  border: 1px solid var(--color-border, #444);
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
   padding: 0.5rem;
   border-radius: 2px;
   font-size: 0.75rem;

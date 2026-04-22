@@ -89,6 +89,29 @@
 
   <!-- Toast notifications -->
   <div id="toasts" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Keyboard shortcuts dialog -->
+  <dialog id="shortcuts-dialog" class="shortcuts-modal" aria-label="Keyboard shortcuts">
+    <div class="shortcuts-header">
+      <span class="shortcuts-title">Keyboard Shortcuts</span>
+      <button id="shortcuts-close" class="shortcuts-close" aria-label="Close shortcuts help">×</button>
+    </div>
+    <table class="shortcuts-table" role="presentation">
+      <tbody>
+        <tr><td><kbd class="shortcut-key">?</kbd></td><td>Show this help</td></tr>
+        <tr><td><kbd class="shortcut-key">Esc</kbd></td><td>Close modal / cancel</td></tr>
+        <tr><td><kbd class="shortcut-key">M</kbd></td><td>Mute focused channel</td></tr>
+        <tr><td><kbd class="shortcut-key">S</kbd></td><td>Solo focused channel</td></tr>
+        <tr><td><kbd class="shortcut-key">Shift+Click</kbd></td><td>Exclusive solo (clears other solos)</td></tr>
+        <tr><td><kbd class="shortcut-key">Ctrl+\</kbd></td><td>Toggle sidebar</td></tr>
+        <tr><td><kbd class="shortcut-key">1</kbd></td><td>Dashboard tab</td></tr>
+        <tr><td><kbd class="shortcut-key">2</kbd></td><td>Matrix tab</td></tr>
+        <tr><td><kbd class="shortcut-key">3</kbd></td><td>Inputs tab</td></tr>
+        <tr><td><kbd class="shortcut-key">4</kbd></td><td>Outputs tab</td></tr>
+        <tr><td><kbd class="shortcut-key">5</kbd><kbd class="shortcut-key">6</kbd><kbd class="shortcut-key">7</kbd></td><td>Buses / Mixer / Zones tabs</td></tr>
+      </tbody>
+    </table>
+  </dialog>
 </div>
 
 <script type="module" src="/modules/router.js"></script>

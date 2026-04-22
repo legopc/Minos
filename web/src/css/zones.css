@@ -155,7 +155,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-primary);
   border-radius: 3px;
-  border-top: 3px solid var(--zone-card-color, #444);
+  border-top: 3px solid var(--zone-card-color);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -358,7 +358,7 @@
 /* ── Zone detail panel ── */
 
 .zone-panel-header {
-  border-bottom: 3px solid var(--zone-card-color, #444);
+  border-bottom: 3px solid var(--zone-card-color);
   gap: 10px;
 }
 

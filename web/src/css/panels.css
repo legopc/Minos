@@ -224,7 +224,7 @@
 .dsp-gr-bar {
   height: 100%;
   width: 0%;
-  background: var(--meter-saturation, #e05050);
+  background: var(--meter-saturation);
   border-radius: 3px;
   transition: width 0.08s linear;
 }
@@ -449,12 +449,12 @@
 /* ── DSP Presets Manager ────────────────────────────────────────────── */
 .preset-manager-section {
   padding: 1rem;
-  border-top: 1px solid var(--border, #333);
+  border-top: 1px solid var(--border-primary);
 }
 .preset-manager-header {
   font-size: 0.7rem;
   letter-spacing: 0.08em;
-  color: var(--text-dim, #888);
+  color: var(--text-dim);
   text-transform: uppercase;
   margin-bottom: 0.5rem;
 }
@@ -476,7 +476,7 @@
   text-align: left;
 }
 .preset-list-table tr:hover td {
-  background: var(--surface-hover, #2a2a2a);
+  background: var(--surface-hover);
 }
 .preset-save-section {
   display: flex;
@@ -495,7 +495,7 @@
   font-size: 0.7rem;
   max-height: 150px;
   overflow-y: auto;
-  background: var(--surface, #1a1a1a);
+  background: var(--surface);
   padding: 0.5rem;
   border-radius: 4px;
   white-space: pre-wrap;

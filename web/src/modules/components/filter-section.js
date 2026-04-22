@@ -17,6 +17,7 @@
  */
 
 import { inputDsp, outputDsp } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 // TODO: import { FilterCanvas } from '/modules/components/dsp-canvas.js';
 
 export class FilterSection {
@@ -134,22 +135,25 @@ export class FilterSection {
   }
 
   setState(data) {
-    if (data.hpf) {
-      this.state.hpf = { ...this.state.hpf, ...data.hpf };
+    const defs = getDspDefaultsSync();
+    const merged = { ...(defs?.flt ?? {}), ...data };
+
+    if (merged.hpf) {
+      this.state.hpf = { ...this.state.hpf, ...merged.hpf };
       const hpfCheckbox = this.sectionPanel.querySelector('[data-filter="hpf"].toggle-cb');
       const hpfFreqInput = this.sectionPanel.querySelector('[data-filter="hpf"].freq-input');
       hpfCheckbox.checked = this.state.hpf.enabled;
       hpfFreqInput.value = this.state.hpf.freq_hz;
     }
-    
-    if (data.lpf) {
-      this.state.lpf = { ...this.state.lpf, ...data.lpf };
+
+    if (merged.lpf) {
+      this.state.lpf = { ...this.state.lpf, ...merged.lpf };
       const lpfCheckbox = this.sectionPanel.querySelector('[data-filter="lpf"].toggle-cb');
       const lpfFreqInput = this.sectionPanel.querySelector('[data-filter="lpf"].freq-input');
       lpfCheckbox.checked = this.state.lpf.enabled;
       lpfFreqInput.value = this.state.lpf.freq_hz;
     }
-    
+
     this.updateSummary();
   }
 

@@ -12,6 +12,7 @@ libfuzzer-sys = { version = "0.4", optional = true }
 patchbox-core = { path = ".." }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 
 [features]
 # Enables libFuzzer harnesses. Without this feature you can `cargo check` the targets on stable
@@ -24,6 +25,12 @@ debug = 1
 [[bin]]
 name = "config_from_json"
 path = "fuzz_targets/config_from_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "config_from_toml"
+path = "fuzz_targets/config_from_toml.rs"
 test = false
 doc = false
 

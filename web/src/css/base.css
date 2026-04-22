@@ -27,7 +27,7 @@
   --text-secondary: #c9d1d9;   /* secondary labels, less-important values      */
   --text-muted:     #8b949e;   /* placeholder, disabled, inactive              */
   --text-dim:       #484f58;   /* timestamps, decorative, very faint           */
-  --text-accent:    #58a6ff;   /* links, accent text (= --color-accent)        */
+--text-accent:   #58a6ff;   /* links, accent text (= --color-accent = --accent-secondary) */
 
   /* ── Semantic / Status ──────────────────────────────────────────────────── */
   --color-accent:   #58a6ff;   /* active nav, focus ring, local badge          */
@@ -92,6 +92,27 @@
   --zone-color-7:   #79c0ff;
   --zone-color-8:   #56d364;
   --zone-color-9:   #e3b341;
+
+  /* ── Accent aliases ──────────────────────────────────────────────────────── */
+  --accent-secondary: #58a6ff; /* aliases --color-accent */
+  --ch-accent:       #58a6ff; /* channel accent stripe */
+  --zone-color:      #58a6ff; /* matrix zone column accent */
+  --accent-gold:     #e3b341; /* bus/internal routing accent */
+  --solo-active:     #e6b800; /* SOLO button engaged (bright gold) */
+
+  /* ── Undefined but used elsewhere ──────────────────────────────────────── */
+  --zone-card-color:  #444;    /* zone card top border accent */
+  --zone-sep-color:   #444;    /* zone separator accent */
+  --bg-control:        #2a2a2a; /* control backgrounds (solo, etc.) */
+  --bg-control-hover:  #333;     /* control hover backgrounds */
+  --border-dim:       #333;     /* subtle borders */
+  --bg-panel:         #1e1e2e; /* panel backgrounds */
+  --surface:          #1a1a1a; /* surface variant */
+  --surface-hover:    #2a2a2a; /* surface hover */
+  --color-border:     #444;     /* border color alias */
+  --color-bg:         #1a1a1a; /* background color alias */
+  --color-bg-raised: #2a2a2a; /* raised surface */
+  --meter-saturation: #e05050; /* meter saturation indicator */
 
   /* ── Spacing (4px grid) ─────────────────────────────────────────────────── */
   --sp-1:    2px;   /* intra-element micro-spacing                             */

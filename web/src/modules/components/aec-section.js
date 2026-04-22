@@ -6,6 +6,7 @@
  */
 
 import { inputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 
 const NLP_LEVELS = ['off', 'mild', 'moderate', 'aggressive'];
 
@@ -66,12 +67,13 @@ export class AecSection {
   }
 
   setState(data) {
-    this.state = data;
-    if (!data) return;
-    if (this._cb)      this._cb.checked    = !!data.enabled;
-    if (this._tailInp) this._tailInp.value = data.tail_ms ?? 128;
-    if (this._nlpSel)  this._nlpSel.value  = data.nlp_level ?? 'off';
-    if (this._cnCb)    this._cnCb.checked  = !!data.comfort_noise;
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.aec ?? {}), ...data };
+    if (!this.state) return;
+    if (this._cb)      this._cb.checked    = !!this.state.enabled;
+    if (this._tailInp) this._tailInp.value = this.state.tail_ms ?? 128;
+    if (this._nlpSel)  this._nlpSel.value  = this.state.nlp_level ?? 'off';
+    if (this._cnCb)    this._cnCb.checked  = !!this.state.comfort_noise;
   }
 
   destroy() {

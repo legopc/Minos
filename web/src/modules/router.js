@@ -4,6 +4,73 @@
 import { initSidebar } from './components/nav-sidebar.js';
 
 // ============================================================================
+// Toast Queue
+// ============================================================================
+
+const TOAST_MAX = 5;
+const TOAST_TIMEOUT = 4000;
+const _toastQueue = [];
+let _toastTimer = null;
+
+function processToastQueue() {
+  const container = document.getElementById('toasts');
+  if (!container) return;
+
+  while (_toastQueue.length > TOAST_MAX) {
+    _toastQueue.shift();
+  }
+
+  const active = container.querySelectorAll('.toast-item');
+  active.forEach((el, i) => {
+    if (i >= _toastQueue.length) {
+      el.classList.remove('toast-item--visible');
+      setTimeout(() => el.remove(), 300);
+    }
+  });
+
+  _toastQueue.forEach((item, i) => {
+    let el = container.querySelector(`[data-toast-id="${item.id}"]`);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = `toast-item toast-item--${item.type || 'info'}`;
+      el.setAttribute('data-toast-id', item.id);
+      el.setAttribute('role', 'alert');
+      el.textContent = item.msg;
+      el.addEventListener('click', () => dismissToast(item.id));
+      container.appendChild(el);
+      requestAnimationFrame(() => el.classList.add('toast-item--visible'));
+    }
+    if (item.timeout) {
+      clearTimeout(item.timeout);
+      item.timeout = setTimeout(() => dismissToast(item.id), TOAST_TIMEOUT);
+    }
+  });
+}
+
+function dismissToast(id) {
+  const idx = _toastQueue.findIndex(t => t.id === id);
+  if (idx !== -1) {
+    clearTimeout(_toastQueue[idx].timeout);
+    _toastQueue.splice(idx, 1);
+  }
+  const el = document.querySelector(`[data-toast-id="${id}"]`);
+  if (el) {
+    el.classList.remove('toast-item--visible');
+    setTimeout(() => el.remove(), 300);
+  }
+}
+
+function handleToastEvent(e) {
+  const { msg, type = 'info' } = e.detail || {};
+  if (!msg) return;
+  const id = Date.now() + Math.random();
+  _toastQueue.push({ id, msg, type, timeout: setTimeout(() => dismissToast(id), TOAST_TIMEOUT) });
+  processToastQueue();
+}
+
+document.addEventListener('pb:toast', handleToastEvent);
+
+// ============================================================================
 // Token Management
 // ============================================================================
 
@@ -219,6 +286,43 @@ function setupEventHandlers() {
       }
     });
   }
+
+  // Keyboard shortcuts
+  const shortcutsDialog = document.getElementById('shortcuts-dialog');
+  const shortcutsClose = document.getElementById('shortcuts-close');
+
+  if (shortcutsClose && shortcutsDialog) {
+    shortcutsClose.addEventListener('click', () => shortcutsDialog.close());
+    shortcutsDialog.addEventListener('click', (e) => {
+      if (e.target === shortcutsDialog) shortcutsDialog.close();
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    const dialog = document.getElementById('shortcuts-dialog');
+    if (e.key === '?' && !dialog?.open) {
+      e.preventDefault();
+      dialog?.showModal();
+    } else if (e.key === 'Escape' && dialog?.open) {
+      dialog.close();
+    } else if (e.key === 'Escape') {
+      const openModal = document.querySelector('.dsp-modal[open], dialog[open]');
+      if (openModal) {
+        openModal.close();
+      }
+    } else if (e.key === 'M' || e.key === 'm') {
+      document.dispatchEvent(new CustomEvent('pb:shortcut', { detail: { action: 'mute' } }));
+    } else if (e.key === 'S' || e.key === 's') {
+      document.dispatchEvent(new CustomEvent('pb:shortcut', { detail: { action: 'solo' } }));
+    } else if (e.key >= '1' && e.key <= '7') {
+      const routes = ['dashboard', 'matrix', 'inputs', 'outputs', 'buses', 'mixer', 'zones'];
+      const idx = parseInt(e.key) - 1;
+      if (routes[idx]) {
+        window.location.hash = `#/${routes[idx]}`;
+      }
+    }
+  });
 }
 
 // ============================================================================

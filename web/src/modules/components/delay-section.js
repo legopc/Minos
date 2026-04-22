@@ -16,6 +16,7 @@
  */
 
 import { outputDsp, apiErrorMessage } from '/modules/api.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 
 export class DelaySection {
   constructor(containerEl, ch) {
@@ -97,8 +98,9 @@ export class DelaySection {
   }
 
   setState(data) {
-    this.state = { ...data };
-    
+    const defs = getDspDefaultsSync();
+    this.state = { ...(defs?.dly ?? {}), ...data };
+
     const panel = this.containerEl.querySelector('[data-section="delay"]');
     const enableCb = panel.querySelector('input[type="checkbox"]');
     const delayInput = panel.querySelector('input[type="number"]');

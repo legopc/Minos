@@ -1,5 +1,13 @@
 import { matrix, inputDsp } from '/modules/api.js';
 
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
 // Zone accent colours — cycled by zone index using CSS variables for consistency.
 const ZONE_COLORS = [
   'var(--color-accent)',
@@ -31,6 +39,8 @@ export async function init(container) {
   let dspEnabled = {};
   // Current search filter string
   let filterText = '';
+  // Zone filter — Set of zone indices to show (empty = all zones)
+  let zoneFilter = new Set();
   // Currently focused cell coords for keyboard nav
   let focusedCell = null;
 
@@ -78,6 +88,7 @@ export async function init(container) {
         autocomplete="off"
         aria-label="Filter source rows"
       />
+      <div class="zone-filter-pills" id="zone-filter-pills" role="group" aria-label="Filter by zone"></div>
       <button class="icon-btn" id="matrix-refresh-btn" title="Refresh">↺</button>
     </div>
     <div class="matrix-scroll">
@@ -101,6 +112,13 @@ export async function init(container) {
 
   // ── Rendering ───────────────────────────────────────────────────────────────
 
+  function visibleZones() {
+    if (zoneFilter.size === 0) return zones.map((z, i) => ({ zone: z, tx: i }));
+    return zones
+      .map((z, i) => ({ zone: z, tx: i }))
+      .filter(({ tx }) => zoneFilter.has(tx));
+  }
+
   function visibleSources() {
     if (!filterText) return sources.map((s, i) => ({ source: s, rx: i }));
     const q = filterText.toLowerCase();
@@ -109,11 +127,43 @@ export async function init(container) {
       .filter(({ source }) => (source.name || source).toLowerCase().includes(q));
   }
 
+  function isSourceRouted(rx) {
+    return zones.some((_, tx) => matrixData[tx]?.[rx]);
+  }
+
+  function renderZonePills() {
+    const container = document.getElementById('zone-filter-pills');
+    if (!container) return;
+    container.innerHTML = zones.map((z, tx) => {
+      const active = zoneFilter.size === 0 || zoneFilter.has(tx);
+      const color = zoneColor(tx);
+      return `<button class="zone-pill ${active ? 'active' : ''}"
+        data-tx="${tx}"
+        style="--zone-color:${color}"
+        aria-pressed="${active}"
+        title="${esc(z.name || z)}">${esc(z.name || `TX ${tx + 1}`)}</button>`;
+    }).join('');
+
+    container.querySelectorAll('.zone-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tx = parseInt(btn.dataset.tx);
+        if (zoneFilter.has(tx)) {
+          zoneFilter.delete(tx);
+        } else {
+          zoneFilter.add(tx);
+        }
+        renderZonePills();
+        renderTable();
+      });
+    });
+  }
+
   function renderTable() {
     const rows = visibleSources();
+    const visibleZoneList = visibleZones();
 
     let html = '<thead><tr><th class="matrix-corner-th" scope="col"></th>';
-    zones.forEach((zone, tx) => {
+    visibleZoneList.forEach(({ zone, tx }) => {
       const color = zoneColor(tx);
       const txRms   = meterData.tx_rms[tx]  ?? -Infinity;
       const barW    = getRmsBarWidth(txRms);
@@ -134,6 +184,8 @@ export async function init(container) {
       const badge = dspEnabled[rx]
         ? '<span class="matrix-dsp-badge" title="DSP active">DSP</span>'
         : '';
+      const routed = isSourceRouted(rx);
+      const unroutedWarn = !routed ? '<span class="matrix-unrouted-dot" title="Unrouted to any zone" aria-label="Unrouted"></span>' : '';
       const gateOpen = meterData.rx_gate_open[rx];
       const gateClass = gateOpen === false ? ' gate-closed' : '';
 
@@ -142,14 +194,14 @@ export async function init(container) {
           <th class="matrix-row-th matrix-th-source" data-rx="${rx}" scope="row">
             <div class="matrix-source-label">
               <span class="matrix-th-name" title="${esc(source.name || source)}">${esc(source.name || source)}</span>
-              ${badge}
+              ${badge}${unroutedWarn}
             </div>
             <div class="matrix-th-bar-wrap">
               <div class="matrix-th-bar" style="width:${barW}%"></div>
             </div>
           </th>`;
 
-      zones.forEach((zone, tx) => {
+      visibleZoneList.forEach(({ zone, tx }) => {
         const routed  = matrixData[tx]?.[rx] ? 1 : 0;
         const color   = zoneColor(tx);
         const focused = focusedCell?.tx === tx && focusedCell?.rx === rx;
@@ -337,6 +389,8 @@ export async function init(container) {
     renderTable();
   }
 
+  const debouncedSearch = debounce(onSearchInput, 150);
+
   async function onRefreshClick() {
     try {
       const newConfig = await matrix.get();
@@ -353,9 +407,10 @@ export async function init(container) {
   // ── Bootstrap ────────────────────────────────────────────────────────────────
 
   renderTable();
+  renderZonePills();
 
   refreshBtn.addEventListener('click', onRefreshClick);
-  searchEl.addEventListener('input', onSearchInput);
+  searchEl.addEventListener('input', debouncedSearch);
   tableEl.addEventListener('keydown', onKeydown);
   tableEl.addEventListener('focusin', onCellFocus);
   document.addEventListener('pb:meters', onMeterUpdate);
@@ -363,7 +418,7 @@ export async function init(container) {
   return function cleanup() {
     document.removeEventListener('pb:meters', onMeterUpdate);
     refreshBtn.removeEventListener('click', onRefreshClick);
-    searchEl.removeEventListener('input', onSearchInput);
+    searchEl.removeEventListener('input', debouncedSearch);
     tableEl.removeEventListener('keydown', onKeydown);
     tableEl.removeEventListener('focusin', onCellFocus);
   };

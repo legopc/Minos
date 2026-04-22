@@ -13,6 +13,7 @@ import {
   FREQ_POINTS, BAND_COLORS,
   bandCoeffs, magSquared,
 } from '/modules/components/dsp-canvas.js';
+import { getDspDefaultsSync } from '/modules/dsp-defaults.js';
 
 const SVG_W   = 600;
 const SVG_H   = 160;
@@ -284,12 +285,15 @@ export class DynamicEqSection {
 
   setState(data) {
     if (!data) return;
-    if (data.enabled !== undefined) {
-      this.state.enabled = data.enabled;
-      if (this._enableCb) this._enableCb.checked = data.enabled;
+    const defs = getDspDefaultsSync();
+    const merged = { ...(defs?.deq ?? {}), ...data };
+
+    if (merged.enabled !== undefined) {
+      this.state.enabled = merged.enabled;
+      if (this._enableCb) this._enableCb.checked = merged.enabled;
     }
-    if (Array.isArray(data.bands)) {
-      this.state.bands = data.bands.map(b => ({ ...b }));
+    if (Array.isArray(merged.bands)) {
+      this.state.bands = merged.bands.map(b => ({ ...b }));
       const bandsEl = this.el.querySelector('.deq-bands');
       if (bandsEl) {
         bandsEl.innerHTML = this.state.bands.map((b, i) => this._bandHTML(b, i)).join('');

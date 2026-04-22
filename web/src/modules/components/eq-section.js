@@ -18,6 +18,7 @@
  */
 
 import { inputDsp, outputDsp } from '/modules/api.js';
+import { getDspDefaults } from '/modules/dsp-defaults.js';
 // TODO: import { FreqCanvas, computeCurveDb, BAND_COLORS, bandCoeffs, magSquared } from '/modules/components/dsp-canvas.js';
 
 const SAMPLE_RATE = 48000;
@@ -318,13 +319,16 @@ export class EqSection {
   // ── Public API ────────────────────────────────────────────────────────────
 
   setState(data) {
-    if (typeof data.enabled === 'boolean') {
-      this.state.enabled     = data.enabled;
-      this._enableCb.checked = data.enabled;
+    const defs = getDspDefaultsSync();
+    const merged = { ...(defs?.peq ?? {}), ...data };
+
+    if (typeof merged.enabled === 'boolean') {
+      this.state.enabled     = merged.enabled;
+      this._enableCb.checked = merged.enabled;
     }
 
-    if (Array.isArray(data.bands)) {
-      data.bands.forEach((b, i) => {
+    if (Array.isArray(merged.bands)) {
+      merged.bands.forEach((b, i) => {
         if (!this.state.bands[i]) return;
         this.state.bands[i] = { ...this.state.bands[i], ...b };
         const bandEl = this._panel.querySelector(`.eq-band[data-band="${i}"]`);
