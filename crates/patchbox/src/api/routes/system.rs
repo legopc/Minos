@@ -1615,8 +1615,10 @@ async fn build_health_response(s: &AppState) -> HealthResponse {
         })
         .collect();
 
-    let is_ptp_locked =
-        ptp_state.as_deref() == Some("SLAVE") || ptp_state.as_deref() == Some("MASTER");
+    let is_ptp_locked = ptp_state
+        .as_deref()
+        .map(crate::ptp::is_ptp_locked_state)
+        .unwrap_or(dante_connected && ptp_synced);
     let cpu_load_ok = dsp_cpu_avg < 90.0;
     let storage_free_ok = storage_free_bytes > 50 * 1024 * 1024;
 
