@@ -180,6 +180,9 @@ async fn main() {
         )
         .await
         .expect("Dante device init failed");
+    // Keep the DeviceServer alive by leaking the DanteDevice.
+    // If dropped, the mDNS broadcaster stops and the device vanishes from Dante Controller.
+    std::mem::forget(dante);
     state
         .dante_connected
         .store(true, std::sync::atomic::Ordering::Relaxed);

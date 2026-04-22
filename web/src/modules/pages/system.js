@@ -131,7 +131,7 @@ export async function init(container) {
       $('sp-dante-rx').textContent     = h.audio?.rx_channels ?? 0;
       $('sp-dante-tx').textContent     = h.audio?.tx_channels ?? 0;
 
-      const ptpOk = h.ptp?.synced ?? false;
+      const ptpOk = h.ptp?.locked ?? false;
       $('sp-ptp-dot').className      = statusDotClass(ptpOk);
       $('sp-ptp-status').textContent = ptpOk ? 'Synced' : 'Not synced';
       const offsetNs = h.ptp?.offset_ns;

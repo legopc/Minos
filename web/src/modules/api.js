@@ -122,7 +122,7 @@ export const zones = {
   create:  (body)            => post('/api/v1/zones', body),
   delete:  (id)              => del(`/api/v1/zones/${id}`),
   setGain: (id, gain_db)     => put(`/api/v1/zones/${id}/gain`, { gain_db }),
-  setMute: (id, muted)       => put(`/api/v1/zones/${id}/mute`, { muted }),
+  setMute: (id, muted)       => post(`/api/v1/zones/${id}/${muted ? 'mute' : 'unmute'}`),
   getEq:   (id)              => get(`/api/v1/zones/${id}/eq`),
   setEq:   (id, cfg)         => put(`/api/v1/zones/${id}/eq`, cfg),
 };

@@ -783,6 +783,21 @@ body.offline .xp-cell {
   color: var(--dot-error);
 }
 
+/* ── Output channel column ────────────────────────────────────────────── */
+.strip-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.strip-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* ── Channel strip ─────────────────────────────────────────────────────── */
 .channel-strip {
   display: flex;

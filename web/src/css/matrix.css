@@ -1,902 +1,57 @@
-/* Matrix Tab Routing Grid CSS */
+/* matrix.css — Routing matrix styles */
 
-/* ── Generator rows ─────────────────────────────────────────────────────── */
-.gen-separator-row .gen-sep-label { color: var(--gen-sine); font-size: 10px; letter-spacing: 0.1em; font-weight: 700; }
-.gen-row .ch-label { border-left: 2px solid var(--gen-sine); }
-.gen-row .xp-cell.disabled-cell { opacity: 0.15; pointer-events: none; }
-.xp-cell.gen-bus-active .xp-dot { background: var(--gen-sine); border-color: var(--gen-sine); box-shadow: 0 0 8px 2px var(--gen-sine); }
-.gen-type-badge { font-size: 9px; padding: var(--sp-1) var(--sp-2); border-radius: var(--r-2); background: var(--gen-sine); color: #fff; margin-left: var(--sp-2); flex-shrink: 0; }
-
-/* ── Stereo link tags ────────────────────────────────────────────────────── */
-.ch-stereo-tag {
-  font-size: 9px;
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--r-2);
-  background: var(--xp-local);
-  color: #0d1117;
-  margin-left: var(--sp-2);
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.xp-row.stereo-left .ch-label { border-left: 3px solid rgba(88,166,255,0.5); }
-.xp-row.stereo-right .ch-label { border-left: 3px solid rgba(88,166,255,0.25); }
-
-/* ── Layout when active ─────────────────────────────────────────────────── */
-/* Do NOT set display here — let .tab-content / .tab-content.active control
-   visibility. Setting display:flex on #tab-matrix (ID specificity 1,0,0)
-   would override .tab-content { display:none } (0,1,0) and break tab hiding. */
-#tab-matrix {
+.matrix-page {
+  display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-/* ── Custom Properties (on viewport so they're scoped to the matrix) ─────── */
-.matrix-viewport {
-  --label-w: 560px;
-  --col-w:   68px;
-  --row-h:   50px;
-  flex: 1;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  position: relative;
-}
-
-/* ── Content Sizer ──────────────────────────────────────────────────────── */
-/* --num-cols is set via JS: grid.style.setProperty('--num-cols', N) */
-.matrix-grid {
-  width: calc(var(--label-w) + var(--num-cols, 8) * var(--col-w));
-  min-width: 100%;
-}
-
-/* ── Header Row (sticky top) ────────────────────────────────────────────── */
-.matrix-hdr-row {
-  display: flex;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--bg-dark);
-  border-bottom: 2px solid var(--border-primary);
-}
-
-/* ── Corner Cell (sticky top + left) ───────────────────────────────────── */
-.corner-cell {
-  position: sticky;
-  left: 0;
-  z-index: 30;
-  width: var(--label-w);
-  min-width: var(--label-w);
-  flex-shrink: 0;
-  background: var(--bg-dark);
-  border-right: 1px solid var(--border-primary);
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  padding: 0;
-}
-
-.corner-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-
-/* ── Corner inner column ────────────────────────────────────────────────── */
-.corner-inner {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 10px 8px 12px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* ── Corner filter row ──────────────────────────────────────────────────── */
-.corner-filter-row {
-  display: flex;
-  align-items: center;
-}
-
-.corner-filter-input {
-  flex: 1;
-  min-width: 0;
-  background: var(--bg-surface);
-  border: var(--sp-1) solid var(--border-primary);
-  border-radius: var(--r-3);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  padding: var(--sp-3) var(--sp-4);
-  outline: none;
-  height: 34px;
-  box-sizing: border-box;
-}
-.corner-filter-input:focus {
-  border-color: var(--color-accent);
-}
-.corner-filter-input::placeholder {
-  color: var(--text-dim);
-  opacity: 0.6;
-}
-
-/* ── Corner action buttons grid ─────────────────────────────────────────── */
-.corner-actions-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
-}
-
-.corner-btn {
-  font-size: 12px;
-  font-family: inherit;
-  padding: 0 var(--sp-4);
-  height: 36px;
-  border: var(--sp-1) solid var(--border-primary);
-  border-radius: var(--r-3);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-  touch-action: manipulation;
-  position: relative;
-}
-.corner-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--color-accent);
-}
-.corner-btn:active {
-  filter: brightness(1.2);
-}
-.corner-btn.active {
-  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-.corner-btn.pending {
-  border-color: var(--vu-amber);
-  color: var(--vu-amber);
-  animation: corner-pulse 1s ease-in-out infinite alternate;
-}
-@keyframes corner-pulse {
-  from { box-shadow: 0 0 0 0 rgba(210,153,34,0); }
-  to   { box-shadow: 0 0 8px 2px rgba(210,153,34,0.45); }
-}
-
-.corner-lock-btn {
-  font-size: 15px;
-}
-
-/* ── Corner status row ──────────────────────────────────────────────────── */
-.corner-status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.corner-stat {
-  font-size: 11px;
-  color: var(--text-dim);
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  cursor: default;
-}
-.corner-stat.danger {
-  color: var(--vu-red);
-  font-weight: 600;
-}
-
-/* ── Pick mode — highlight channel labels as tap targets ─────────────────── */
-.matrix-grid.pick-mode .ch-label {
-  outline: 2px solid var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--bg-dark));
-  cursor: crosshair !important;
-}
-.matrix-grid.pick-mode .ch-label:hover {
-  background: color-mix(in srgb, var(--color-accent) 28%, var(--bg-dark));
-}
-
-/* ── Unrouted row highlight ─────────────────────────────────────────────── */
-.xp-row.unrouted-highlight .ch-label {
-  background: color-mix(in srgb, var(--color-error) 12%, var(--bg-dark));
-}
-.xp-row.unrouted-highlight {
-  background: color-mix(in srgb, var(--color-error) 3%, transparent);
-}
-
-.corner-dims {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.corner-routes,
-.corner-routes-label,
-.corner-routes-bar,
-.corner-routes-fill,
-.corner-routes-total { display: none; }
-
-.corner-legend {
+.matrix-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
-}
-
-.corner-legend-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.corner-legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
-.corner-dot-local { background: var(--xp-local); }
-.corner-dot-dante { background: var(--xp-dante); }
-
-/* ── Output Column Headers ──────────────────────────────────────────────── */
-.out-hdr {
-  width: var(--col-w);
-  min-width: 44px;
-  flex-shrink: 0;
-  padding: 4px 2px 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  border-right: 1px solid var(--border-subtle);
-  font-size: 11px;
-  color: var(--text-muted);
-  position: relative;
-  overflow: hidden;
-}
-
-.out-hdr::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 3px;
-  height: var(--signal-pct, 0%);
-  background: var(--signal-color, var(--vu-green));
-  transition: height 0.08s linear;
-  border-radius: 1px 1px 0 0;
-  pointer-events: none;
-}
-
-.out-hdr.zone-start {
-  border-left: 2px solid var(--zone-color);
-}
-
-.out-num {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-/* Angled name wrapper — gives space for the rotated text */
-.out-name-wrap {
-  width: 100%;
-  height: 100px;
-  position: relative;
-  flex-shrink: 0;
-  overflow: visible;
-}
-
-.out-name {
-  position: absolute;
-  bottom: 0;
-  left: 18px;
-  transform: rotate(-60deg);
-  transform-origin: left bottom;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: text;
-  letter-spacing: 0.03em;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.out-rename-input {
-  position: absolute;
-  bottom: 0;
-  left: 18px;
-  transform: rotate(-60deg);
-  transform-origin: left bottom;
-  background: var(--bg-dark);
-  border: 1px solid var(--color-accent);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 2px;
-  padding: 2px 4px;
-  outline: none;
-  width: 120px;
-  box-sizing: border-box;
-  z-index: 50;
-}
-
-/* ── Label column resize handle ─────────────────────────────────────────── */
-.ch-label-resize {
-  width: 12px;
-  align-self: stretch;
-  cursor: col-resize;
-  flex-shrink: 0;
-  margin-left: auto;
-  border-left: 2px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.1s, border-color 0.1s;
-}
-.ch-label-resize::after {
-  content: '⋮';
-  font-size: 14px;
-  color: var(--text-dim);
-  line-height: 1;
-  pointer-events: none;
-}
-.ch-label-resize:hover,
-.ch-label-resize.dragging {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  opacity: 0.8;
-}
-
-/* ── Channel Rows ───────────────────────────────────────────────────────── */
-.xp-row {
-  display: flex;
-  height: var(--row-h);
-  align-items: stretch;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.xp-row:hover {
-  background: var(--bg-row-hover);
-}
-
-/* ── Channel Label (sticky left) ───────────────────────────────────────── */
-.ch-label {
-  position: sticky;
-  left: 0;
-  z-index: 10;
-  width: var(--label-w);
-  min-width: var(--label-w);
-  flex-shrink: 0;
-  background: var(--bg-dark);
-  border-left: 3px solid var(--ch-accent, transparent);
-  border-right: 1px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  gap: 5px;
-  cursor: default;
-  overflow: hidden;
-}
-
-.ch-label::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  width: var(--signal-pct, 0%);
-  background: var(--signal-color, var(--vu-green));
-  transition: width 0.08s linear;
-  border-radius: 0 1px 1px 0;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.xp-row:hover .ch-label {
-  background: color-mix(in srgb, var(--bg-dark) 85%, var(--bg-row-hover));
-}
-
-.ch-label .ch-num {
-  color: var(--text-dim);
-  font-size: 17px;
-  font-weight: 700;
-  min-width: 24px;
-  flex-shrink: 0;
-}
-
-.ch-label .ch-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: text;
-}
-
-.ch-rename-input {
-  width: 100%;
-  background: var(--bg-dark);
-  border: 1px solid var(--color-accent);
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 700;
-  border-radius: 2px;
-  padding: 2px 4px;
-  outline: none;
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* ── DSP Badge (shared input + output) ─────────────────────────────────── */
-.ch-dsp-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: inherit;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  border: none;
-  height: 38px;
-  min-width: 52px;
-  user-select: none;
-  transition: filter 0.1s;
-  flex-shrink: 0;
-  position: relative;
-  position: relative;
-}
-
-.ch-dsp-badge:hover {
-  filter: brightness(1.4);
-}
-
-.ch-dsp-badge.byp {
-  opacity: 0.35;
-}
-
-.ch-dsp-badge:not(.byp) {
-  border-bottom: 2px solid currentColor;
-}
-
-/* Output DSP badges — compact for narrow column headers */
-.out-dsp-badge {
-  height: 32px !important;
-  min-width: 48px !important;
-  font-size: 12px !important;
-  padding: 4px 6px !important;
-}
-
-/* ── Crosspoint Cell ────────────────────────────────────────────────────── */
-.xp-cell {
-  width: var(--col-w);
-  min-width: 44px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-right: 1px solid var(--border-subtle);
-  position: relative;
-  position: relative;
-}
-
-.xp-cell:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.xp-cell .xp-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  background: transparent;
-  border: 1px solid var(--border-primary);
-  transition: all 0.1s;
-}
-
-.xp-cell.local .xp-dot {
-  background: var(--xp-local);
-  border-color: var(--xp-local);
-  box-shadow: 0 0 10px 2px var(--xp-local);
-}
-
-.xp-cell.dante .xp-dot {
-  background: var(--xp-dante);
-  border-color: var(--xp-dante);
-  box-shadow: 0 0 10px 2px var(--xp-dante);
-}
-
-/* ── DSP block picker dropdown ──────────────────────────────────────────── */
-.dsp-picker {
-  z-index: 9000;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-primary);
-  border-radius: 3px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-  font-family: 'IBM Plex Mono', monospace;
-}
-
-.dsp-picker-btn {
-  padding: 3px 8px;
-  font-size: 9px;
-  font-family: inherit;
-  border: none;
-  border-radius: 2px;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.dsp-picker-btn:hover {
-  filter: brightness(1.3);
-}
-
-/* ── C1: Crosspoint Pending State ───────────────────────────────────────── */
-.xp-cell.pending {
-  position: relative;
-  opacity: 0.7;
-}
-
-.xp-cell.pending::before {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border: 2px solid;
-  border-color: var(--vu-amber) transparent var(--vu-amber) transparent;
-  border-radius: 50%;
-  animation: spin-pending 0.8s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes spin-pending {
-  to { transform: rotate(360deg); }
-}
-
-/* ── Crosspoint gain label ─────────────────────────────────────────────── */
-.xp-gain-label {
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 8px;
-  line-height: 1;
-  color: var(--vu-green);
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-.xp-cell.xp-gain-nonunity {
-  outline: 1px solid rgba(var(--vu-green-rgb, 80,200,80), 0.35);
-  outline-offset: -2px;
-}
-
-/* ── C5: Empty Matrix State Hint ────────────────────────────────────────── */
-.matrix-empty-hint {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.matrix-hint-box {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  padding: 20px 24px;
-  text-align: center;
-  pointer-events: all;
-  max-width: 280px;
-}
-
-.matrix-hint-box p {
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.matrix-hint-dismiss {
-  margin-top: 8px;
   padding: 8px 16px;
-  min-height: 44px;
-  border: 1px solid var(--border-primary);
-  background: var(--bg-dark);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 13px;
-  position: relative;
-}
-
-/* ── Internal Buses ─────────────────────────────────────── */
-:root {
-  --bus-route-color: var(--accent-gold);
-  --surface-0: var(--bg-dark);
-  --surface-1: var(--bg-surface);
-  --border: var(--border-primary);
-}
-
-.bus-separator-row {
-  background: var(--surface-0);
-  border-top: 1px solid var(--border);
-  opacity: 0.6;
-}
-
-.bus-sep-label {
-  color: var(--text-muted);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-}
-
-.bus-sep-cell {
-  pointer-events: none;
-}
-
-.bus-row {
-  background: var(--surface-1);
-}
-
-.bus-label {
-  border-left: 3px solid var(--border-primary) !important;
-}
-
-.xp-cell.bus .xp-dot {
-  background: var(--bus-route-color);
-  box-shadow: 0 0 8px 2px var(--bus-route-color);
-}
-
-
-/* Input→bus column divider — matches .bus-separator-row style */
-.bus-col-div-hdr,
-.bus-col-div-cell {
-  width: var(--col-w) !important;
-  min-width: var(--col-w) !important;
-  max-width: var(--col-w) !important;
-  background: var(--surface-0);
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  opacity: 0.8;
-  padding: 0;
-  pointer-events: none;
-}
-
-.bus-col-div-hdr {
-  position: relative;
-  overflow: hidden;
-}
-
-.bus-col-div-hdr::after {
-  content: 'BUSES';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) rotate(-90deg);
-  font-size: 8px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.xp-cell.bus-src.active .xp-dot {
-  background: var(--bus-route-color);
-  border-color: var(--bus-route-color);
-  box-shadow: 0 0 8px 2px var(--bus-route-color);
-}
-
-.corner-dot-bus {
-  background: var(--bus-route-color);
-}
-
-/* Bus→Bus feed crosspoints */
-.xp-cell.bus-feed {
-  cursor: pointer;
-}
-.xp-cell.bus-feed .xp-dot {
-  border-color: var(--accent-gold);
-}
-.xp-cell.bus-feed.active .xp-dot {
-  background: var(--accent-gold);
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 8px 2px var(--accent-gold);
-}
-.xp-cell.bus-feed-self {
-  cursor: not-allowed;
-  opacity: 0.2;
-  background: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 3px,
-    rgba(255,255,255,0.05) 3px,
-    rgba(255,255,255,0.05) 6px
-  );
-}
-
-/* s7-ui-touch-targets: expand tap target for DSP badges on touch devices */
-@media (pointer: coarse) {
-  .ch-dsp-badge::before {
-    content: '';
-    position: absolute;
-    inset: -3px -5px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* s7-ui-touch-targets: expand tap target for matrix cells on touch devices */
-@media (pointer: coarse) {
-  .xp-cell::before {
-    content: '';
-    position: absolute;
-    inset: -8px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* s7-ui-touch-targets: expand tap target for corner buttons on touch devices */
-@media (pointer: coarse) {
-  .corner-btn::before {
-    content: '';
-    position: absolute;
-    inset: -4px -4px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* s7-ui-touch-targets: expand tap target for matrix hint dismiss button */
-@media (pointer: coarse) {
-  .matrix-hint-dismiss::before {
-    content: '';
-    position: absolute;
-    inset: -4px -8px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* ── Matrix Filter Bar (s7-ui-matrix-filter) ────────────────────────────── */
-.matrix-filter-bar {
-  display: flex;
-  gap: 16px;
-  padding: 12px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
-  align-items: center;
-  flex-wrap: wrap;
 }
 
-.filter-input-container {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 200px;
-}
-
-.filter-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-  font-weight: 500;
-}
-
-.filter-input {
-  flex: 1;
-  min-width: 120px;
-  padding: 6px 8px;
-  font-size: 12px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--r-2);
+.matrix-toolbar-title {
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-primary);
-  font-family: inherit;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-.filter-input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  background: var(--bg-surface);
-}
-
-.filter-input::placeholder {
-  color: var(--text-dim);
-}
-
-.filter-clear-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+.matrix-search-input {
+  flex: 1;
+  max-width: 300px;
+  height: 34px;
+  padding: 0 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-primary);
-  border-radius: var(--r-2);
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.12s;
-  flex-shrink: 0;
-  position: relative;
+  border-radius: var(--r-3);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
 }
 
-.filter-clear-btn:hover {
-  background: var(--bg-hover);
+.matrix-search-input:focus {
   border-color: var(--color-accent);
-  color: var(--color-accent);
 }
 
-.filter-clear-btn:active {
-  filter: brightness(1.2);
+.matrix-search-input::placeholder {
+  color: var(--text-dim);
 }
 
-/* s7-ui-touch-targets: expand tap target for filter clear buttons on touch devices */
-@media (pointer: coarse) {
-  .filter-clear-btn::before {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* ── Zone filter pills ─────────────────────────────────────────────────── */
 .zone-filter-pills {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
-}
-
-/* ── Unrouted warning dot ──────────────────────────────────────────────── */
-.matrix-unrouted-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-warn);
-  flex-shrink: 0;
 }
 
 .zone-pill {
@@ -926,212 +81,224 @@
   filter: brightness(1.1);
 }
 
-@media (pointer: coarse) {
-  .zone-pill::before {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* ── Routing warnings banner ─────────────────────────────────────────────── */
-.matrix-warning-banner {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-secondary);
-  padding: 0;
-  max-height: 200px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.warning-banner-header {
+.icon-btn {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  gap: 12px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-secondary);
-  background: var(--bg-darker);
-}
-
-.warning-banner-title {
-  flex: 1;
-  min-width: 0;
+  justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--r-3);
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.warning-banner-toggle {
-  flex-shrink: 0;
   cursor: pointer;
-  accent-color: var(--vu-amber);
+  font-size: 16px;
+  transition: all 0.12s;
 }
 
-.warning-banner-close {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+.icon-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.matrix-scroll {
+  flex: 1;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.matrix-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.matrix-corner-th {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-primary);
+  border-bottom: 2px solid var(--border-primary);
   padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  transition: color 0.12s;
+  min-width: 180px;
+  width: 180px;
 }
 
-.warning-banner-close:hover {
-  color: var(--text-primary);
+.matrix-th-zone,
+.matrix-th-source {
+  position: sticky;
+  background: var(--bg-dark);
+  border-bottom: 2px solid var(--border-primary);
+  border-right: 1px solid var(--border-subtle);
+  padding: 8px 4px;
+  text-align: center;
+  min-width: 60px;
 }
 
-.warning-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  margin: 0;
-  overflow-y: auto;
+.matrix-th-zone {
+  top: 0;
+  z-index: 20;
+  min-width: 68px;
+  width: 68px;
 }
 
-.warning-item {
-  padding: 8px 16px;
+.matrix-th-zone .matrix-th-name {
   font-size: 11px;
-  border-bottom: 1px solid var(--border-secondary);
-  user-select: none;
-  transition: background 0.12s;
+  font-weight: 600;
+  color: var(--text-primary);
+  writing-mode: initial;
+  margin-bottom: 4px;
 }
 
-.warning-item:hover {
-  background: var(--bg-darker);
+.matrix-th-bar-wrap {
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.warning-item:last-child {
-  border-bottom: none;
+.matrix-th-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.08s linear;
 }
 
-.warning-item.warning-amber {
-  color: #e8b923;
+.matrix-row-th {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 8px;
+  min-width: 180px;
+  width: 180px;
+  text-align: left;
 }
 
-.warning-item.warning-blue {
-  color: #58a6ff;
+.matrix-row-th.matrix-th-source {
+  z-index: 5;
 }
 
-.warning-item.warning-info {
-  color: #79c0ff;
+.matrix-source-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
-/* ── Warning cell highlight ──────────────────────────────────────────────── */
-.xp-cell.warning-highlight {
-  box-shadow: inset 0 0 0 2px #e8b923;
-  background: rgba(232, 185, 35, 0.08);
+.matrix-th-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ── responsive v2: tablet/midwidth matrix layouts ──────────────────────────── */
+.matrix-dsp-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--color-accent);
+  color: var(--bg-dark);
+  flex-shrink: 0;
+}
 
-/* At <900px: adjust grid dimensions and enable dual-axis scroll with sticky headers */
+.matrix-unrouted-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-warn);
+  flex-shrink: 0;
+}
+
+.matrix-cell {
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  width: 68px;
+  min-width: 68px;
+  height: 50px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.matrix-cell:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.matrix-cell:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.matrix-cell.kb-focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.matrix-cell-dot {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-primary);
+  vertical-align: middle;
+}
+
+.matrix-cell.routed .matrix-cell-dot {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 8px 2px var(--color-accent);
+}
+
+.matrix-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.matrix-row.gate-closed {
+  opacity: 0.5;
+}
+
+/* Responsive */
 @media (max-width: 899px) {
-  .matrix-viewport {
-    --label-w: 300px;
-    --col-w:   56px;
-    --row-h:   48px;
+  .matrix-th-zone,
+  .matrix-cell {
+    width: 56px;
+    min-width: 56px;
   }
 
-  .corner-inner {
-    padding: 6px 8px 6px 10px;
-    gap: 4px;
-  }
-
-  .corner-filter-input {
-    font-size: 11px;
-    padding: var(--sp-2) var(--sp-3);
-    height: 32px;
-  }
-
-  .corner-btn {
-    font-size: 11px;
-    height: 32px;
-    padding: 0 var(--sp-3);
-  }
-
-  .corner-actions-row {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 4px;
-  }
-
-  /* Column headers stay sticky on horizontal scroll; row labels stay sticky on vertical */
-  .matrix-hdr-row {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-  }
-
-  .corner-cell {
-    position: sticky;
-    left: 0;
-    z-index: 30;
-  }
-
-  .xp-row .ch-label {
-    position: sticky;
-    left: 0;
-    z-index: 10;
-    width: var(--label-w);
-    min-width: var(--label-w);
-    flex-shrink: 0;
-  }
-
-  @media (max-width: 599px) {
-    .matrix-viewport {
-      --label-w: 120px;
-      --col-w:   48px;
-      --row-h:   44px;
-    }
-
-    .corner-inner {
-      padding: 4px 6px;
-      gap: 3px;
-    }
-
-    .corner-filter-input {
-      font-size: 10px;
-      padding: var(--sp-1) var(--sp-2);
-      height: 28px;
-    }
-
-    .corner-btn {
-      font-size: 10px;
-      height: 28px;
-      padding: 0 var(--sp-2);
-    }
-
-    .corner-actions-row {
-      grid-template-columns: 1fr;
-      gap: 3px;
-    }
-
-    .ch-label {
-      font-size: 10px;
-    }
-
-    .xp-cell {
-      width: var(--col-w);
-      min-width: var(--col-w);
-    }
+  .matrix-corner-th,
+  .matrix-row-th {
+    min-width: 150px;
+    width: 150px;
   }
 }
 
-@media (min-width: 900px) {
-  .matrix-viewport {
-    --label-w: 560px;
-    --col-w:   68px;
-    --row-h:   50px;
+@media (max-width: 599px) {
+  .matrix-th-zone,
+  .matrix-cell {
+    width: 48px;
+    min-width: 48px;
+  }
+
+  .matrix-corner-th,
+  .matrix-row-th {
+    min-width: 120px;
+    width: 120px;
   }
 }

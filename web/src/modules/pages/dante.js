@@ -119,7 +119,7 @@ export async function init(container) {
     const dante = health?.dante ?? {};
     const ptp = health?.ptp ?? {};
 
-    const ptpState = ptp.synced ? 'Synced' : ptp.state ?? 'Unknown';
+    const ptpState = ptp.locked ? 'Synced' : ptp.state ?? 'Unknown';
     const ptpOffset = ptp.offset_ns != null
       ? `${(ptp.offset_ns / 1000).toFixed(2)} µs`
       : '—';
