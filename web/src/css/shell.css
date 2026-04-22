@@ -843,6 +843,7 @@ body.offline .xp-cell {
 
 .strip-vu-canvas {
   width: 100%;
+  height: 100%;
 }
 
 .strip-controls {
