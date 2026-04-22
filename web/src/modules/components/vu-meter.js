@@ -79,13 +79,11 @@ export class VuMeter {
     
     // Extract data for this channel
     const isInput = this.type === 'input';
-    // WebSocket sends: {rx: {"rx_0": -45.0, ...}, tx: {"tx_0": -40.0, ...}}
+    // WebSocket sends: {rx: {rx_0: -45.0}, tx: {tx_0: -40.0}, peak: {rx_0: -40.0, tx_0: -35.0}, gr: {tx_0_lim: -3.0, ...}}
     const key = isInput ? `rx_${this.channelIndex}` : `tx_${this.channelIndex}`;
-    const peakKey = isInput ? `rx_${this.channelIndex}` : `tx_${this.channelIndex}`;
     const rmsObj = isInput ? frameData.rx : frameData.tx;
-    const peakObj = isInput ? frameData.rx_peak : frameData.tx_peak;
-    const grArray = isInput ? frameData.rx_gr_db : frameData.tx_gr_db;
-    const gateArray = isInput ? frameData.rx_gate_open : undefined;
+    const peakObj = frameData.peak; // peak is a flat object: {rx_0: -40.0, tx_0: -35.0, ...}
+    const grObj = frameData.gr; // gr is a flat object: {tx_0_lim: -3.0, rx_0_cmp: -2.5, ...}
 
     // Exponential smoothing helpers
     const emaAttack  = (raw, prev, α) => α * raw + (1 - α) * prev;
@@ -103,8 +101,8 @@ export class VuMeter {
     }
 
     // Update smoothed peak (backend sends dBFS, no conversion needed)
-    if (peakObj && peakObj[peakKey] !== undefined) {
-      const raw = peakObj[peakKey]; // Already in dBFS
+    if (peakObj && peakObj[key] !== undefined) {
+      const raw = peakObj[key]; // Already in dBFS
       const α = raw > this._smoothPeak ? 0.3 : 0.03;
       this._smoothPeak = emaAttack(raw, this._smoothPeak, α);
       this.peakDb = this._smoothPeak;
@@ -113,16 +111,16 @@ export class VuMeter {
       }
     }
 
-    // Update GR
-    if (grArray && grArray[key] !== undefined) {
-      this.grDb = grArray[key];
+    // Update GR (from gr object, key format: tx_0_lim or rx_0_cmp)
+    if (grObj) {
+      const grKey = isInput ? `rx_${this.channelIndex}_cmp` : `tx_${this.channelIndex}_lim`;
+      if (grObj[grKey] !== undefined) {
+        this.grDb = grObj[grKey];
+      } else {
+        this.grDb = 0;
+      }
     } else {
       this.grDb = 0;
-    }
-
-    // Update gate state
-    if (gateArray && gateArray[key] !== undefined) {
-      this.gateOpen = gateArray[key];
     }
   }
   
