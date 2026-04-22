@@ -76,7 +76,13 @@ export class VuMeter {
   handleMetersEvent(event) {
     const frameData = event.detail;
     this.lastFrameData = frameData;
-    
+
+    // Debug: log first few meter events
+    if (!this._dbgLog) {
+      console.log('[VuMeter] First meter event:', JSON.stringify(frameData).slice(0, 200));
+      this._dbgLog = true;
+    }
+
     // Extract data for this channel
     const isInput = this.type === 'input';
     // WebSocket sends: {rx: {rx_0: -45.0}, tx: {tx_0: -40.0}, peak: {rx_0: -40.0, tx_0: -35.0}, gr: {tx_0_lim: -3.0, ...}}
@@ -84,6 +90,12 @@ export class VuMeter {
     const rmsObj = isInput ? frameData.rx : frameData.tx;
     const peakObj = frameData.peak; // peak is a flat object: {rx_0: -40.0, tx_0: -35.0, ...}
     const grObj = frameData.gr; // gr is a flat object: {tx_0_lim: -3.0, rx_0_cmp: -2.5, ...}
+
+    if (!rmsObj) {
+      console.warn('[VuMeter] No rmsObj for', key, 'isInput:', isInput, 'frameData:', JSON.stringify(frameData).slice(0, 200));
+    } else if (rmsObj[key] === undefined) {
+      console.warn('[VuMeter] rmsObj missing key', key, 'rmsObj:', JSON.stringify(rmsObj));
+    }
 
     // Exponential smoothing helpers
     const emaAttack  = (raw, prev, α) => α * raw + (1 - α) * prev;
