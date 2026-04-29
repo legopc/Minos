@@ -63,7 +63,7 @@ impl DanteDevice {
                 name = %self.device_name,
                 rx = self.n_rx,
                 tx = self.n_tx,
-                "Dante stub active — compile with --features patchbox-dante/inferno for real audio"
+                "Dante stub active — compile the patchbox binary with --features patchbox/inferno for real audio"
             );
             Ok(())
         }

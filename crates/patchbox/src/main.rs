@@ -272,8 +272,8 @@ async fn main() {
         });
     }
 
-    // Simulated meter task — only active when inferno feature is disabled
-    #[cfg(not(feature = "inferno"))]
+    // Simulated meter task — opt-in for UI development without Dante hardware.
+    #[cfg(all(feature = "sim-meters", not(feature = "inferno")))]
     {
         let meter_state = state.meters.clone();
         let cfg_ref = state.config.clone();

@@ -72,7 +72,7 @@ if $SKIP_BUILD; then
 else
     echo "==> Building patchbox (with inferno feature — real Dante audio)..."
     cd "$REPO_DIR"
-    sudo -u "$RUN_AS" cargo build --release --features patchbox-dante/inferno
+    sudo -u "$RUN_AS" cargo build --release --features patchbox/inferno
 fi
 
 echo "    Binary: $PATCHBOX_BINARY"
@@ -247,4 +247,3 @@ else
     echo "    2. edit $STATIME_CONFIG_DIR/statime.toml   (interface=)"
     echo "    3. sudo systemctl restart statime patchbox"
 fi
-

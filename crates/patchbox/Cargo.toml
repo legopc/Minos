@@ -38,6 +38,7 @@ path = "src/lib.rs"
 [features]
 default = []
 inferno = ['patchbox-dante/inferno']
+sim-meters = []
 aec = ['patchbox-core/aec']
 
 [dev-dependencies]

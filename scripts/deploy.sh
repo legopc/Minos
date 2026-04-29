@@ -6,7 +6,7 @@
 #   bash scripts/deploy.sh legopc@192.168.1.25
 #
 # Requires:
-#   - Rust toolchain with patchbox-dante/inferno feature deps on this machine
+#   - Rust toolchain with patchbox/inferno feature deps on this machine
 #   - SSH access to the target (key or password)
 #   - install-arch.sh already run once on the target (services + config in place)
 #
@@ -29,7 +29,7 @@ REMOTE_BINARY="/home/${TARGET##*@}/dante-patchbox/target/release/patchbox"
 # ── 1. Build locally ──────────────────────────────────────────────────────────
 echo "==> Building patchbox locally (inferno feature)..."
 cd "$REPO_DIR"
-cargo build --release --features patchbox-dante/inferno
+cargo build --release --features patchbox/inferno
 echo "    Done: $BINARY"
 
 # ── 2. Push binary ───────────────────────────────────────────────────────────
