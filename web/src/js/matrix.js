@@ -1245,6 +1245,7 @@ async function _toggleRoute(rxId, txId, cell) {
 
   } catch (e) {
     cell.className = prevClass; // revert on error
+    st.addRoute(rxId, txId); // restore internal state on failure
     toast('Route error: ' + e.message, true);
   } finally {
     _pendingCrosspoints.delete(key);
@@ -1256,6 +1257,16 @@ async function _toggleRoute(rxId, txId, cell) {
 // ── Per-crosspoint gain scroll wheel ──────────────────────────────────────
 const _xpWheelThrottle = new Map();
 const _xpWheelUndo = new Map(); // key -> {from, to, timer, ...}
+const _XP_WHEEL_MAX = 200;
+function _pruneXpWheelUndo() {
+  if (_xpWheelUndo.size < _XP_WHEEL_MAX) return;
+  let i = 0;
+  for (const [key, u] of _xpWheelUndo) {
+    if (i++ >= 50) break;
+    clearTimeout(u.timer);
+    _xpWheelUndo.delete(key);
+  }
+}
 
 function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
   if (!st.getRouteType(rxId, txId)) return; // only active routes
@@ -1305,6 +1316,7 @@ function _onXpWheel(e, rxId, txId, txIdx, rxIdx, cell, gainLabel) {
     });
   }, 600);
   _xpWheelUndo.set(uKey, u);
+  _pruneXpWheelUndo();
 }
 
 function _onBusXpWheel(e, bus, rxIdx, cell, gainLabel) {
@@ -1441,7 +1453,7 @@ function _toggleDspPicker(btn, ch) {
   if (_activePicker) {
     _activePicker.remove();
     _activePicker = null;
-    if (_activePicker === null && _lastBtn === btn) return;
+    if (_lastBtn === btn) return;
   }
   _lastBtn = btn;
 

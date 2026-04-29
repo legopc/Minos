@@ -1,7 +1,8 @@
 use crate::api::{dsp_to_value, parse_rx_id, EnabledBody, GainBody, PolarityBody};
+use crate::auth_api;
 use crate::state::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -204,9 +205,16 @@ pub async fn get_input_dsp(State(s): State<AppState>, Path(ch): Path<usize>) -> 
 // PUT /api/v1/inputs/:ch/gain
 pub async fn put_input_gain(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<GainBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -240,9 +248,16 @@ pub async fn put_input_gain(
 // PUT /api/v1/inputs/:ch/polarity
 pub async fn put_input_polarity(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<PolarityBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -256,9 +271,16 @@ pub async fn put_input_polarity(
 // PUT /api/v1/inputs/:ch/hpf
 pub async fn put_input_hpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -274,9 +296,16 @@ pub async fn put_input_hpf(
 // PUT /api/v1/inputs/:ch/lpf
 pub async fn put_input_lpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -292,9 +321,16 @@ pub async fn put_input_lpf(
 // PUT /api/v1/inputs/:ch/eq
 pub async fn put_input_eq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<EqConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -310,9 +346,16 @@ pub async fn put_input_eq(
 // PUT /api/v1/inputs/:ch/eq/enabled
 pub async fn put_input_eq_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -326,9 +369,16 @@ pub async fn put_input_eq_enabled(
 // PUT /api/v1/inputs/:ch/gate
 pub async fn put_input_gate(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<GateConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -344,9 +394,16 @@ pub async fn put_input_gate(
 // PUT /api/v1/inputs/:ch/compressor
 pub async fn put_input_compressor(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<CompressorConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -371,9 +428,16 @@ pub async fn get_input_aec(State(s): State<AppState>, Path(ch): Path<usize>) -> 
 // PUT /api/v1/inputs/:ch/aec
 pub async fn put_input_aec(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<AecConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -389,9 +453,16 @@ pub async fn put_input_aec(
 // PUT /api/v1/inputs/:ch/enabled
 pub async fn put_input_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -423,9 +494,16 @@ pub async fn put_input_enabled(
 // PUT /api/v1/inputs/:ch/automixer
 pub async fn put_input_automixer(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<UpdateAutomixerChannelRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -459,9 +537,16 @@ pub async fn get_input_feedback(
 // PUT /api/v1/inputs/:ch/feedback
 pub async fn put_input_feedback(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<UpdateFeedbackSuppressorRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();
@@ -520,9 +605,16 @@ pub async fn get_input_deq(State(s): State<AppState>, Path(ch): Path<usize>) -> 
 // PUT /api/v1/inputs/:ch/deq
 pub async fn put_input_deq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(ch): Path<usize>,
     Json(body): Json<DspBlock<DynamicEqConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify input DSP.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let Some(dsp) = cfg.input_dsp.get_mut(ch) else {
         return StatusCode::NOT_FOUND.into_response();

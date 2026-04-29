@@ -451,7 +451,6 @@ function _renderList(listPanel, diffPanel) {
             undo.push({
               label: `Delete scene "${id}"`,
               apply: async () => {
-                await api.deleteScene(id);
                 await _refreshScenes();
               },
               revert: async () => {

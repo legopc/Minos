@@ -252,7 +252,10 @@ pub async fn load_scene(
         scene.apply_to_config_scoped(&mut cfg, &recall_scope);
     }
 
-    s.scenes.write().await.active = Some(name.clone());
+    {
+        let mut scenes_store = s.scenes.write().await;
+        scenes_store.active = Some(name.clone());
+    }
     crate::persist_or_500!(s);
     crate::persist_scenes_or_500!(s);
     ws_broadcast(

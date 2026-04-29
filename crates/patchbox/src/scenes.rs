@@ -1,6 +1,6 @@
 use patchbox_core::config::{
     AutomixerGroupConfig, InputChannelDsp, InternalBusConfig, OutputChannelDsp, PatchboxConfig,
-    SignalGeneratorConfig, StereoLinkConfig, VcaGroupConfig,
+    SignalGeneratorConfig, StereoLinkConfig, VcaGroupConfig, ZoneConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,6 +31,8 @@ pub struct RecallScope {
     pub groups: bool,
     #[serde(default = "recall_enabled_default")]
     pub generators: bool,
+    #[serde(default = "recall_enabled_default")]
+    pub zones: bool,
 }
 
 impl Default for RecallScope {
@@ -42,13 +44,14 @@ impl Default for RecallScope {
             buses: true,
             groups: true,
             generators: true,
+            zones: true,
         }
     }
 }
 
 impl RecallScope {
     pub fn is_full(&self) -> bool {
-        self.routing && self.inputs && self.outputs && self.buses && self.groups && self.generators
+        self.routing && self.inputs && self.outputs && self.buses && self.groups && self.generators && self.zones
     }
 
     pub fn section_key_for_path(&self, path: &str, schema_version: u32) -> Option<&'static str> {
@@ -71,6 +74,7 @@ impl RecallScope {
                 "signal_generators" | "generator_bus_matrix" if self.generators => {
                     Some("generators")
                 }
+                "zones" | "zone_config" if self.zones => Some("zones"),
                 _ => None,
             }
         } else {
@@ -94,6 +98,7 @@ impl RecallScope {
             "buses" => "Buses",
             "groups" => "Groups",
             "generators" => "Generators",
+            "zones" => "Zones",
             _ => "Other",
         }
     }
@@ -145,6 +150,10 @@ pub struct Scene {
     pub signal_generators: Option<Vec<SignalGeneratorConfig>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generator_bus_matrix: Option<Vec<Vec<f32>>>,
+    #[serde(default)]
+    pub zones: Vec<String>,
+    #[serde(default)]
+    pub zone_config: Vec<ZoneConfig>,
 }
 
 impl Scene {
@@ -191,6 +200,8 @@ impl Scene {
             automixer_groups: config.automixer_groups.clone(),
             signal_generators: Some(config.signal_generators.clone()),
             generator_bus_matrix: Some(config.generator_bus_matrix.clone()),
+            zones: config.zones.clone(),
+            zone_config: config.zone_config.clone(),
         }
     }
 
@@ -290,6 +301,21 @@ impl Scene {
             if let Some(generator_bus_matrix) = &self.generator_bus_matrix {
                 config.generator_bus_matrix = generator_bus_matrix.clone();
             }
+        }
+
+        if scope.zones {
+            config.zones = self.zones.clone();
+            let mut new_zone_config = self.zone_config.clone();
+            for zone in &mut new_zone_config {
+                zone.tx_ids.retain(|id| {
+                    if let Some(idx) = id.strip_prefix("tx_") {
+                        idx.parse::<usize>().map(|i| i < config.tx_channels).unwrap_or(false)
+                    } else {
+                        false
+                    }
+                });
+            }
+            config.zone_config = new_zone_config;
         }
 
         config.normalize();

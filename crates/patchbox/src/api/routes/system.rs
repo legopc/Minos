@@ -3563,8 +3563,15 @@ pub async fn get_solo(State(s): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn put_solo(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<SoloRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify solo settings.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     cfg.solo_channels = body
         .channels
@@ -3586,11 +3593,21 @@ pub async fn put_solo(
         })
         .to_string(),
     );
-    StatusCode::NO_CONTENT
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // POST /api/v1/solo/:rx/toggle
-pub async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> impl IntoResponse {
+pub async fn toggle_solo(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(rx): Path<usize>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot toggle solo.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     if rx >= cfg.rx_channels {
         return (StatusCode::BAD_REQUEST, "Invalid RX index").into_response();
@@ -3618,7 +3635,16 @@ pub async fn toggle_solo(State(s): State<AppState>, Path(rx): Path<usize>) -> im
 }
 
 // DELETE /api/v1/solo
-pub async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
+pub async fn delete_solo(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot clear solo.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     cfg.solo_channels.clear();
     ws_broadcast(
@@ -3630,7 +3656,7 @@ pub async fn delete_solo(State(s): State<AppState>) -> impl IntoResponse {
         })
         .to_string(),
     );
-    StatusCode::NO_CONTENT
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // GET /api/v1/monitor
@@ -3666,8 +3692,15 @@ pub async fn get_monitor(State(s): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn put_monitor(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<MonitorRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify monitor settings.",
+    ) {
+        return response;
+    }
     if body.volume_db < -60.0 || body.volume_db > 12.0 {
         return (StatusCode::BAD_REQUEST, "volume_db out of range [-60, 12]").into_response();
     }

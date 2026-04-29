@@ -1,9 +1,10 @@
 use crate::api::{
     dsp_to_value, parse_bus_id, ws_broadcast, EnabledBody, GainBody, MutedBody, PolarityBody,
 };
+use crate::auth_api;
 use crate::state::AppState;
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -105,8 +106,15 @@ pub async fn get_buses(State(s): State<AppState>) -> impl IntoResponse {
 )]
 pub async fn post_bus(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<CreateBusRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot create buses.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let idx = cfg.internal_buses.len();
     let id = format!("bus_{}", idx);
@@ -174,9 +182,16 @@ pub async fn get_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl 
 )]
 pub async fn put_bus(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<UpdateBusRequest>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify buses.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
     };
@@ -210,7 +225,17 @@ pub async fn put_bus(
         (status = 404, description = "Not found")
     )
 )]
-pub async fn delete_bus(State(s): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
+pub async fn delete_bus(
+    State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot delete buses.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return (StatusCode::BAD_REQUEST, "invalid bus id (expected bus_N)").into_response();
     };
@@ -238,9 +263,16 @@ pub async fn delete_bus(State(s): State<AppState>, Path(id): Path<String>) -> im
 // PUT /api/v1/buses/:id/gain
 pub async fn put_bus_gain(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<GainBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -259,9 +291,16 @@ pub async fn put_bus_gain(
 // PUT /api/v1/buses/:id/polarity
 pub async fn put_bus_polarity(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<PolarityBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -279,9 +318,16 @@ pub async fn put_bus_polarity(
 // PUT /api/v1/buses/:id/hpf
 pub async fn put_bus_hpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -304,9 +350,16 @@ pub async fn put_bus_hpf(
 // PUT /api/v1/buses/:id/lpf
 pub async fn put_bus_lpf(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<FilterConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -329,9 +382,16 @@ pub async fn put_bus_lpf(
 // PUT /api/v1/buses/:id/eq
 pub async fn put_bus_eq(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<EqConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -354,9 +414,16 @@ pub async fn put_bus_eq(
 // PUT /api/v1/buses/:id/eq/enabled
 pub async fn put_bus_eq_enabled(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<EnabledBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -374,9 +441,16 @@ pub async fn put_bus_eq_enabled(
 // PUT /api/v1/buses/:id/gate
 pub async fn put_bus_gate(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<GateConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -399,9 +473,16 @@ pub async fn put_bus_gate(
 // PUT /api/v1/buses/:id/compressor
 pub async fn put_bus_compressor(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<DspBlock<CompressorConfig>>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus DSP.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -424,9 +505,16 @@ pub async fn put_bus_compressor(
 // PUT /api/v1/buses/:id/mute
 pub async fn put_bus_mute(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<MutedBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus mute.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -447,9 +535,16 @@ pub async fn put_bus_mute(
 // PUT /api/v1/buses/:id/routing
 pub async fn put_bus_routing(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<BusRoutingBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus routing.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -473,9 +568,16 @@ pub async fn put_bus_routing(
 // PUT /api/v1/buses/:id/input-gain
 pub async fn put_bus_input_gain(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Path(id): Path<String>,
     Json(body): Json<BusInputGainBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus input gain.",
+    ) {
+        return response;
+    }
     let Some(i) = parse_bus_id(&id) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
@@ -496,8 +598,15 @@ pub async fn put_bus_input_gain(
 // PUT /api/v1/bus-matrix
 pub async fn put_bus_matrix(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<BusMatrixBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus matrix.",
+    ) {
+        return response;
+    }
     let mut cfg = s.config.write().await;
     let n_buses = cfg.internal_buses.len();
     let tx_channels = cfg.tx_channels;
@@ -525,8 +634,15 @@ pub async fn get_bus_feed_matrix(State(s): State<AppState>) -> impl IntoResponse
 // PUT /api/v1/bus-feed
 pub async fn put_bus_feed(
     State(s): State<AppState>,
+    claims: Option<Extension<crate::jwt::Claims>>,
     Json(body): Json<BusFeedBody>,
 ) -> impl IntoResponse {
+    if let Err(response) = auth_api::ensure_not_zone_scoped(
+        claims.as_ref(),
+        "Zone-scoped users cannot modify bus feed matrix.",
+    ) {
+        return response;
+    }
     let src_idx = body
         .src_id
         .strip_prefix("bus_")

@@ -95,10 +95,6 @@ function _buildShellContext() {
   };
 }
 
-function _updateShellNote(ctx) {
-  return;
-}
-
 function _updateUserBadge(ctx) {
   const userEl = document.getElementById('tb-user');
   if (!userEl) return;
@@ -160,7 +156,6 @@ function _syncShellChrome() {
   document.body.dataset.shellMode = ctx.shellMode;
   _applyTabVisibility(ctx.allowedTabs);
   _updateUserBadge(ctx);
-  _updateShellNote(ctx);
   if (ctx.userZone || ctx.focusedZoneId) {
     _setZoneQuery(ctx.userZone || ctx.focusedZoneId);
   }

@@ -34,6 +34,7 @@ export function dbToColour(db) {
 
 // ─── Per-meter animation state ────────────────────────────────────────────
 const _anim = new Map();  // id → { displayDb, targetDb, peakLevel, peakTime }
+const _grAnim = new Map();  // id → { displayDb, targetDb }
 
 function _getAnim(id) {
   let a = _anim.get(id);
@@ -118,6 +119,29 @@ function _tick(now) {
     _setPeak(`vu-hold-${id}`, pscale * 100, pcol);
   }
 
+  // GR meter interpolation
+  for (const [id, a] of _grAnim) {
+    const prev = a.displayDb;
+    const target = a.targetDb;
+    const diff = target - prev;
+    if (Math.abs(diff) > 0.05) {
+      const alpha = 1 - Math.exp(-2 * dt / 100);
+      a.displayDb = prev + alpha * diff;
+      anyMoving = true;
+    } else {
+      a.displayDb = target;
+    }
+    const bar = document.getElementById(`gr-bar-${id}`);
+    const label = document.getElementById(`gr-label-${id}`);
+    if (bar) {
+      const pct = Math.max(0, Math.min(100, (-a.displayDb / 30) * 100));
+      bar.style.width = pct + '%';
+    }
+    if (label) {
+      label.textContent = a.displayDb >= 0 ? '0.0 dB' : a.displayDb.toFixed(1) + ' dB';
+    }
+  }
+
   if (anyMoving) {
     _idleCount = 0;
   } else if (++_idleCount > IDLE_LIMIT) {
@@ -145,6 +169,7 @@ function _setPeak(elId, pct, col) {
 const _lastClipCount = new Map();
 
 function _updateClip(clipData) {
+  const seen = new Set(Object.keys(clipData));
   for (const [id, count] of Object.entries(clipData)) {
     const prev = _lastClipCount.get(id);
     if (prev !== undefined && count > prev) {
@@ -157,21 +182,29 @@ function _updateClip(clipData) {
     }
     _lastClipCount.set(id, count);
   }
+  for (const [id] of _lastClipCount) {
+    if (!seen.has(id)) _lastClipCount.delete(id);
+  }
 }
 
-// ─── GR meters (no interpolation needed — slow-moving) ───────────────────
+// ─── GR meters with interpolation ─────────────────────────────────────────
 function _updateGR(grData) {
+  const seen = new Set(Object.keys(grData));
+  let anyNew = false;
   for (const [key, db] of Object.entries(grData)) {
-    const bar   = document.getElementById(`gr-bar-${key}`);
-    const label = document.getElementById(`gr-label-${key}`);
-    if (bar) {
-      const pct = Math.max(0, Math.min(100, (-db / 30) * 100));
-      bar.style.width = pct + '%';
-    }
-    if (label) {
-      label.textContent = db >= 0 ? '0.0 dB' : db.toFixed(1) + ' dB';
+    let a = _grAnim.get(key);
+    if (!a) {
+      a = { displayDb: db, targetDb: db };
+      _grAnim.set(key, a);
+      anyNew = true;
+    } else {
+      a.targetDb = db;
     }
   }
+  for (const [key] of _grAnim) {
+    if (!seen.has(key)) _grAnim.delete(key);
+  }
+  if (anyNew || _grAnim.size > 0) _ensureLoop();
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────
