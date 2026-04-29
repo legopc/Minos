@@ -90,6 +90,9 @@ pub async fn mute_zone(
         return response;
     }
     cfg.output_muted[tx] = true;
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.muted = true;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::OK.into_response()
@@ -114,6 +117,9 @@ pub async fn unmute_zone(
         return response;
     }
     cfg.output_muted[tx] = false;
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.muted = false;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::OK.into_response()
@@ -134,6 +140,9 @@ pub async fn mute_all(
     for m in cfg.output_muted.iter_mut() {
         *m = true;
     }
+    for dsp in cfg.output_dsp.iter_mut() {
+        dsp.muted = true;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::OK.into_response()
@@ -153,6 +162,9 @@ pub async fn unmute_all(
     let mut cfg = s.config.write().await;
     for m in cfg.output_muted.iter_mut() {
         *m = false;
+    }
+    for dsp in cfg.output_dsp.iter_mut() {
+        dsp.muted = false;
     }
     drop(cfg);
     crate::persist_or_500!(s);
@@ -671,12 +683,21 @@ pub async fn put_eq(
     ) {
         return response;
     }
-    let Some(eq) = cfg.per_output_eq.get_mut(tx) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    eq.bands[u.band].freq_hz = u.freq_hz.clamp(20.0, 20_000.0);
-    eq.bands[u.band].gain_db = u.gain_db.clamp(-24.0, 24.0);
-    eq.bands[u.band].q = u.q.clamp(0.1, 10.0);
+    let eq_ref = cfg.per_output_eq.get(tx).unwrap();
+    let freq = u.freq_hz.clamp(20.0, 20_000.0);
+    let gain = u.gain_db.clamp(-24.0, 24.0);
+    let q = u.q.clamp(0.1, 10.0);
+    drop(eq_ref);
+    if let Some(eq) = cfg.per_output_eq.get_mut(tx) {
+        eq.bands[u.band].freq_hz = freq;
+        eq.bands[u.band].gain_db = gain;
+        eq.bands[u.band].q = q;
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.eq.bands[u.band].freq_hz = freq;
+        dsp.eq.bands[u.band].gain_db = gain;
+        dsp.eq.bands[u.band].q = q;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -701,10 +722,13 @@ pub async fn put_eq_enabled(
     ) {
         return response;
     }
-    let Some(eq) = cfg.per_output_eq.get_mut(tx) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    eq.enabled = u.enabled;
+    let enabled = u.enabled;
+    if let Some(eq) = cfg.per_output_eq.get_mut(tx) {
+        eq.enabled = enabled;
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.eq.enabled = enabled;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -738,12 +762,21 @@ pub async fn put_limiter(
     ) {
         return response;
     }
-    let Some(lim) = cfg.per_output_limiter.get_mut(tx) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    lim.threshold_db = u.threshold_db.clamp(-40.0, 0.0);
-    lim.attack_ms = u.attack_ms.clamp(0.1, 50.0);
-    lim.release_ms = u.release_ms.clamp(10.0, 2000.0);
+    let lim_ref = cfg.per_output_limiter.get(tx).unwrap();
+    let threshold = u.threshold_db.clamp(-40.0, 0.0);
+    let attack = u.attack_ms.clamp(0.1, 50.0);
+    let release = u.release_ms.clamp(10.0, 2000.0);
+    drop(lim_ref);
+    if let Some(lim) = cfg.per_output_limiter.get_mut(tx) {
+        lim.threshold_db = threshold;
+        lim.attack_ms = attack;
+        lim.release_ms = release;
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.limiter.threshold_db = threshold;
+        dsp.limiter.attack_ms = attack;
+        dsp.limiter.release_ms = release;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
@@ -768,10 +801,13 @@ pub async fn put_limiter_enabled(
     ) {
         return response;
     }
-    let Some(lim) = cfg.per_output_limiter.get_mut(tx) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    lim.enabled = u.enabled;
+    let enabled = u.enabled;
+    if let Some(lim) = cfg.per_output_limiter.get_mut(tx) {
+        lim.enabled = enabled;
+    }
+    if let Some(dsp) = cfg.output_dsp.get_mut(tx) {
+        dsp.limiter.enabled = enabled;
+    }
     drop(cfg);
     crate::persist_or_500!(s);
     StatusCode::NO_CONTENT.into_response()
