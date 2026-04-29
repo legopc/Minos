@@ -687,7 +687,7 @@ pub async fn put_eq(
     let freq = u.freq_hz.clamp(20.0, 20_000.0);
     let gain = u.gain_db.clamp(-24.0, 24.0);
     let q = u.q.clamp(0.1, 10.0);
-    drop(eq_ref);
+    let _ = eq_ref;
     if let Some(eq) = cfg.per_output_eq.get_mut(tx) {
         eq.bands[u.band].freq_hz = freq;
         eq.bands[u.band].gain_db = gain;
@@ -766,7 +766,7 @@ pub async fn put_limiter(
     let threshold = u.threshold_db.clamp(-40.0, 0.0);
     let attack = u.attack_ms.clamp(0.1, 50.0);
     let release = u.release_ms.clamp(10.0, 2000.0);
-    drop(lim_ref);
+    let _ = lim_ref;
     if let Some(lim) = cfg.per_output_limiter.get_mut(tx) {
         lim.threshold_db = threshold;
         lim.attack_ms = attack;
