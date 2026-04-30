@@ -526,6 +526,7 @@ impl DanteDevice {
                             let snapped = tx_off.wrapping_add(lead_samples);
                             write_pos_cb.store(snapped, AOrdering::Release);
                             resyncs_cb.fetch_add(1, AOrdering::Relaxed);
+                            dsp_metrics_cb.increment_xruns();
                             snapped
                         } else {
                             write_pos
