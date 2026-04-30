@@ -4,3 +4,4 @@ Cargo.lock
 *.pid
 config.toml
 docs/book/
+.worktrees

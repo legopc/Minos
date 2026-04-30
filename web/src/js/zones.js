@@ -195,7 +195,7 @@ function _showZonePanel(zone) {
   inputSection.appendChild(inputList);
   _container.appendChild(inputSection);
 
-  // Outputs section with selection
+  // Outputs section with membership editing
   const outputSection = document.createElement('div');
   outputSection.className = 'zone-panel-section';
   const outputHeader = document.createElement('div');
@@ -204,17 +204,56 @@ function _showZonePanel(zone) {
   outputSection.appendChild(outputHeader);
   const outputList = document.createElement('div');
   outputList.className = 'zone-panel-output-list';
-  const txIds = zone.tx_ids ?? [];
-  if (!txIds.length) {
-    outputList.innerHTML = '<div class="zone-panel-empty">No outputs in this zone</div>';
+
+  const currentTxIds = new Set(zone.tx_ids ?? []);
+  const allOutputs = st.outputList();
+
+  if (!allOutputs.length) {
+    outputList.innerHTML = '<div class="zone-panel-empty">No outputs available</div>';
   } else {
-    txIds.forEach(txId => {
-      const out = st.state.outputs.get(txId);
-      const item = document.createElement('div');
+    allOutputs.forEach(out => {
+      const isInZone = currentTxIds.has(out.id);
+      const txIdx = parseInt(out.id.replace('tx_', ''), 10);
+      const link = st.getOutputStereoLink(txIdx);
+      const isLinked = link?.linked === true;
+      const isLeft = isLinked && link.left_channel === txIdx;
+      const isRight = isLinked && link.right_channel === txIdx;
+
+      const item = document.createElement('label');
       item.className = 'zone-output-item';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'zone-output-checkbox';
+      checkbox.checked = isInZone;
+
       const chip = document.createElement('span');
-      chip.className = 'zone-output-chip';
-      chip.textContent = out?.name ?? txId;
+      chip.className = 'zone-output-chip' + (isInZone ? ' active' : '') + (isLinked ? ' linked' : '');
+      let chipText = out.name ?? out.id;
+      if (isLinked) chipText += isLeft ? ' [L]' : isRight ? ' [R]' : '';
+      chip.textContent = chipText;
+
+      checkbox.onchange = async () => {
+        if (checkbox.checked) {
+          currentTxIds.add(out.id);
+        } else {
+          currentTxIds.delete(out.id);
+        }
+        try {
+          await api.putZone(zone.id, { tx_ids: [...currentTxIds] });
+          const zones = await api.getZones();
+          st.setZones(zones);
+          chip.className = 'zone-output-chip' + (currentTxIds.has(out.id) ? ' active' : '');
+          toast('Zone updated', false);
+        } catch(e) {
+          if (checkbox.checked) currentTxIds.delete(out.id);
+          else currentTxIds.add(out.id);
+          checkbox.checked = !checkbox.checked;
+          toast('Update failed: ' + e.message, true);
+        }
+      };
+
+      item.appendChild(checkbox);
       item.appendChild(chip);
       outputList.appendChild(item);
     });
@@ -227,15 +266,36 @@ function _showZonePanel(zone) {
   stripsWrap.className = 'zone-panel-strips';
   _container.appendChild(stripsWrap);
 
-  if (!txIds.length) {
-    stripsWrap.innerHTML = '<div style="padding:24px;color:var(--text-muted);font-size:10px;">No outputs in this zone.</div>';
-  } else {
-    txIds.forEach(txId => {
-      const out = st.state.outputs.get(txId);
-      if (!out) return;
-      stripsWrap.appendChild(buildOutputMaster(out));
-    });
+  function _renderStrips(zoneData) {
+    stripsWrap.innerHTML = '';
+    const tIds = zoneData.tx_ids ?? [];
+    if (!tIds.length) {
+      stripsWrap.innerHTML = '<div style="padding:24px;color:var(--text-muted);font-size:10px;">No outputs in this zone.</div>';
+    } else {
+      tIds.forEach(txId => {
+        const out = st.state.outputs.get(txId);
+        if (!out) return;
+        stripsWrap.appendChild(buildOutputMaster(out));
+      });
+    }
   }
+
+  _renderStrips(zone);
+
+  // Override checkbox onchange to re-render strips after zone update
+  const checkboxes = outputList.querySelectorAll('.zone-output-checkbox');
+  checkboxes.forEach((cb, i) => {
+    const originalOnchange = cb.onchange;
+    cb.onchange = async (e) => {
+      await originalOnchange.call(cb, e);
+      const updatedZone = st.zoneList().find(z => z.id === zone.id);
+      if (updatedZone) {
+        const updatedTxIds = new Set(updatedZone.tx_ids ?? []);
+        cb.checked = updatedTxIds.has(allOutputs[i].id);
+        _renderStrips(updatedZone);
+      }
+    };
+  });
 }
 
 function _renderCards(grid) {
@@ -816,10 +876,8 @@ async function _createZone() {
     placeholder: 'Zone name',
     confirmLabel: 'Create',
     onConfirm: async (name) => {
-      const used = new Set(st.zoneList().flatMap(z => z.tx_ids ?? []));
-      const free = st.outputList().map(o => o.id).filter(id => !used.has(id));
-      const tx_ids = free.length ? [free[0]] : [];
-      if (!tx_ids.length) toast('No free outputs left; zone will be empty', false);
+      const tx_ids = [];
+      if (!tx_ids.length) toast('Zone will be empty; add outputs from zone panel', false);
 
       try {
         const z = await api.postZone({ name, tx_ids });

@@ -383,17 +383,9 @@ export function render(container) {
 }
 
 // ── Column ordering ────────────────────────────────────────────────────────
+// Outputs are kept in original TX order; zone colors are applied via txZoneMap
 function _orderOutputsByZone(outputs, zones) {
-  const ordered = [];
-  const seen = new Set();
-  zones.forEach(zone => {
-    (zone.tx_ids ?? []).forEach(txId => {
-      const o = outputs.find(x => x.id === txId);
-      if (o && !seen.has(o.id)) { ordered.push(o); seen.add(o.id); }
-    });
-  });
-  outputs.forEach(o => { if (!seen.has(o.id)) ordered.push(o); });
-  return ordered;
+  return [...outputs]; // preserve original order
 }
 
 // ── Header row: corner + output column headers ────────────────────────────
@@ -619,10 +611,10 @@ function _buildHdrRow(outputs, txZoneMap, buses) {
     prevZoneId = zone?.id ?? null;
 
     const col = document.createElement('div');
-    col.className = 'out-hdr' + (isZoneStart ? ' zone-start' : '');
+    col.className = 'out-hdr' + (zone ? ' zone-start' : '');
     col.dataset.outId = out.id;
     col.dataset.txId  = out.id;
-    if (isZoneStart && zone) {
+    if (zone) {
       col.style.setProperty('--zone-color', st.getZoneColour(zone.colour_index ?? 0));
     }
 
@@ -832,7 +824,7 @@ function _buildRow(ch, idx, outputs, txZoneMap, buses) {
     cell.setAttribute('aria-pressed', routeType ? 'true' : 'false');
     cell.tabIndex = 0;
     
-    if (isZoneStart && zone) {
+    if (zone) {
       cell.style.borderLeft = `2px solid ${st.getZoneColour(zone.colour_index ?? 0)}`;
     }
 

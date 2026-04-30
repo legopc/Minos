@@ -441,6 +441,34 @@
 .zone-output-item {
   display: flex;
   align-items: center;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.zone-output-item:hover {
+  background: var(--bg-row-hover);
+}
+
+.zone-output-checkbox {
+  margin-right: 6px;
+  accent-color: var(--zone-card-color, var(--color-accent));
+}
+
+.zone-output-chip {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.zone-output-chip.active {
+  background: var(--zone-card-color, var(--color-accent));
+  color: #fff;
+  border-color: var(--zone-card-color, var(--color-accent));
 }
 
 .zone-panel-empty {

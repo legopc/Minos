@@ -1140,20 +1140,21 @@ impl PatchboxConfig {
         }
 
         // Auto-derive zone_config from legacy zones vec if not yet persisted
-        if self.zone_config.is_empty() {
-            self.zone_config = (0..self.tx_channels)
-                .map(|tx| ZoneConfig {
-                    id: format!("zone_{}", tx),
-                    name: self
-                        .zones
-                        .get(tx)
-                        .cloned()
-                        .unwrap_or_else(|| format!("Zone {}", tx + 1)),
-                    colour_index: (tx % 10) as u8,
-                    tx_ids: vec![format!("tx_{}", tx)],
-                })
-                .collect();
-        }
+        // DISABLED: zones should be explicitly created, not auto-created
+        // if self.zone_config.is_empty() {
+        //     self.zone_config = (0..self.tx_channels)
+        //         .map(|tx| ZoneConfig {
+        //             id: format!("zone_{}", tx),
+        //             name: self
+        //                 .zones
+        //                 .get(tx)
+        //                 .cloned()
+        //                 .unwrap_or_else(|| format!("Zone {}", tx + 1)),
+        //             colour_index: (tx % 10) as u8,
+        //             tx_ids: vec![format!("tx_{}", tx)],
+        //         })
+        //         .collect();
+        // }
 
         // Ensure ZoneConfig IDs are stable + unique and advance allocator.
         fn parse_zone_numeric(id: &str) -> Option<u64> {

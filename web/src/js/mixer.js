@@ -1404,7 +1404,8 @@ function _openBusRoutingPanel(bus) {
 
 function _buildOutputMaster(out) {
   const txIdx  = parseInt(out.id.replace('tx_', ''), 10);
-  const color  = st.getZoneColour(out.zone_colour_index ?? 0);
+  const zone = st.zoneList().find(z => (z.tx_ids ?? []).includes(out.id));
+  const color  = zone ? st.getZoneColour(zone.colour_index ?? 0) : 'var(--text-muted)';
   const curOut = st.state.outputs.get(out.id);
   const vol    = curOut?.volume_db ?? out.volume_db ?? 0;
 

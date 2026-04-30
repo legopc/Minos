@@ -72,12 +72,7 @@ pub async fn get_outputs(State(s): State<AppState>) -> impl IntoResponse {
                 .iter()
                 .find(|z| z.tx_ids.iter().any(|t| t == &tx_id));
 
-            let name = zone.map(|z| z.name.clone()).unwrap_or_else(|| {
-                cfg.zones
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| format!("Zone {}", i + 1))
-            });
+            let name = cfg.zones.get(i).cloned().unwrap_or_else(|| format!("Output {}", i + 1));
             let zone_id = zone
                 .map(|z| z.id.clone())
                 .unwrap_or_else(|| format!("zone_{}", i));
@@ -130,12 +125,7 @@ pub async fn get_output_resource(
         .iter()
         .find(|z| z.tx_ids.iter().any(|t| t == &tx_id));
 
-    let name = zone.map(|z| z.name.clone()).unwrap_or_else(|| {
-        cfg.zones
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| format!("Zone {}", i + 1))
-    });
+    let name = cfg.zones.get(i).cloned().unwrap_or_else(|| format!("Output {}", i + 1));
     let zone_id = zone
         .map(|z| z.id.clone())
         .unwrap_or_else(|| format!("zone_{}", i));
