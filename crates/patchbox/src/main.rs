@@ -165,6 +165,7 @@ async fn main() {
             state.meters.clone(),
             state.audio_callbacks.clone(),
             state.resyncs.clone(),
+            state.dsp_metrics.clone(),
         )
         .await
         .expect("Dante device init failed");
