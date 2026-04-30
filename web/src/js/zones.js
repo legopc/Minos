@@ -171,12 +171,62 @@ function _showZonePanel(zone) {
   dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
   _container.appendChild(dspSummary);
 
+  // Input channels section
+  const inputSection = document.createElement('div');
+  inputSection.className = 'zone-panel-section';
+  const inputHeader = document.createElement('div');
+  inputHeader.className = 'zone-panel-section-header';
+  inputHeader.textContent = 'Input Channels';
+  inputSection.appendChild(inputHeader);
+  const inputList = document.createElement('div');
+  inputList.className = 'zone-panel-input-list';
+  const zoneRxIds = [...new Set((st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id))).map(r => r.rx_id))];
+  if (zoneRxIds.length === 0) {
+    inputList.innerHTML = '<div class="zone-panel-empty">No inputs routed</div>';
+  } else {
+    zoneRxIds.forEach(rxId => {
+      const ch = st.channelList().find(c => c.id === rxId);
+      const chip = document.createElement('span');
+      chip.className = 'zone-input-chip';
+      chip.textContent = ch?.name ?? rxId;
+      inputList.appendChild(chip);
+    });
+  }
+  inputSection.appendChild(inputList);
+  _container.appendChild(inputSection);
+
+  // Outputs section with selection
+  const outputSection = document.createElement('div');
+  outputSection.className = 'zone-panel-section';
+  const outputHeader = document.createElement('div');
+  outputHeader.className = 'zone-panel-section-header';
+  outputHeader.textContent = 'Outputs';
+  outputSection.appendChild(outputHeader);
+  const outputList = document.createElement('div');
+  outputList.className = 'zone-panel-output-list';
+  const txIds = zone.tx_ids ?? [];
+  if (!txIds.length) {
+    outputList.innerHTML = '<div class="zone-panel-empty">No outputs in this zone</div>';
+  } else {
+    txIds.forEach(txId => {
+      const out = st.state.outputs.get(txId);
+      const item = document.createElement('div');
+      item.className = 'zone-output-item';
+      const chip = document.createElement('span');
+      chip.className = 'zone-output-chip';
+      chip.textContent = out?.name ?? txId;
+      item.appendChild(chip);
+      outputList.appendChild(item);
+    });
+  }
+  outputSection.appendChild(outputList);
+  _container.appendChild(outputSection);
+
   // Strips area — output mixer strips for each tx in this zone
   const stripsWrap = document.createElement('div');
   stripsWrap.className = 'zone-panel-strips';
   _container.appendChild(stripsWrap);
 
-  const txIds = zone.tx_ids ?? [];
   if (!txIds.length) {
     stripsWrap.innerHTML = '<div style="padding:24px;color:var(--text-muted);font-size:10px;">No outputs in this zone.</div>';
   } else {
@@ -305,63 +355,26 @@ function _buildCard(zone) {
   dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
   card.appendChild(dspSummary);
 
-  // Input selector
+  // Input selector (multi-select display - does not modify routing)
   const srcLabel = document.createElement('div');
   srcLabel.className = 'zone-card-label';
-  srcLabel.textContent = 'Input';
+  srcLabel.textContent = 'Inputs';
   card.appendChild(srcLabel);
 
   const srcSel = document.createElement('select');
   srcSel.className = 'zone-source-sel';
-  const noneOpt = document.createElement('option');
-  noneOpt.value = ''; noneOpt.textContent = '— none —';
-  srcSel.appendChild(noneOpt);
+  srcSel.multiple = true;
+  srcSel.disabled = true;
+  srcSel.size = Math.min(4, Math.max(2, st.channelList().length));
+  const zoneRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id));
+  const routedRxIds = new Set(zoneRoutes.map(r => r.rx_id));
   st.channelList().forEach(ch => {
     const o = document.createElement('option');
     o.value = ch.id;
     o.textContent = ch.name ?? ch.id;
+    if (routedRxIds.has(ch.id)) o.selected = true;
     srcSel.appendChild(o);
   });
-  const zoneRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id));
-  if (zoneRoutes.length) srcSel.value = zoneRoutes[0].rx_id;
-  srcSel.onchange = async () => {
-    const rxId = srcSel.value;
-    const prevRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id))
-      .map(r => ({ rx_id: r.rx_id, tx_id: r.tx_id, route_type: r.route_type }));
-
-    try {
-      await api.deleteRoutesByZone(zone.id);
-      st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
-      if (rxId) {
-        for (const txId of (zone.tx_ids ?? [])) {
-          const route = await api.postRoute(rxId, txId, 'local');
-          st.setRoute(route);
-        }
-      }
-
-      undo.push({
-        label: `Zone input: ${zone.name ?? zone.id}`,
-        apply: async () => {
-          await api.deleteRoutesByZone(zone.id);
-          st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
-          if (rxId) {
-            for (const txId of (zone.tx_ids ?? [])) {
-              const route = await api.postRoute(rxId, txId, 'local');
-              st.setRoute(route);
-            }
-          }
-        },
-        revert: async () => {
-          await api.deleteRoutesByZone(zone.id);
-          st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id)).forEach(r => st.removeRoute(r.rx_id, r.tx_id));
-          for (const r of prevRoutes) {
-            const route = await api.postRoute(r.rx_id, r.tx_id, r.route_type === 'bus' ? 'bus' : 'local');
-            st.setRoute(route);
-          }
-        },
-      });
-    } catch(e) { toast('Zone route error: ' + e.message, true); }
-  };
   card.appendChild(srcSel);
 
   // Volume slider
