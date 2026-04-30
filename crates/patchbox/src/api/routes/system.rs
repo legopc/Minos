@@ -168,6 +168,8 @@ pub struct SystemResponse {
     zone_count: usize,
     dante_status: String,
     ptp_locked: bool,
+    ptp_state: Option<String>,
+    ptp_offset_ns: Option<i64>,
     audio_drops: u64,
     bus_count: usize,
     show_buses_in_mixer: bool,
@@ -2290,9 +2292,18 @@ pub async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
     let show_buses_in_mixer = cfg.show_buses_in_mixer;
     let monitor_device = cfg.monitor_device.clone();
     let monitor_volume_db = cfg.monitor_volume_db;
+    let statime_obs_path = cfg.statime_observation_path.clone();
     drop(cfg);
     let dante_connected = s.dante_connected.load(AOrdering::Relaxed);
-    let ptp_locked = dante_connected;
+    let (ptp_state, ptp_offset_ns) = if let Some(ref obs_path) = statime_obs_path {
+        tokio::join!(
+            query_ptp_state(obs_path),
+            query_ptp_offset(obs_path)
+        )
+    } else {
+        (None, None)
+    };
+    let ptp_locked = ptp_state.as_ref().map(|s| is_ptp_locked_state(s)).unwrap_or(false);
     let dante_status = if dante_connected {
         "connected"
     } else {
@@ -2309,6 +2320,8 @@ pub async fn get_system(State(s): State<AppState>) -> impl IntoResponse {
         zone_count,
         dante_status,
         ptp_locked,
+        ptp_state,
+        ptp_offset_ns,
         audio_drops: s.resyncs.load(AOrdering::Relaxed),
         bus_count,
         show_buses_in_mixer,

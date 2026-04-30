@@ -52,9 +52,10 @@ export async function render(container) {
     return `<span style="color:var(--text-muted)">${_e(status ?? '—')}</span>`;
   };
 
-  const _renderPtpStatus = (locked, offset_ns) => {
+  const _renderPtpStatus = (locked, offset_ns, ptp_state) => {
     if (locked === true) {
-      return `<span style="color:var(--color-ok)">LOCKED</span> <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
+      const stateLabel = ptp_state ? ` (${ptp_state})` : '';
+      return `<span style="color:var(--color-ok)">LOCKED${stateLabel}</span> <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
     }
     if (locked === false) {
       return `<span style="color:var(--color-warn)">—</span>`;
@@ -77,18 +78,13 @@ export async function render(container) {
       </div>
 
       <div class="sys-card">
-        <div class="sys-card-title">Dante</div>
-        <div class="sys-row"><span class="sys-lbl">Status</span><span class="sys-val sys-dante-status">${_renderDanteStatus(sys.dante_status)}</span></div>
-      </div>
-
-      <div class="sys-card">
         <div class="sys-card-title">Clock / PTP</div>
-        <div class="sys-row"><span class="sys-lbl">PTP</span><span class="sys-val sys-ptp-val">${_renderPtpStatus(sys.ptp_locked, sys.ptp_offset_ns)}</span></div>
+        <div class="sys-row"><span class="sys-lbl">PTP</span><span class="sys-val sys-ptp-val">${_renderPtpStatus(sys.ptp_locked, sys.ptp_offset_ns, sys.ptp_state)}</span></div>
       </div>
 
       <div class="sys-card">
         <div class="sys-card-title">Audio</div>
-        <div class="sys-row"><span class="sys-lbl">Drops</span><span class="sys-val" style="${dropsClass}">${drops}</span></div>
+        <div class="sys-row"><span class="sys-lbl" title="Dante ring buffer realignments — not buffer underruns">Resyncs</span><span class="sys-val" style="${dropsClass}">${drops}</span></div>
         ${drops > 0 ? '<div class="sys-row"><button class="sys-btn" id="sys-reset-drops">Reset Counter</button></div>' : ''}
         <div class="sys-row"><span class="sys-lbl">DSP CPU</span><span class="sys-val sys-dsp-cpu">${_renderDspCpuBar(health?.dsp)}</span></div>
       </div>
@@ -130,7 +126,7 @@ export async function render(container) {
       st.setSystem(updated);
       render(container);
     } catch (e) {
-      console.error('Failed to reset drops', e);
+      console.error('Failed to reset resyncs', e);
     }
   });
 

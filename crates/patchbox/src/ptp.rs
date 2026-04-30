@@ -59,5 +59,6 @@ pub async fn query_ptp_state(socket_path: &str) -> Option<String> {
 }
 
 pub fn is_ptp_locked_state(state: &str) -> bool {
-    matches!(state, "SLAVE" | "MASTER")
+    let upper = state.to_uppercase();
+    matches!(upper.as_str(), "SLAVE" | "MASTER")
 }

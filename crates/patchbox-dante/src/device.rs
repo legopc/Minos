@@ -8,6 +8,7 @@
 
 use anyhow::Result;
 use patchbox_core::config::PatchboxConfig;
+use patchbox_core::metrics::DspMetrics;
 use patchbox_core::meters::MeterState;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -47,10 +48,11 @@ impl DanteDevice {
         meters: Arc<RwLock<MeterState>>,
         audio_callbacks: Arc<AtomicU64>,
         resyncs: Arc<AtomicU64>,
+        dsp_metrics: Arc<DspMetrics>,
     ) -> Result<()> {
         #[cfg(feature = "inferno")]
         {
-            self.start_real(config, meters, audio_callbacks, resyncs)
+            self.start_real(config, meters, audio_callbacks, resyncs, dsp_metrics)
                 .await
         }
         #[cfg(not(feature = "inferno"))]
@@ -59,6 +61,7 @@ impl DanteDevice {
             let _ = meters;
             let _ = audio_callbacks;
             let _ = resyncs;
+            let _ = dsp_metrics;
             tracing::warn!(
                 name = %self.device_name,
                 rx = self.n_rx,
@@ -76,6 +79,7 @@ impl DanteDevice {
         meters: Arc<RwLock<MeterState>>,
         audio_callbacks: Arc<AtomicU64>,
         resyncs: Arc<AtomicU64>,
+        dsp_metrics: Arc<DspMetrics>,
     ) -> Result<()> {
         use inferno_aoip::device_server::Clock;
         use inferno_aoip::device_server::{
@@ -278,6 +282,7 @@ impl DanteDevice {
         let current_ts_cb = Arc::clone(&current_timestamp);
         let audio_callbacks_cb = Arc::clone(&audio_callbacks);
         let resyncs_cb = Arc::clone(&resyncs);
+        let dsp_metrics_cb = Arc::clone(&dsp_metrics);
         let mut start_tx_opt: Option<tokio::sync::oneshot::Sender<Clock>> = Some(start_tx);
         // Stateful matrix processor: owns input DSP + output DSP. Allocated once, moved into closure.
         let mut matrix_proc = patchbox_core::matrix::MatrixProcessor::new(n_rx, n_tx, 48_000.0);
@@ -350,7 +355,11 @@ impl DanteDevice {
                         tx_f32.iter_mut().map(|v| v.as_mut_slice()).collect();
 
                     // Run DSP matrix (input DSP → routing → output DSP)
+                    let process_start = std::time::Instant::now();
                     matrix_proc.process(&inputs_ref, &mut outputs_ref, cfg);
+                    let process_duration_us = process_start.elapsed().as_micros() as u32;
+                    let budget_us = (block as u64 * 1_000_000 / 48_000) as u32;
+                    dsp_metrics_cb.update_block_cpu(process_duration_us, budget_us);
 
                     // Push monitor buffer samples to FIFO queue for ALSA writer.
                     // Queue is bounded to 9600 frames (200ms) — drop oldest if overflowing.
