@@ -1,0 +1,901 @@
+<!DOCTYPE HTML>
+<html lang="en" class="navy sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Minos — Dante Patchbox User Manual</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="User manual and API reference for Minos, a Dante AoIP patchbay + DSP mixer with zone control.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "navy";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-59eb6fd6.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-0ffda84a.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('navy')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Minos — Dante Patchbox User Manual</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/legopc/dante-patchbox" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="minos--dante-patchbox"><a class="header" href="#minos--dante-patchbox">Minos — Dante Patchbox</a></h1>
+<p>Minos is a Dante AoIP patchbay + DSP mixer with zone control. It provides real-time audio routing, signal processing, and multi-zone output management over Dante networks. Build sophisticated sound reinforcement, broadcast, and live event systems with low-latency Dante connectivity and flexible DSP chains per source and output.</p>
+<p><strong>Repository:</strong> <a href="https://github.com/legopc/dante-patchbox">github.com/legopc/dante-patchbox</a></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<p>Minos operates around a few core domain concepts:</p>
+<ul>
+<li><strong>Inputs (RX)</strong>: Dante audio sources flowing into the system. Each input channel has independent DSP (gain, EQ, compression, gating, feedback suppression, etc.).</li>
+<li><strong>Outputs (TX)</strong>: Dante audio destinations (zones). Each zone is named and coloured for visual organization.</li>
+<li><strong>Routing Matrix</strong>: The crosspoint grid showing which inputs feed which outputs. Per-crosspoint gain control available.</li>
+<li><strong>Buses</strong>: Internal submix channels that accept inputs, apply processing, and feed outputs—useful for complex multi-destination mixes.</li>
+<li><strong>Zones</strong>: Logical groupings of output channels with a human-readable name and colour palette entry.</li>
+<li><strong>Scenes</strong>: Named snapshots of the entire mixer state (routing, levels, DSP settings, zone mutes). Instant recall or crossfade between scenes.</li>
+<li><strong>DSP Chains</strong>: Series of audio processors on each input/output/bus (EQ, compression, limiter, delay, dynamic EQ, etc.). Configured via config.toml or edited in real-time via the UI.</li>
+</ul>
+<p>See detailed sections for topology, DSP architecture, and scene management.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="topology-inputs-outputs-buses-zones"><a class="header" href="#topology-inputs-outputs-buses-zones">Topology: Inputs, Outputs, Buses, Zones</a></h1>
+<h2 id="inputs-rx"><a class="header" href="#inputs-rx">Inputs (RX)</a></h2>
+<p>Each Dante RX channel is an audio source entering the system. The number of inputs is configured in <code>config.toml</code> via <code>rx_channels</code>. Each input can be:</p>
+<ul>
+<li><strong>Named</strong>: Human-readable label (e.g., “Mic 1”, “Line In”).</li>
+<li><strong>Coloured</strong>: Optional accent colour (0–9) for visual grouping in the Mixer tab.</li>
+<li><strong>Routed</strong>: Via the Matrix, to any or all TX outputs.</li>
+<li><strong>Processed</strong>: Full DSP chain (gain, HPF, LPF, 5-band EQ, gate, compressor, AEC, feedback suppression, dynamic EQ, automixer).</li>
+</ul>
+<h2 id="outputs-tx--zones"><a class="header" href="#outputs-tx--zones">Outputs (TX) &amp; Zones</a></h2>
+<p>Dante TX channels are audio destinations (zone outputs). Grouped into <strong>zones</strong>—named sets of TX channels with a colour palette entry. Each output supports:</p>
+<ul>
+<li><strong>Independent DSP</strong>: EQ, compression, brick-wall limiter, delay, dither, dynamic EQ.</li>
+<li><strong>Mute control</strong>: Per-output or per-zone.</li>
+<li><strong>Gain/fading</strong>: Per-output volume with configurable gain-ramp time (default 10 ms) for zipper-free transitions.</li>
+</ul>
+<h2 id="buses"><a class="header" href="#buses">Buses</a></h2>
+<p>Internal submix channels that sum multiple inputs, apply processing (like input channels), and feed any or all outputs. Useful for:</p>
+<ul>
+<li>Complex multi-destination mixes without duplicating sources.</li>
+<li>Dedicated processing chains per submix.</li>
+<li>Feed-back loops (bus feeds another bus) for nested mixing.</li>
+</ul>
+<p>Bus routing is controlled via <code>bus_matrix</code> in config.</p>
+<h2 id="routing-matrix"><a class="header" href="#routing-matrix">Routing Matrix</a></h2>
+<p>The <strong>Matrix</strong> tab shows a 2D grid: Rows = zones (TX), columns = sources (RX). Each cell represents a crosspoint:</p>
+<ul>
+<li><strong>ON/OFF toggle</strong>: Routes a source to a zone.</li>
+<li><strong>Per-crosspoint gain</strong>: In dB, applied when the crosspoint is active (default 0.0 = unity).</li>
+</ul>
+<p>From the Matrix, you can also lock/solo/copy crosspoints and adjust crosspoint gain in real-time.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dsp-chain"><a class="header" href="#dsp-chain">DSP Chain</a></h1>
+<p>Every input, bus, and output channel has an optional DSP chain for signal processing.</p>
+<h2 id="input-dsp"><a class="header" href="#input-dsp">Input DSP</a></h2>
+<ul>
+<li><strong>Gain</strong>: Direct level control (dB).</li>
+<li><strong>Polarity</strong>: Invert phase (–180°).</li>
+<li><strong>HPF</strong> (High-Pass Filter): Roll-off low frequencies (default 80 Hz, disabled).</li>
+<li><strong>LPF</strong> (Low-Pass Filter): Roll-off high frequencies (default 16 kHz, disabled).</li>
+<li><strong>5-Band Parametric EQ</strong>: Centre frequencies pre-set (100 Hz, 250 Hz, 1 kHz, 4 kHz, 10 kHz); adjust gain and Q per band.</li>
+<li><strong>Gate/Expander</strong>: Noise gate with threshold, ratio, attack/hold/release times, and range.</li>
+<li><strong>Compressor</strong>: Dynamic range compression with threshold, ratio, knee, attack, release, makeup gain.</li>
+<li><strong>AEC</strong> (Acoustic Echo Cancellation): Optional feature (compile with <code>--features aec</code>); specify a TX output as reference.</li>
+<li><strong>Automixer</strong> (Dugan Gain-Sharing): Opt-in per-channel; channels in the same group share gain to avoid level-stacking.</li>
+<li><strong>Feedback Suppressor</strong>: Automatic notch-filter feedback detection and removal (up to 8 simultaneous notches).</li>
+<li><strong>Dynamic EQ</strong>: Up to 4 frequency-selective dynamic processors (threshold-triggered peaking/shelf EQ).</li>
+</ul>
+<h2 id="output-dsp"><a class="header" href="#output-dsp">Output DSP</a></h2>
+<ul>
+<li><strong>Gain</strong> &amp; <strong>Mute</strong>: Per-output volume and mute state.</li>
+<li><strong>Polarity</strong>: Phase inversion.</li>
+<li><strong>HPF, LPF</strong>: High-pass and low-pass filters (same as input).</li>
+<li><strong>5-Band Parametric EQ</strong>: Same as input.</li>
+<li><strong>Compressor</strong>: Dynamic range compression.</li>
+<li><strong>Brick-Wall Limiter</strong>: Brick-wall limiting with threshold (-40 to 0 dBFS), attack (0.1–50 ms), release (10–2000 ms).</li>
+<li><strong>Delay</strong>: Sample-accurate delay (0–500 ms) for time-aligning outputs.</li>
+<li><strong>Dither</strong>: Apply TPDF dither at 16 or 24 bits (reduces quantization noise on low-level signals).</li>
+<li><strong>Dynamic EQ</strong>: Same as input.</li>
+</ul>
+<h2 id="bus-dsp"><a class="header" href="#bus-dsp">Bus DSP</a></h2>
+<p>Internal buses use the same DSP chain as input channels (no compressor/limiter on buses in current build).</p>
+<h2 id="real-time-editing"><a class="header" href="#real-time-editing">Real-Time Editing</a></h2>
+<p>Open a DSP panel from the Mixer or Zones tab by clicking the DSP icon on any channel. Panels can be dragged and repositioned on screen. Changes are applied immediately to the audio stream (via WebSocket to the backend).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="scenes"><a class="header" href="#scenes">Scenes</a></h1>
+<p>A <strong>scene</strong> is a named snapshot of the entire mixer state at a moment in time:</p>
+<ul>
+<li><strong>Full state capture</strong>: Routing matrix, per-channel gain, DSP settings, zone mutes, VCA group levels, stereo link pans.</li>
+<li><strong>Instant recall</strong>: Load a scene name to jump to that exact configuration instantly.</li>
+<li><strong>Crossfade</strong>: Optional gradual transition between scenes (configurable fade time in ms).</li>
+<li><strong>Session-only</strong>: Scenes are stored in-memory and can be saved/loaded via API calls (persistence TBD).</li>
+</ul>
+<h3 id="managing-scenes-ui"><a class="header" href="#managing-scenes-ui">Managing Scenes (UI)</a></h3>
+<p>In the <strong>Scenes</strong> tab, you can:</p>
+<ul>
+<li>Create a new scene from the current state.</li>
+<li>List all stored scenes.</li>
+<li>Recall any scene (instant or with crossfade).</li>
+<li>Delete a scene.</li>
+<li>Edit a scene name.</li>
+</ul>
+<p>Scene crossfade time is controlled via <code>scene_crossfade_ms</code> in config.toml (default 0 = instant).</p>
+<h3 id="scene-api"><a class="header" href="#scene-api">Scene API</a></h3>
+<p>Scenes are accessible via the <code>/api/scenes</code> endpoint (see API Reference for details).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="ui-tour"><a class="header" href="#ui-tour">UI Tour</a></h1>
+<p>Minos provides a web-based interface with the following main tabs:</p>
+<ul>
+<li><strong>Mixer</strong>: Vertical fader strips for inputs + zone masters. Gain, mute, solo, and DSP access per channel.</li>
+<li><strong>Matrix</strong>: Routing grid (zones as rows, sources as columns). Per-crosspoint on/off and gain control.</li>
+<li><strong>Zones</strong>: Zone master cards with colour-coded output channels grouped by zone.</li>
+<li><strong>Panels (DSP)</strong>: Floating DSP processor editor windows (open from Mixer/Zones tabs).</li>
+<li><strong>Scenes</strong>: Scene recall, creation, and management.</li>
+<li><strong>System</strong>: Health, version, Dante status, PTP sync, and configuration info.</li>
+</ul>
+<p>All tabs support <strong>real-time</strong> parameter updates via WebSocket. Changes persist to the config file on disk when applicable.</p>
+<p>Navigate the UI using tab buttons at the top, or use keyboard shortcuts (see System tab for help).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="mixer-tab"><a class="header" href="#mixer-tab">Mixer Tab</a></h1>
+<p>The <strong>Mixer</strong> tab displays all input channels as vertical fader strips, zone master controls on the right, and internal buses below (if enabled).</p>
+<h2 id="input-strips"><a class="header" href="#input-strips">Input Strips</a></h2>
+<p>Each input strip shows:</p>
+<ul>
+<li><strong>Channel name</strong> (e.g., “Mic 1”, “Line In”).</li>
+<li><strong>Colour indicator</strong> (if assigned, 0–9 palette).</li>
+<li><strong>Gain fader</strong>: Adjust input level in dB.</li>
+<li><strong>Meter</strong>: Real-time audio level display.</li>
+<li><strong>Mute button</strong>: Silence the input in the mix.</li>
+<li><strong>Solo button</strong>: Solo this input (mutes all others; click CLEAR SOLO bar to exit).</li>
+<li><strong>DSP icon</strong>: Click to open the DSP panel for this channel (EQ, compression, gate, etc.).</li>
+</ul>
+<p>Hold <strong>Shift</strong> + click channel faders to fine-tune or adjust multiple channels at once.</p>
+<h2 id="zone-masters"><a class="header" href="#zone-masters">Zone Masters</a></h2>
+<p>On the right side, one master fader per zone (TX output). Shows:</p>
+<ul>
+<li><strong>Zone name</strong> (e.g., “Main”, “Zone 2”).</li>
+<li><strong>Zone colour</strong> matching the zone configuration.</li>
+<li><strong>Output master fader</strong>: Zone-level volume control.</li>
+<li><strong>Output mute</strong>: Mute the entire zone.</li>
+<li><strong>Output level meter</strong>.</li>
+</ul>
+<h2 id="scene-bar--solo-indicator"><a class="header" href="#scene-bar--solo-indicator">Scene Bar &amp; Solo Indicator</a></h2>
+<p>At the top, a scene selection dropdown lets you recall scenes instantly. Below that, the solo indicator bar shows when any input is soloed; click <strong>CLEAR</strong> to exit solo mode.</p>
+<h2 id="buses-optional"><a class="header" href="#buses-optional">Buses (Optional)</a></h2>
+<p>If <code>show_buses_in_mixer</code> is true in config, internal buses appear as additional strips below the zone masters for easy access.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="matrix-tab"><a class="header" href="#matrix-tab">Matrix Tab</a></h1>
+<p>The <strong>Matrix</strong> tab shows the routing grid—a 2D array where zones (TX) are rows and sources (RX) are columns. Each cell represents a <strong>crosspoint</strong> (source-to-zone routing).</p>
+<h2 id="grid-layout"><a class="header" href="#grid-layout">Grid Layout</a></h2>
+<ul>
+<li><strong>Row headers</strong> (left): Zone names and colours.</li>
+<li><strong>Column headers</strong> (top): Source names and colours.</li>
+<li><strong>Cells</strong>: Each crosspoint cell shows routing state and gain.</li>
+</ul>
+<h2 id="crosspoint-operations"><a class="header" href="#crosspoint-operations">Crosspoint Operations</a></h2>
+<ul>
+<li><strong>Click a cell</strong>: Toggle the route ON/OFF. Turns green when active.</li>
+<li><strong>Right-click or alt-click</strong>: Adjust per-crosspoint gain in dB (0.0 = unity).</li>
+<li><strong>Lock icon</strong> (corner): Lock the matrix to prevent accidental changes.</li>
+<li><strong>Solo mode</strong> (corner): Solo a source or zone—routes only the solo’d source to its zone.</li>
+<li><strong>Copy mode</strong> (corner): Copy a crosspoint route and paste it to others (useful for duplicating configurations).</li>
+</ul>
+<h2 id="colour-coding"><a class="header" href="#colour-coding">Colour Coding</a></h2>
+<ul>
+<li><strong>Green cell</strong>: Crosspoint is active (routing audio).</li>
+<li><strong>Gray/empty cell</strong>: Crosspoint is inactive.</li>
+<li><strong>Zone colour stripe</strong> on the left, <strong>source colour stripe</strong> on top for quick visual reference.</li>
+</ul>
+<h2 id="buses-1"><a class="header" href="#buses-1">Buses</a></h2>
+<p>If internal buses are configured, they appear as additional rows below the zones. Bus-to-bus and bus-to-TX routing is shown here.</p>
+<h2 id="real-time-updates"><a class="header" href="#real-time-updates">Real-Time Updates</a></h2>
+<p>All changes in the Matrix are reflected immediately in the audio output and optionally saved to config on exit.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="zones-tab"><a class="header" href="#zones-tab">Zones Tab</a></h1>
+<p>The <strong>Zones</strong> tab displays zone master controls as colour-coded cards, each representing one zone (group of output channels).</p>
+<h2 id="zone-cards"><a class="header" href="#zone-cards">Zone Cards</a></h2>
+<p>Each zone card shows:</p>
+<ul>
+<li><strong>Zone name</strong> (e.g., “Main Outs”, “Mic Mix”).</li>
+<li><strong>Zone colour</strong> assigned in config (0–9 palette).</li>
+<li><strong>Output fader</strong> for each TX channel in the zone: Adjust master level or individual channel volume.</li>
+<li><strong>Mute button</strong> per output: Silence specific channels in the zone.</li>
+<li><strong>DSP icon</strong> per output: Open the DSP panel to edit output DSP (EQ, limiter, delay, etc.).</li>
+<li><strong>Meter</strong> per output: Real-time level display.</li>
+</ul>
+<h2 id="common-tasks"><a class="header" href="#common-tasks">Common Tasks</a></h2>
+<ul>
+<li><strong>Adjust zone volume</strong>: Move the zone master fader up/down.</li>
+<li><strong>Mute a zone</strong>: Click the mute button.</li>
+<li><strong>Edit output DSP</strong>: Click the DSP icon to open the parametric EQ, limiter, delay, or other processors.</li>
+<li><strong>Link stereo pairs</strong>: If configured in <code>stereo_links</code>, pan controls appear here (future feature).</li>
+</ul>
+<h2 id="colour-organization"><a class="header" href="#colour-organization">Colour Organization</a></h2>
+<p>Zone colours match the routing matrix and mixer tab for consistent visual reference across the entire interface.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="panels-dsp"><a class="header" href="#panels-dsp">Panels (DSP)</a></h1>
+<p>The <strong>Panels</strong> system provides floating, draggable windows for real-time DSP editing.</p>
+<h2 id="opening-a-dsp-panel"><a class="header" href="#opening-a-dsp-panel">Opening a DSP Panel</a></h2>
+<p>Click the <strong>DSP icon</strong> (⚙ or similar) on any:</p>
+<ul>
+<li>Input strip (Mixer tab)</li>
+<li>Zone output card (Zones tab)</li>
+<li>Internal bus fader (if visible)</li>
+</ul>
+<p>This opens a floating window for that channel’s DSP chain.</p>
+<h2 id="panel-contents"><a class="header" href="#panel-contents">Panel Contents</a></h2>
+<p>Each panel displays the full DSP chain for the selected channel:</p>
+<ul>
+<li><strong>Header</strong>: Channel name, close button (✕), panel title.</li>
+<li><strong>DSP blocks</strong>: Organized by processor type (Gain, HPF, LPF, EQ, Gate, Compressor, etc.).</li>
+<li><strong>Enable toggles</strong>: Turn each processor on/off without losing settings.</li>
+<li><strong>Parameter controls</strong>: Sliders, text inputs, dropdowns for each processor’s parameters.</li>
+</ul>
+<h2 id="interaction"><a class="header" href="#interaction">Interaction</a></h2>
+<ul>
+<li><strong>Drag panel</strong>: Click and hold the header to move the panel around.</li>
+<li><strong>Adjust parameters</strong>: Faders, knobs, and text inputs update in real-time.</li>
+<li><strong>Z-stacking</strong>: Panels layer on top of each other; click a panel to bring it to front.</li>
+<li><strong>Close</strong>: Click ✕ to close the panel (does NOT reset parameters).</li>
+</ul>
+<h2 id="dsp-block-types-inputbus"><a class="header" href="#dsp-block-types-inputbus">DSP Block Types (Input/Bus)</a></h2>
+<ul>
+<li>Gain, Polarity, HPF, LPF, EQ, Gate, Compressor, AEC, Automixer, Feedback Suppressor, Dynamic EQ</li>
+</ul>
+<h2 id="dsp-block-types-output"><a class="header" href="#dsp-block-types-output">DSP Block Types (Output)</a></h2>
+<ul>
+<li>Gain, Mute, Polarity, HPF, LPF, EQ, Compressor, Limiter, Delay, Dither, Dynamic EQ</li>
+</ul>
+<p>All parameter changes are sent immediately via WebSocket to the backend and persisted to the running config.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="scenes-tab"><a class="header" href="#scenes-tab">Scenes Tab</a></h1>
+<p>The <strong>Scenes</strong> tab lets you save, load, and manage named mixer snapshots.</p>
+<h2 id="scene-operations"><a class="header" href="#scene-operations">Scene Operations</a></h2>
+<ul>
+<li><strong>Create Scene</strong>: Click “New Scene” → enter a name → save the current mixer state as a snapshot.</li>
+<li><strong>List Scenes</strong>: View all saved scenes with timestamps and description fields.</li>
+<li><strong>Recall Scene</strong>: Click a scene name to load it instantly (or with crossfade if configured).</li>
+<li><strong>Delete Scene</strong>: Remove a scene from storage.</li>
+<li><strong>Edit Name/Notes</strong>: Rename a scene or add descriptive text (optional).</li>
+</ul>
+<h2 id="crossfade"><a class="header" href="#crossfade">Crossfade</a></h2>
+<p>When you recall a scene, if <code>scene_crossfade_ms</code> &gt; 0 in config.toml, the mixer fades smoothly from the current state to the target scene over that duration. During crossfade, controls are locked.</p>
+<h2 id="whats-captured-in-a-scene"><a class="header" href="#whats-captured-in-a-scene">What’s Captured in a Scene</a></h2>
+<ul>
+<li><strong>Routing matrix</strong>: All crosspoint states (on/off) and per-crosspoint gains.</li>
+<li><strong>Input levels</strong>: Per-channel gain (note: input_gain_db in config, or per-channel DSP gain if using input DSP).</li>
+<li><strong>Output levels</strong>: Per-zone/channel master gain and mute states.</li>
+<li><strong>DSP settings</strong>: All processor parameters (EQ, compression, gating, etc.) on all channels.</li>
+<li><strong>Zone mutes</strong>: Per-zone mute state.</li>
+<li><strong>VCA groups</strong>: Level and mute state of any VCA master groups.</li>
+<li><strong>Stereo links</strong>: Pan values if stereo pairing is enabled.</li>
+</ul>
+<h2 id="persistence"><a class="header" href="#persistence">Persistence</a></h2>
+<p>Scenes are currently stored in-memory (session-only). See roadmap for file-based scene persistence.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="system-tab"><a class="header" href="#system-tab">System Tab</a></h1>
+<p>The <strong>System</strong> tab displays system information, health status, and diagnostics.</p>
+<h2 id="information-displayed"><a class="header" href="#information-displayed">Information Displayed</a></h2>
+<ul>
+<li><strong>Version</strong>: Minos build version and commit hash.</li>
+<li><strong>Dante Status</strong>: Dante device name, NIC, subscription state (Device Online, Learning, etc.).</li>
+<li><strong>PTP Sync</strong>: Statime PTP clock offset (in nanoseconds, when available). Low offset = tight sync.</li>
+<li><strong>Audio Buffer Health</strong>: RX jitter buffer depth, TX lead samples, and typical audio latency.</li>
+<li><strong>Uptime</strong>: Server uptime in hours/days.</li>
+<li><strong>WebSocket</strong>: Connection status to the backend (connected/disconnected).</li>
+<li><strong>Config File</strong>: Path to the active config.toml and last-modified time.</li>
+</ul>
+<h2 id="diagnostics--actions"><a class="header" href="#diagnostics--actions">Diagnostics &amp; Actions</a></h2>
+<ul>
+<li><strong>Reload Config</strong>: Restart the Dante stream and reload config.toml without server restart.</li>
+<li><strong>Clear Cache</strong>: Clear any cached state (if applicable).</li>
+<li><strong>Help &amp; Shortcuts</strong>: View keyboard shortcuts for the UI (Shift+?, or button in System tab).</li>
+</ul>
+<h2 id="health-checks"><a class="header" href="#health-checks">Health Checks</a></h2>
+<p>Minos performs periodic health checks on:</p>
+<ul>
+<li>Dante network connectivity (heartbeat).</li>
+<li>PTP synchronization offset.</li>
+<li>Audio engine load (CPU utilization).</li>
+<li>RX/TX buffer conditions.</li>
+</ul>
+<p>If issues are detected, a warning badge appears on the System tab; check the system log (journalctl) for details.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>Minos is configured via TOML files and runtime API calls.</p>
+<h2 id="configuration-files"><a class="header" href="#configuration-files">Configuration Files</a></h2>
+<ul>
+<li><strong><code>/etc/patchbox/config.toml</code></strong> (production): Main configuration loaded on startup.</li>
+<li><strong><code>config.toml.example</code></strong> (in repo): Example configuration with all options documented.</li>
+</ul>
+<h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
+<p>The configuration defines:</p>
+<ul>
+<li>Number of Dante channels (RX/TX) and zone layout.</li>
+<li>Network interface and Dante device name.</li>
+<li>DSP settings for all inputs, buses, and outputs.</li>
+<li>Internal buses and VCA groups.</li>
+<li>Scene crossfade time and jitter buffer tuning.</li>
+<li>Optional monitoring (PFL), signalling generators, automixer groups.</li>
+</ul>
+<h2 id="runtime-changes"><a class="header" href="#runtime-changes">Runtime Changes</a></h2>
+<p>All parameters are mutable via the Web UI or API. Changes are applied immediately to the audio stream and optionally saved back to config.toml.</p>
+<h2 id="persistence-1"><a class="header" href="#persistence-1">Persistence</a></h2>
+<p>When you edit the mixer in the UI (e.g., route a crosspoint, adjust gain, enable compression), the configuration is updated in-memory. On graceful shutdown, the config is flushed to disk. For immediate persistence, use the API <code>/save-config</code> endpoint.</p>
+<p>See the sections below for detailed reference on config.toml syntax and Dante setup.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configtoml-reference"><a class="header" href="#configtoml-reference">config.toml Reference</a></h1>
+<h2 id="top-level-fields"><a class="header" href="#top-level-fields">Top-Level Fields</a></h2>
+<ul>
+<li><strong><code>rx_channels</code></strong> (required, usize): Number of Dante RX (input) channels. Example: <code>rx_channels = 16</code>.</li>
+<li><strong><code>tx_channels</code></strong> (required, usize): Number of Dante TX (output) channels. Example: <code>tx_channels = 8</code>.</li>
+<li><strong><code>sources</code></strong> (required, Vec[String]): Human-readable names for each RX channel. Length must equal <code>rx_channels</code>.</li>
+<li><strong><code>zones</code></strong> (required, Vec[String]): Human-readable names for each TX channel. Length must equal <code>tx_channels</code>.</li>
+<li><strong><code>input_gain_db</code></strong> (Vec[f32]): Per-input gain in dB. Default: all 0.0 (unity).</li>
+<li><strong><code>output_gain_db</code></strong> (Vec[f32]): Per-output gain in dB. Default: all 0.0.</li>
+<li><strong><code>matrix</code></strong> (required, Vec[Vec[bool]]): Routing grid [tx][rx]. Example: <code>true</code> at [0][0] routes source 0 to zone 0.</li>
+<li><strong><code>matrix_gain_db</code></strong> (Vec[Vec[f32]]): Per-crosspoint gain in dB (applied when matrix[tx][rx] = true). Default: 0.0 (unity).</li>
+<li><strong><code>dante_name</code></strong> (required, String): Dante device name (visible on Dante Controller). Example: <code>dante_name = "patchbox"</code>.</li>
+<li><strong><code>dante_nic</code></strong> (required, String): Network interface for Dante (e.g., <code>eth0</code>, <code>ens0</code>).</li>
+<li><strong><code>port</code></strong> (required, u16): HTTP port for web UI + API. Example: <code>port = 9191</code>.</li>
+<li><strong><code>rx_jitter_samples</code></strong> (usize): RX buffer depth in samples (48 kHz). Default: 48 (1 ms). Increase to 192 (4 ms) if audio drops.</li>
+<li><strong><code>lead_samples</code></strong> (usize): TX lead-ahead in samples. Default: 48. Increase if clicks occur.</li>
+<li><strong><code>gain_ramp_ms</code></strong> (f32): Fader ramp time for smooth gain transitions. Default: 10 ms.</li>
+<li><strong><code>zone_config</code></strong> (Vec[ZoneConfig]): Zone definitions with colour indices (0–9).</li>
+<li><strong><code>input_dsp</code></strong> (Vec[InputChannelDsp]): Per-input DSP chain (gain, EQ, compression, etc.).</li>
+<li><strong><code>output_dsp</code></strong> (Vec[OutputChannelDsp]): Per-output DSP chain (gain, limiter, delay, etc.).</li>
+<li><strong><code>internal_buses</code></strong> (Vec[InternalBusConfig]): Submix buses.</li>
+<li><strong><code>vca_groups</code></strong> (Vec[VcaGroupConfig]): VCA master groups for grouping channels.</li>
+<li><strong><code>scene_crossfade_ms</code></strong> (f32): Fade time when recalling scenes (0 = instant). Default: 0.</li>
+</ul>
+<p>See <code>config.toml.example</code> in the repo for a complete example with all DSP processor options (EQ, gate, compressor, AEC, automixer, feedback suppressor, dynamic EQ).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dante-device-setup"><a class="header" href="#dante-device-setup">Dante Device Setup</a></h1>
+<p>Minos appears on the network as a <strong>Dante virtual device</strong> with a configurable name and network interface.</p>
+<h2 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h2>
+<p>In <code>config.toml</code>, set:</p>
+<pre><code class="language-toml">dante_name = "patchbox"          # Device name visible in Dante Controller
+dante_nic = "eth0"               # Network interface (e.g., eth0, ens0)
+dante_clock_path = "/tmp/ptp-usrvclock"  # PTP clock socket (default)
+</code></pre>
+<p>The <code>dante_name</code> is the identifier you’ll see in Dante Controller when adding Minos to your network.</p>
+<h2 id="dante-network-requirements"><a class="header" href="#dante-network-requirements">Dante Network Requirements</a></h2>
+<ul>
+<li><strong>Gigabit Ethernet</strong>: Dante requires a dedicated or isolated high-speed network.</li>
+<li><strong>PTP Synchronization</strong>: Minos uses statime (an open-source PTP client) for clock sync to the Dante network master. Confirm PTP offset in System tab (typically &lt; 1 µs on a clean LAN).</li>
+<li><strong>Dante Subscription</strong>: After Minos boots, it automatically subscribes to the Dante network. Use Dante Controller to route Dante flows to/from this device.</li>
+</ul>
+<h2 id="optional-ptp-socket"><a class="header" href="#optional-ptp-socket">Optional PTP Socket</a></h2>
+<p>If you have a statime observation socket, configure:</p>
+<pre><code class="language-toml">statime_observation_path = "/run/statime/observation.sock"
+</code></pre>
+<p>This allows Minos to report real PTP offset in the health endpoint.</p>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<ul>
+<li><strong>Device not appearing in Dante Controller</strong>: Check network cable, verify <code>dante_nic</code> is correct, check firewall/multicast settings.</li>
+<li><strong>PTP offset high (&gt; 1 ms)</strong>: Check network congestion, cable quality, or PTP master clock.</li>
+<li><strong>Audio dropouts</strong>: Increase <code>rx_jitter_samples</code> in config (default 48; try 192 for 4 ms depth).</li>
+</ul>
+<p>See the Dante tab for the admin troubleshooting view: Dante/PTP health, route tracing, recent Dante events, and recovery actions. The System tab still shows broader device status.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h1>
+<p>Minos provides a JSON REST API over HTTP for programmatic control of routing, DSP, and state.</p>
+<h2 id="base-url"><a class="header" href="#base-url">Base URL</a></h2>
+<pre><code>http://&lt;host&gt;:&lt;port&gt;/api
+</code></pre>
+<p>Default port is 9191 (configurable in config.toml).</p>
+<h2 id="authentication"><a class="header" href="#authentication">Authentication</a></h2>
+<p>All API endpoints require JWT (JSON Web Token) authentication, passed as a Bearer token in the <code>Authorization</code> header:</p>
+<pre><code>Authorization: Bearer &lt;token&gt;
+</code></pre>
+<p>Requests without a valid token receive HTTP 401 Unauthorized.</p>
+<p><strong>TODO</strong>: JWT generation and refresh flow details will be documented as part of the <code>s7-ops-openapi</code> project when full OpenAPI spec is published.</p>
+<h2 id="response-format"><a class="header" href="#response-format">Response Format</a></h2>
+<ul>
+<li><strong>Success</strong> (2xx): JSON response body with result data.</li>
+<li><strong>Client Error</strong> (4xx): JSON error object: <code>{"error": "description"}</code>.</li>
+<li><strong>Server Error</strong> (5xx): JSON error object with details.</li>
+</ul>
+<h2 id="endpoints"><a class="header" href="#endpoints">Endpoints</a></h2>
+<p>See the <a href="#endpoints-1">Endpoints</a> page for available API routes.</p>
+<h2 id="websocket"><a class="header" href="#websocket">WebSocket</a></h2>
+<p>In addition to REST, Minos supports <strong>WebSocket</strong> connections at <code>/ws</code> for real-time parameter updates and state streaming. The web UI uses WebSocket to send parameter changes and receive config updates.</p>
+<h2 id="swagger-ui"><a class="header" href="#swagger-ui">Swagger UI</a></h2>
+<p>When the full OpenAPI spec is published, an interactive Swagger UI will be available at <code>/api/docs</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="authentication-1"><a class="header" href="#authentication-1">Authentication</a></h1>
+<p>All Minos API endpoints require JWT (JSON Web Token) authentication.</p>
+<h2 id="request-format"><a class="header" href="#request-format">Request Format</a></h2>
+<p>Include the JWT in the <code>Authorization</code> header as a Bearer token:</p>
+<pre><code>GET /api/state HTTP/1.1
+Host: localhost:9191
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+</code></pre>
+<h2 id="unauthenticated-requests"><a class="header" href="#unauthenticated-requests">Unauthenticated Requests</a></h2>
+<p>Requests without a valid <code>Authorization</code> header return:</p>
+<pre><code>HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+
+{"error": "Missing or invalid token"}
+</code></pre>
+<h2 id="token-generation"><a class="header" href="#token-generation">Token Generation</a></h2>
+<p><strong>TODO</strong>: Documentation for JWT token generation, refresh flow, and credential management will be published when the <code>s7-ops-openapi</code> project is complete.</p>
+<p>For now, refer to the <code>/web/src/js/api.js</code> source code to see how the web UI obtains and manages tokens.</p>
+<h2 id="token-expiration"><a class="header" href="#token-expiration">Token Expiration</a></h2>
+<p>Tokens have an expiration time. Expired tokens also return 401; refresh the token and retry.</p>
+<h2 id="development--testing"><a class="header" href="#development--testing">Development / Testing</a></h2>
+<p>For local testing, check the backend source code for token generation functions, or see how the web UI login flow works in <code>web/src/js/api.js</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="endpoints-1"><a class="header" href="#endpoints-1">Endpoints</a></h1>
+<h2 id="available-endpoints"><a class="header" href="#available-endpoints">Available Endpoints</a></h2>
+<p>The following endpoints are implemented. Full details will be available in the OpenAPI/Swagger spec when <code>s7-ops-openapi</code> is complete.</p>
+<h3 id="state--configuration"><a class="header" href="#state--configuration">State &amp; Configuration</a></h3>
+<ul>
+<li><strong><code>GET /api/state</code></strong>: Fetch current mixer state (routing, levels, DSP settings).</li>
+<li><strong><code>POST /api/state</code></strong>: Update mixer state (bulk parameter changes).</li>
+<li><strong><code>GET /api/config</code></strong>: Fetch the current config.toml as JSON.</li>
+<li><strong><code>POST /api/config</code></strong>: Update configuration (partial or full).</li>
+<li><strong><code>POST /api/save-config</code></strong>: Force write current config to disk.</li>
+</ul>
+<h3 id="routing-matrix-1"><a class="header" href="#routing-matrix-1">Routing Matrix</a></h3>
+<ul>
+<li><strong><code>GET /api/matrix</code></strong>: Fetch the full routing matrix.</li>
+<li><strong><code>PUT /api/matrix/:tx/:rx</code></strong>: Set a crosspoint (true = route, false = unroute).</li>
+<li><strong><code>GET /api/matrix/:tx/:rx</code></strong>: Get crosspoint state.</li>
+</ul>
+<h3 id="mixer-control"><a class="header" href="#mixer-control">Mixer Control</a></h3>
+<ul>
+<li><strong><code>PUT /api/channel/:rx/gain</code></strong>: Set input channel gain (dB).</li>
+<li><strong><code>PUT /api/output/:tx/gain</code></strong>: Set output channel gain (dB).</li>
+<li><strong><code>PUT /api/output/:tx/mute</code></strong>: Set output mute state (true/false).</li>
+</ul>
+<h3 id="scenes-1"><a class="header" href="#scenes-1">Scenes</a></h3>
+<ul>
+<li><strong><code>GET /api/scenes</code></strong>: List all saved scenes.</li>
+<li><strong><code>POST /api/scenes</code></strong>: Create a new scene from current state.</li>
+<li><strong><code>POST /api/scenes/:id/recall</code></strong>: Recall a scene (instant or with crossfade).</li>
+<li><strong><code>DELETE /api/scenes/:id</code></strong>: Delete a scene.</li>
+</ul>
+<h3 id="system--health"><a class="header" href="#system--health">System &amp; Health</a></h3>
+<ul>
+<li><strong><code>GET /api/health</code></strong>: Health check (uptime, Dante status, PTP offset, buffer stats).</li>
+<li><strong><code>GET /api/version</code></strong>: Server version info.</li>
+</ul>
+<h3 id="websocket-1"><a class="header" href="#websocket-1">WebSocket</a></h3>
+<ul>
+<li><strong><code>WS /ws</code></strong>: WebSocket endpoint for real-time parameter updates and state streaming.</li>
+</ul>
+<p><strong>TODO</strong>: Full OpenAPI specification with request/response schemas, error codes, and examples will be published as part of the <code>s7-ops-openapi</code> project. See <code>/api/docs</code> (future).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="operations"><a class="header" href="#operations">Operations</a></h1>
+<p>This section covers installation, deployment, upgrades, and troubleshooting.</p>
+<h2 id="installation--deployment"><a class="header" href="#installation--deployment">Installation &amp; Deployment</a></h2>
+<ul>
+<li><strong>Binary location</strong>: <code>/opt/patchbox/patchbox</code> (after build and install).</li>
+<li><strong>Config location</strong>: <code>/etc/patchbox/config.toml</code> (main configuration file).</li>
+<li><strong>systemd service</strong>: <code>patchbox.service</code> (runs Minos as a system daemon).</li>
+</ul>
+<h2 id="starting-the-service"><a class="header" href="#starting-the-service">Starting the Service</a></h2>
+<pre><code class="language-bash">systemctl start patchbox
+systemctl enable patchbox  # Auto-start on boot
+</code></pre>
+<h2 id="checking-status"><a class="header" href="#checking-status">Checking Status</a></h2>
+<pre><code class="language-bash">systemctl status patchbox
+journalctl -u patchbox -n 50 -f  # Follow logs
+</code></pre>
+<h2 id="web-ui"><a class="header" href="#web-ui">Web UI</a></h2>
+<p>After starting, access the UI at:</p>
+<pre><code>http://&lt;hostname&gt;:9191
+</code></pre>
+<p>Default port is 9191 (configurable in config.toml).</p>
+<p>See the sections below for detailed guides on deployment, upgrades, and troubleshooting common issues.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="install--deploy"><a class="header" href="#install--deploy">Install &amp; Deploy</a></h1>
+<h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
+<ul>
+<li>Linux host with Dante AES67 network driver (or Dante VM/Linux driver).</li>
+<li>Rust toolchain (1.70+) for building from source.</li>
+<li>Gigabit Ethernet NIC dedicated to Dante.</li>
+<li>systemd for service management (optional but recommended).</li>
+</ul>
+<h2 id="build"><a class="header" href="#build">Build</a></h2>
+<pre><code class="language-bash">cd /home/legopc/dante-patchbox
+cargo build --release --features inferno
+</code></pre>
+<p>Output binary: <code>target/release/patchbox</code></p>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<ol>
+<li>
+<p><strong>Copy binary to system location</strong>:</p>
+<pre><code class="language-bash">sudo cp target/release/patchbox /opt/patchbox/patchbox
+sudo chmod 755 /opt/patchbox/patchbox
+</code></pre>
+</li>
+<li>
+<p><strong>Create config directory</strong>:</p>
+<pre><code class="language-bash">sudo mkdir -p /etc/patchbox
+</code></pre>
+</li>
+<li>
+<p><strong>Copy config.toml</strong>:</p>
+<pre><code class="language-bash">sudo cp config.toml.example /etc/patchbox/config.toml
+sudo chown root:root /etc/patchbox/config.toml
+</code></pre>
+</li>
+<li>
+<p><strong>Edit config.toml</strong> for your environment:</p>
+<ul>
+<li>Set <code>dante_nic</code> to the correct network interface.</li>
+<li>Adjust <code>rx_channels</code> and <code>tx_channels</code> for your setup.</li>
+<li>Configure zone and source names.</li>
+</ul>
+</li>
+<li>
+<p><strong>Install systemd service</strong> (if using):</p>
+<pre><code class="language-bash">sudo cp patchbox.service /etc/systemd/system/
+sudo systemctl daemon-reload
+</code></pre>
+</li>
+<li>
+<p><strong>Start the service</strong>:</p>
+<pre><code class="language-bash">sudo systemctl start patchbox
+</code></pre>
+</li>
+</ol>
+<h2 id="verification"><a class="header" href="#verification">Verification</a></h2>
+<p>Check that the service is running:</p>
+<pre><code class="language-bash">systemctl status patchbox
+</code></pre>
+<p>Access the web UI:</p>
+<pre><code>http://localhost:9191
+</code></pre>
+<p>You should see the mixer UI with inputs/outputs and routing matrix. Check the System tab for Dante device status and PTP sync offset.</p>
+<h2 id="logs"><a class="header" href="#logs">Logs</a></h2>
+<p>Follow service logs in real-time:</p>
+<pre><code class="language-bash">journalctl -u patchbox -f
+</code></pre>
+<p>Common startup messages: Dante device initialization, PTP clock sync, config loading.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="upgrades"><a class="header" href="#upgrades">Upgrades</a></h1>
+<h2 id="update-from-source"><a class="header" href="#update-from-source">Update from Source</a></h2>
+<ol>
+<li>
+<p><strong>Pull latest changes</strong>:</p>
+<pre><code class="language-bash">cd /home/legopc/dante-patchbox
+git pull origin main
+</code></pre>
+</li>
+<li>
+<p><strong>Rebuild</strong>:</p>
+<pre><code class="language-bash">cargo build --release --features inferno
+</code></pre>
+</li>
+<li>
+<p><strong>Stop the service</strong>:</p>
+<pre><code class="language-bash">sudo systemctl stop patchbox
+</code></pre>
+</li>
+<li>
+<p><strong>Backup current binary</strong> (optional but recommended):</p>
+<pre><code class="language-bash">sudo cp /opt/patchbox/patchbox /opt/patchbox/patchbox.backup
+</code></pre>
+</li>
+<li>
+<p><strong>Install new binary</strong>:</p>
+<pre><code class="language-bash">sudo cp target/release/patchbox /opt/patchbox/patchbox
+sudo chmod 755 /opt/patchbox/patchbox
+</code></pre>
+</li>
+<li>
+<p><strong>Check config compatibility</strong> (review the CHANGELOG for breaking changes):</p>
+<pre><code class="language-bash"># Edit /etc/patchbox/config.toml if needed
+</code></pre>
+</li>
+<li>
+<p><strong>Restart the service</strong>:</p>
+<pre><code class="language-bash">sudo systemctl start patchbox
+</code></pre>
+</li>
+<li>
+<p><strong>Verify startup</strong>:</p>
+<pre><code class="language-bash">systemctl status patchbox
+journalctl -u patchbox -n 20
+</code></pre>
+</li>
+</ol>
+<h2 id="config-migration"><a class="header" href="#config-migration">Config Migration</a></h2>
+<p>If the new release requires config changes, the service logs will indicate errors. Update <code>/etc/patchbox/config.toml</code> accordingly and retry.</p>
+<h2 id="rollback"><a class="header" href="#rollback">Rollback</a></h2>
+<p>If an upgrade introduces issues:</p>
+<ol>
+<li>
+<p>Restore the backup binary:</p>
+<pre><code class="language-bash">sudo cp /opt/patchbox/patchbox.backup /opt/patchbox/patchbox
+</code></pre>
+</li>
+<li>
+<p>Restart:</p>
+<pre><code class="language-bash">sudo systemctl restart patchbox
+</code></pre>
+</li>
+</ol>
+<h2 id="zero-downtime-updates-future"><a class="header" href="#zero-downtime-updates-future">Zero-Downtime Updates (Future)</a></h2>
+<p>Hot-reload of config and binary patches is planned but not yet implemented. Current upgrades require a brief service restart.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="troubleshooting-1"><a class="header" href="#troubleshooting-1">Troubleshooting</a></h1>
+<h2 id="common-issues"><a class="header" href="#common-issues">Common Issues</a></h2>
+<h3 id="http-401-unauthorized-apiui"><a class="header" href="#http-401-unauthorized-apiui">HTTP 401 Unauthorized (API/UI)</a></h3>
+<p><strong>Symptom</strong>: Web UI login fails; API calls return 401.</p>
+<p><strong>Cause</strong>: Missing or invalid JWT token.</p>
+<p><strong>Solution</strong>:</p>
+<ul>
+<li>Ensure you are logged in (refresh the login page).</li>
+<li>Check browser console for error messages.</li>
+<li>Verify the server is running: <code>systemctl status patchbox</code>.</li>
+</ul>
+<h3 id="service-wont-start"><a class="header" href="#service-wont-start">Service Won’t Start</a></h3>
+<p><strong>Symptom</strong>: <code>systemctl start patchbox</code> fails; status shows <code>failed</code> or <code>inactive</code>.</p>
+<p><strong>Cause</strong>: Config error, port already in use, or missing Dante driver.</p>
+<p><strong>Solution</strong>:</p>
+<ol>
+<li>Check logs: <code>journalctl -u patchbox -n 50</code></li>
+<li>Look for error messages (e.g., “port 9191 already in use”).</li>
+<li>Verify <code>/etc/patchbox/config.toml</code> is valid TOML and contains required fields.</li>
+<li>Ensure Dante network driver is installed: <code>lsmod | grep dante</code>.</li>
+</ol>
+<h3 id="dante-device-not-appearing-in-controller"><a class="header" href="#dante-device-not-appearing-in-controller">Dante Device Not Appearing in Controller</a></h3>
+<p><strong>Symptom</strong>: Device doesn’t show in Dante Controller even after boot.</p>
+<p><strong>Cause</strong>: Wrong network interface, Dante driver not loaded, or network issues.</p>
+<p><strong>Solution</strong>:</p>
+<ol>
+<li>Verify <code>dante_nic</code> in config matches your Dante-capable interface: <code>ip link show</code>.</li>
+<li>Check for Dante driver: <code>lsmod | grep dante</code> or <code>dmesg | grep -i dante</code>.</li>
+<li>Verify network connectivity: <code>ping &lt;dante-gateway&gt;</code>.</li>
+<li>Restart the Dante interface: <code>sudo systemctl restart dante-nic</code> (if available).</li>
+</ol>
+<h3 id="audio-dropouts-or-clicks"><a class="header" href="#audio-dropouts-or-clicks">Audio Dropouts or Clicks</a></h3>
+<p><strong>Symptom</strong>: Periodic pops, clicks, or audio gaps.</p>
+<p><strong>Cause</strong>: Buffer underruns (RX jitter buffer too shallow) or system load.</p>
+<p><strong>Solution</strong>:</p>
+<ol>
+<li>Increase <code>rx_jitter_samples</code> in config.toml: try 192 (4 ms) instead of default 48 (1 ms).</li>
+<li>Increase <code>lead_samples</code> if clicks persist: try 96 or 192.</li>
+<li>Check system load: <code>top</code> or <code>htop</code>; reduce other processes if CPU is &gt; 70%.</li>
+<li>Verify network is not congested; use <code>iperf</code> if available.</li>
+</ol>
+<h3 id="high-ptp-offset"><a class="header" href="#high-ptp-offset">High PTP Offset</a></h3>
+<p><strong>Symptom</strong>: System tab shows PTP offset &gt; 1 µs; System health tab shows “PTP Not Synced”.</p>
+<p><strong>Cause</strong>: Network congestion, poor cable quality, or PTP master clock issue.</p>
+<p><strong>Solution</strong>:</p>
+<ol>
+<li>Check network cable quality (try a known-good cable).</li>
+<li>Reduce network congestion (disable other heavy traffic on the Dante network).</li>
+<li>Verify PTP master (Dante Controller or network switch) is reachable: <code>ping &lt;ptp-master&gt;</code>.</li>
+<li>Check <code>dante_clock_path</code> in config points to the correct statime socket.</li>
+</ol>
+<h3 id="service-crashes-unexpectedly"><a class="header" href="#service-crashes-unexpectedly">Service Crashes Unexpectedly</a></h3>
+<p><strong>Symptom</strong>: <code>systemctl status patchbox</code> shows <code>failed</code>; random crashes during operation.</p>
+<p><strong>Cause</strong>: Unhandled panic in the backend, resource exhaustion, or audio engine failure.</p>
+<p><strong>Solution</strong>:</p>
+<ol>
+<li>Check full error logs: <code>journalctl -u patchbox -n 200 --no-pager</code>.</li>
+<li>Look for panic messages or “Out of memory” errors.</li>
+<li>Enable debug logging (if available) by modifying systemd service file or config.</li>
+<li>Report the crash and logs to the development team.</li>
+</ol>
+<h2 id="getting-help"><a class="header" href="#getting-help">Getting Help</a></h2>
+<ul>
+<li>Check logs: <code>journalctl -u patchbox -f</code> (follow in real-time).</li>
+<li>Review <code>/etc/patchbox/config.toml</code> for typos or invalid values.</li>
+<li>Test basic network: <code>ping &lt;dante-network-gateway&gt;</code>, <code>iperf</code> for bandwidth.</li>
+<li>Consult the <a href="#api-reference">API Reference</a> or <a href="#configuration">Configuration</a> sections for specific parameter details.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
