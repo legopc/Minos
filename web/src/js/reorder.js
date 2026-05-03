@@ -35,16 +35,19 @@ export function applyOrder(key, items, getId) {
 /**
  * Make a container drag-to-reorder.
  * @param {HTMLElement} container
- * @param {{itemSelector:string, onReorder:function, orientation:string, getId:function}} opts
+ * @param {{itemSelector:string, onReorder:function, onDragStart:function, onDragEnd:function, orientation:string, getId:function}} opts
  * @returns {function} cleanup
  */
 export function makeReorderable(container, {
   itemSelector = '[data-id]',
   onReorder = null,
+  onDragStart = null,
+  onDragEnd = null,
   orientation = 'horizontal',
   getId = el => el.dataset.id,
 } = {}) {
-  const isHoriz = orientation !== 'vertical';
+  const isGrid = orientation === 'grid';
+  const isHoriz = !isGrid && orientation !== 'vertical';
   let dragging = null;
   let marker = null;
 
@@ -77,8 +80,8 @@ export function makeReorderable(container, {
   function createMarker() {
     const m = document.createElement('div');
     m.style.cssText = 'position:fixed;pointer-events:none;background:var(--color-accent,#6ea7ff);z-index:9999;border-radius:2px;';
-    if (isHoriz) { m.style.width = '3px'; m.style.height = '40px'; }
-    else         { m.style.width = '100%'; m.style.height = '3px'; }
+    if (isHoriz || isGrid) { m.style.width = '3px'; m.style.height = '40px'; }
+    else                   { m.style.width = '100%'; m.style.height = '3px'; }
     document.body.appendChild(m);
     return m;
   }
@@ -87,19 +90,36 @@ export function makeReorderable(container, {
     if (!marker) return;
     const items = getItems().filter(el => el !== dragging);
     let target = null, before = true;
-    for (const item of items) {
-      const r = item.getBoundingClientRect();
-      const mid = isHoriz ? r.left + r.width / 2 : r.top + r.height / 2;
-      const pos = isHoriz ? x : y;
-      if (pos < mid) { target = item; before = true; break; }
-      target = item; before = false;
+    if (isGrid) {
+      let nearest = null;
+      for (const item of items) {
+        const r = item.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dist = Math.hypot(x - cx, y - cy);
+        if (!nearest || dist < nearest.dist) nearest = { item, rect: r, dist };
+      }
+      if (nearest) {
+        target = nearest.item;
+        before = x < nearest.rect.left + nearest.rect.width / 2;
+      }
+    } else {
+      for (const item of items) {
+        const r = item.getBoundingClientRect();
+        const mid = isHoriz ? r.left + r.width / 2 : r.top + r.height / 2;
+        const pos = isHoriz ? x : y;
+        if (pos < mid) { target = item; before = true; break; }
+        target = item; before = false;
+      }
     }
     if (!target) {
+      marker._target = null;
+      marker._before = true;
       marker.style.display = 'none'; return;
     }
     const r = target.getBoundingClientRect();
     marker.style.display = 'block';
-    if (isHoriz) {
+    if (isHoriz || isGrid) {
       const lx = before ? r.left : r.right;
       marker.style.left = (lx - 1.5) + 'px';
       marker.style.top  = r.top + 'px';
@@ -116,12 +136,14 @@ export function makeReorderable(container, {
 
   function onPointerDown(e) {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
+    const handle = e.currentTarget;
     const item = e.currentTarget.closest(itemSelector);
     if (!item) return;
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    handle.setPointerCapture(e.pointerId);
     dragging = item;
     item.classList.add('reorder-dragging');
+    if (onDragStart) onDragStart(item);
     marker = createMarker();
     positionMarker(e.clientX, e.clientY);
 
@@ -141,14 +163,16 @@ export function makeReorderable(container, {
     }
 
     function onUp() {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      if (!dragging) return;
+      if (handle.hasPointerCapture?.(e.pointerId)) handle.releasePointerCapture(e.pointerId);
       item.classList.remove('reorder-dragging');
-      if (marker._target) {
+      if (marker?._target) {
         if (marker._before) container.insertBefore(item, marker._target);
         else marker._target.after(item);
       }
       if (marker) { marker.remove(); marker = null; }
       dragging = null;
+      if (onDragEnd) onDragEnd(item);
       const ids = getItems().map(getId);
       // infer key from container's data-reorder-key or a passed key
       const key = container.dataset.reorderKey;
@@ -156,10 +180,12 @@ export function makeReorderable(container, {
       if (onReorder) onReorder(ids);
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
     }
 
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }
 
   // ── Keyboard Alt+arrow ────────────────────────────────────────

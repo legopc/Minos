@@ -18,6 +18,7 @@ let _zoneTemplates = [];
 let _zoneTemplatesReq = null;
 let _zoneTemplatesFetchedAt = 0;
 let _selectedTemplateId = '';
+let _zoneReorderActive = false;
 
 export function render(container) {
   _container = container;
@@ -32,50 +33,7 @@ function _showGrid() {
   _kickZoneTemplateRefresh();
   _selectedZones();
 
-  const toolbar = document.createElement('div');
-  toolbar.className = 'zones-toolbar';
-  const title = document.createElement('span');
-  title.className = 'zones-toolbar-title';
-  title.textContent = 'Zones';
-  toolbar.appendChild(title);
-
-  const selectedCount = _selectedZoneIds.size;
-  const count = document.createElement('span');
-  count.className = 'zones-toolbar-count';
-  count.textContent = selectedCount
-    ? `${selectedCount} selected`
-    : `${st.zoneList().length} total`;
-  toolbar.appendChild(count);
-
-  const selectAllBtn = document.createElement('button');
-  selectAllBtn.className = 'zones-toolbar-btn';
-  selectAllBtn.textContent = 'SELECT ALL';
-  selectAllBtn.disabled = _zoneBulkBusy || st.zoneList().length === 0;
-  selectAllBtn.onclick = () => {
-    _selectedZoneIds = new Set(st.zoneList().map((zone) => zone.id));
-    _showGrid();
-  };
-  toolbar.appendChild(selectAllBtn);
-
-  const clearBtn = document.createElement('button');
-  clearBtn.className = 'zones-toolbar-btn';
-  clearBtn.textContent = 'CLEAR';
-  clearBtn.disabled = _zoneBulkBusy || _selectedZoneIds.size === 0;
-  clearBtn.onclick = () => {
-    _selectedZoneIds.clear();
-    _showGrid();
-  };
-  toolbar.appendChild(clearBtn);
-
-  const addBtn = document.createElement('button');
-  addBtn.className = 'zones-add-btn';
-  addBtn.textContent = 'NEW ZONE';
-  addBtn.disabled = _zoneBulkBusy;
-  addBtn.onclick = () => _createZone();
-  toolbar.appendChild(addBtn);
-
-  _container.appendChild(toolbar);
-  _container.appendChild(_buildBulkBar());
+  _container.appendChild(_buildCommandBar());
 
   const grid = document.createElement('div');
   grid.className = 'zones-grid';
@@ -121,7 +79,7 @@ function _showZonePanel(zone) {
   delBtn.onclick = (e) => { e.stopPropagation(); _deleteZone(zone); };
   header.appendChild(delBtn);
 
-  // Zone-level mute (uses output PUT so stereo peers mirror correctly)
+  // Zone-level mute uses the persistent bulk endpoint so state survives refresh.
   const txOutputs = (zone.tx_ids ?? []).map(id => st.state.outputs.get(id)).filter(Boolean);
   const allMuted = txOutputs.length > 0 && txOutputs.every(o => o.muted === true);
   const muteAll = document.createElement('button');
@@ -132,10 +90,8 @@ function _showZonePanel(zone) {
     const willMute = !wasMuted;
     const txIds = zone.tx_ids ?? [];
     try {
-      for (const txId of txIds) {
-        await api.putOutput(txId, { muted: willMute });
-      }
-      await _refreshOutputs();
+      await api.setZonesMuted([zone], willMute);
+      await _refreshZoneState();
 
       muteAll.classList.toggle('active', willMute);
       muteAll.textContent = willMute ? 'UNMUTE ALL' : 'MUTE ALL';
@@ -143,10 +99,8 @@ function _showZonePanel(zone) {
       undo.push({
         label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
         apply: async () => {
-          for (const txId of txIds) {
-            await api.putOutput(txId, { muted: willMute });
-          }
-          await _refreshOutputs();
+          await api.setZonesMuted([zone], willMute);
+          await _refreshZoneState();
         },
         revert: async () => {
           for (const txId of txIds) {
@@ -308,10 +262,33 @@ function _renderCards(grid) {
   applyOrder('zones', zonesRaw, z => z.id).forEach(zone => grid.appendChild(_buildCard(zone)));
   makeReorderable(grid, {
     itemSelector: '.zone-card',
-    orientation:  'vertical',
+    orientation:  'grid',
     getId:        el => el.dataset.zoneId,
-    onReorder:    ids => saveOrder('zones', ids),
+    onDragStart:  () => { _zoneReorderActive = true; },
+    onDragEnd:    () => { _zoneReorderActive = false; },
+    onReorder:    ids => {
+      _selectedZoneIds.clear();
+      saveOrder('zones', ids);
+      _showGrid();
+    },
   });
+}
+
+function _summarizeList(items, emptyText) {
+  const names = items.filter(Boolean);
+  if (!names.length) return emptyText;
+  if (names.length <= 2) return names.join(', ');
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+}
+
+function _zoneInputNames(zone) {
+  const zoneRoutes = st.routeList().filter((route) => (zone.tx_ids ?? []).includes(route.tx_id));
+  const routedRxIds = [...new Set(zoneRoutes.map((route) => route.rx_id))];
+  return routedRxIds.map((rxId) => st.channelList().find((channel) => channel.id === rxId)?.name ?? rxId);
+}
+
+function _zoneOutputNames(zone) {
+  return (zone.tx_ids ?? []).map((txId) => st.state.outputs.get(txId)?.name ?? txId);
 }
 
 function _buildCard(zone) {
@@ -379,10 +356,8 @@ function _buildCard(zone) {
     const willMute = !wasMuted;
     const txIds = zone.tx_ids ?? [];
     try {
-      for (const txId of txIds) {
-        await api.putOutput(txId, { muted: willMute });
-      }
-      await _refreshOutputs();
+      await api.setZonesMuted([zone], willMute);
+      await _refreshZoneState();
 
       muteBtn.classList.toggle('active', willMute);
       muteBtn.textContent = willMute ? 'UNMUTE' : 'MUTE';
@@ -390,10 +365,8 @@ function _buildCard(zone) {
       undo.push({
         label: `${willMute ? 'Mute' : 'Unmute'} zone "${zone.name ?? zone.id}"`,
         apply: async () => {
-          for (const txId of txIds) {
-            await api.putOutput(txId, { muted: willMute });
-          }
-          await _refreshOutputs();
+          await api.setZonesMuted([zone], willMute);
+          await _refreshZoneState();
         },
         revert: async () => {
           for (const txId of txIds) {
@@ -405,37 +378,20 @@ function _buildCard(zone) {
     } catch(e) { toast('Mute error: ' + e.message, true); }
   };
 
-  const meterBlock = document.createElement('div');
-  meterBlock.className = 'zone-meter-grid';
-  meterBlock.innerHTML = _zoneMeterMarkup(_zoneMetering.get(zone.id));
-  card.appendChild(meterBlock);
+  const summary = document.createElement('div');
+  summary.className = 'zone-card-summary';
 
-  const dspSummary = document.createElement('div');
-  dspSummary.className = 'zone-dsp-summary';
-  dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
-  card.appendChild(dspSummary);
+  const inputSummary = document.createElement('div');
+  inputSummary.className = 'zone-card-summary-line zone-summary-inputs';
+  inputSummary.textContent = `Inputs: ${_summarizeList(_zoneInputNames(zone), 'none')}`;
+  summary.appendChild(inputSummary);
 
-  // Input selector (multi-select display - does not modify routing)
-  const srcLabel = document.createElement('div');
-  srcLabel.className = 'zone-card-label';
-  srcLabel.textContent = 'Inputs';
-  card.appendChild(srcLabel);
+  const outputSummary = document.createElement('div');
+  outputSummary.className = 'zone-card-summary-line zone-summary-outputs';
+  outputSummary.textContent = `Outputs: ${_summarizeList(_zoneOutputNames(zone), 'none')}`;
+  summary.appendChild(outputSummary);
 
-  const srcSel = document.createElement('select');
-  srcSel.className = 'zone-source-sel';
-  srcSel.multiple = true;
-  srcSel.disabled = true;
-  srcSel.size = Math.min(4, Math.max(2, st.channelList().length));
-  const zoneRoutes = st.routeList().filter(r => (zone.tx_ids ?? []).includes(r.tx_id));
-  const routedRxIds = new Set(zoneRoutes.map(r => r.rx_id));
-  st.channelList().forEach(ch => {
-    const o = document.createElement('option');
-    o.value = ch.id;
-    o.textContent = ch.name ?? ch.id;
-    if (routedRxIds.has(ch.id)) o.selected = true;
-    srcSel.appendChild(o);
-  });
-  card.appendChild(srcSel);
+  card.appendChild(summary);
 
   // Volume slider
   const volLabel = document.createElement('div');
@@ -517,19 +473,15 @@ function _buildCard(zone) {
   volRow.appendChild(volDbEl);
   card.appendChild(volRow);
 
-  // TX output chips
-  if (zone.tx_ids?.length) {
-    const chips = document.createElement('div');
-    chips.className = 'zone-tx-list';
-    zone.tx_ids.forEach(id => {
-      const out = st.state.outputs.get(id);
-      const chip = document.createElement('span');
-      chip.className = 'zone-tx-chip';
-      chip.textContent = out?.name ?? id;
-      chips.appendChild(chip);
-    });
-    card.appendChild(chips);
-  }
+  const meterBlock = document.createElement('div');
+  meterBlock.className = 'zone-meter-grid';
+  meterBlock.innerHTML = _zoneMeterMarkup(_zoneMetering.get(zone.id));
+  card.appendChild(meterBlock);
+
+  const dspSummary = document.createElement('div');
+  dspSummary.className = 'zone-dsp-summary';
+  dspSummary.innerHTML = _zoneDspSummaryMarkup(zone);
+  card.appendChild(dspSummary);
 
   return card;
 }
@@ -562,7 +514,7 @@ function _kickZoneMeteringRefresh() {
     .then((rows) => {
       _zoneMetering = new Map((rows ?? []).map((row) => [row.id, row]));
       _zoneMeteringFetchedAt = Date.now();
-      if (_container && st.state.activeTab === 'zones') {
+      if (_container && st.state.activeTab === 'zones' && !_zoneReorderActive) {
         const zone = _openZoneId ? st.zoneList().find((entry) => entry.id === _openZoneId) : null;
         if (zone) _showZonePanel(zone);
         else _showGrid();
@@ -584,16 +536,15 @@ function _kickZoneTemplateRefresh(force = false) {
       if (_selectedTemplateId && !_zoneTemplates.some((template) => template.id === _selectedTemplateId)) {
         _selectedTemplateId = '';
       }
-      if (_container && st.state.activeTab === 'zones' && !_openZoneId) _showGrid();
     })
     .catch(() => {
       _zoneTemplates = [];
       _zoneTemplatesFetchedAt = Date.now();
       if (_selectedTemplateId) _selectedTemplateId = '';
-      if (_container && st.state.activeTab === 'zones' && !_openZoneId) _showGrid();
     })
     .finally(() => {
       _zoneTemplatesReq = null;
+      if (_container && st.state.activeTab === 'zones' && !_openZoneId && !_zoneReorderActive) _showGrid();
     });
 }
 
@@ -609,103 +560,116 @@ function _selectedZoneOutputIds(zones = _selectedZones()) {
   return [...new Set(zones.flatMap((zone) => zone.tx_ids ?? []))];
 }
 
-function _buildBulkBar() {
+function _buildCommandBar() {
   const selectedZones = _selectedZones();
   const selectedOutputs = _selectedZoneOutputIds(selectedZones);
+  const zoneCount = st.zoneList().length;
 
   const bar = document.createElement('div');
-  bar.className = 'zones-bulk-bar' + (selectedZones.length ? '' : ' is-empty');
+  bar.className = 'zones-command-bar';
 
-  const scope = document.createElement('div');
-  scope.className = 'zones-bulk-scope';
+  const left = document.createElement('div');
+  left.className = 'zones-command-left';
 
-  const summary = document.createElement('div');
-  summary.className = 'zones-bulk-summary';
-  summary.textContent = selectedZones.length
-    ? `${selectedZones.length} zone${_plural(selectedZones.length)} selected · ${selectedOutputs.length} output${_plural(selectedOutputs.length)}`
-    : 'Select zones to mute, clear inputs, or apply a template.';
-  scope.appendChild(summary);
+  const title = document.createElement('span');
+  title.className = 'zones-toolbar-title';
+  title.textContent = 'Zones';
+  left.appendChild(title);
 
-  const chips = document.createElement('div');
-  chips.className = 'zones-bulk-chip-list';
+  const count = document.createElement('span');
+  count.className = 'zones-toolbar-count';
+  count.textContent = `${zoneCount} total`;
+  left.appendChild(count);
+
   if (selectedZones.length) {
-    selectedZones.forEach((zone) => {
-      const chip = document.createElement('span');
-      chip.className = 'zones-bulk-chip';
-      chip.textContent = zone.name ?? zone.id;
-      chips.appendChild(chip);
-    });
-  } else {
-    const hint = document.createElement('span');
-    hint.className = 'zones-bulk-empty';
-    hint.textContent = 'No scope selected.';
-    chips.appendChild(hint);
+    const selected = document.createElement('span');
+    selected.className = 'zones-selected-count';
+    selected.textContent = `${selectedZones.length} selected · ${selectedOutputs.length} output${_plural(selectedOutputs.length)}`;
+    left.appendChild(selected);
   }
-  scope.appendChild(chips);
-  bar.appendChild(scope);
+
+  bar.appendChild(left);
 
   const actions = document.createElement('div');
-  actions.className = 'zones-bulk-actions';
+  actions.className = 'zones-command-actions';
+
+  const selectAllBtn = _bulkActionButton('SELECT ALL', _zoneBulkBusy || zoneCount === 0, () => {
+    _selectedZoneIds = new Set(st.zoneList().map((zone) => zone.id));
+    _showGrid();
+  });
+  actions.appendChild(selectAllBtn);
+
+  const clearBtn = _bulkActionButton('CLEAR', _zoneBulkBusy || selectedZones.length === 0, () => {
+    _selectedZoneIds.clear();
+    _showGrid();
+  });
+  actions.appendChild(clearBtn);
+
   actions.appendChild(_bulkActionButton('MUTE', _zoneBulkBusy || !selectedZones.length, () => _setSelectedZonesMuted(true)));
   actions.appendChild(_bulkActionButton('UNMUTE', _zoneBulkBusy || !selectedZones.length, () => _setSelectedZonesMuted(false)));
   actions.appendChild(_bulkActionButton('CLEAR INPUTS', _zoneBulkBusy || !selectedZones.length, () => _confirmClearSelectedZoneInputs(selectedZones, selectedOutputs)));
 
-  const templateWrap = document.createElement('div');
-  templateWrap.className = 'zones-template-wrap';
+  if (_zoneTemplates.length || _selectedTemplateId || _zoneTemplatesReq) {
+    const templateWrap = document.createElement('div');
+    templateWrap.className = 'zones-template-wrap';
 
-  const templateLabel = document.createElement('span');
-  templateLabel.className = 'zones-template-label';
-  templateLabel.textContent = 'Template';
-  templateWrap.appendChild(templateLabel);
+    const templateSel = document.createElement('select');
+    templateSel.className = 'zones-template-select';
+    templateSel.disabled = _zoneBulkBusy || _zoneTemplatesReq !== null || _zoneTemplates.length === 0;
+    templateSel.onchange = () => {
+      _selectedTemplateId = templateSel.value;
+      _showGrid();
+    };
 
-  const templateSel = document.createElement('select');
-  templateSel.className = 'zones-template-select';
-  templateSel.disabled = _zoneBulkBusy || _zoneTemplatesReq !== null || _zoneTemplates.length === 0;
-  templateSel.onchange = () => {
-    _selectedTemplateId = templateSel.value;
-    _showGrid();
-  };
+    const templatePlaceholder = document.createElement('option');
+    templatePlaceholder.value = '';
+    templatePlaceholder.textContent = _zoneTemplatesReq ? 'Loading templates…' : 'Choose template';
+    templateSel.appendChild(templatePlaceholder);
+    _zoneTemplates.forEach((template) => {
+      const opt = document.createElement('option');
+      opt.value = template.id;
+      opt.textContent = template.name ?? template.id;
+      if (template.id === _selectedTemplateId) opt.selected = true;
+      templateSel.appendChild(opt);
+    });
+    templateWrap.appendChild(templateSel);
 
-  const templatePlaceholder = document.createElement('option');
-  templatePlaceholder.value = '';
-  templatePlaceholder.textContent = _zoneTemplatesReq
-    ? 'Loading templates…'
-    : (_zoneTemplates.length ? 'Choose template' : 'No templates available');
-  templateSel.appendChild(templatePlaceholder);
-  _zoneTemplates.forEach((template) => {
-    const opt = document.createElement('option');
-    opt.value = template.id;
-    opt.textContent = template.name ?? template.id;
-    if (template.id === _selectedTemplateId) opt.selected = true;
-    templateSel.appendChild(opt);
-  });
-  templateWrap.appendChild(templateSel);
+    const templateApply = _bulkActionButton(
+      'APPLY',
+      _zoneBulkBusy || !selectedZones.length || !_selectedTemplateId || !_zoneTemplates.length,
+      () => _confirmApplyTemplate(selectedZones),
+    );
+    templateApply.classList.add('zones-template-apply-btn');
+    templateWrap.appendChild(templateApply);
 
-  const templateApply = _bulkActionButton(
-    'APPLY',
-    _zoneBulkBusy || !selectedZones.length || !_selectedTemplateId || !_zoneTemplates.length,
-    () => _confirmApplyTemplate(selectedZones),
-  );
-  templateApply.classList.add('zones-template-apply-btn');
-  templateWrap.appendChild(templateApply);
+    const templateRefresh = _bulkActionButton('REFRESH', _zoneBulkBusy || _zoneTemplatesReq !== null, () => {
+      _kickZoneTemplateRefresh(true);
+      _showGrid();
+    });
+    templateRefresh.classList.add('zones-template-refresh-btn');
+    templateWrap.appendChild(templateRefresh);
+    actions.appendChild(templateWrap);
+  } else {
+    const templateNote = document.createElement('span');
+    templateNote.className = 'zones-template-note';
+    templateNote.textContent = 'No templates';
+    actions.appendChild(templateNote);
 
-  const templateRefresh = _bulkActionButton('REFRESH', _zoneBulkBusy || _zoneTemplatesReq !== null, () => {
-    _kickZoneTemplateRefresh(true);
-    _showGrid();
-  });
-  templateRefresh.classList.add('zones-template-refresh-btn');
-  templateWrap.appendChild(templateRefresh);
+    const templateRefresh = _bulkActionButton('REFRESH', _zoneBulkBusy || _zoneTemplatesReq !== null, () => {
+      _kickZoneTemplateRefresh(true);
+      _showGrid();
+    });
+    templateRefresh.classList.add('zones-template-refresh-btn');
+    actions.appendChild(templateRefresh);
+  }
 
-  const templateMeta = document.createElement('div');
-  templateMeta.className = 'zones-template-meta';
-  templateMeta.textContent = _zoneTemplatesReq
-    ? 'Template list loading…'
-    : (_zoneTemplates.length
-      ? `${_zoneTemplates.length} template${_plural(_zoneTemplates.length)} ready`
-      : 'Template list empty on this build.');
-  templateWrap.appendChild(templateMeta);
+  const addBtn = document.createElement('button');
+  addBtn.className = 'zones-add-btn';
+  addBtn.textContent = 'NEW ZONE';
+  addBtn.disabled = _zoneBulkBusy;
+  addBtn.onclick = () => _createZone();
+  actions.appendChild(addBtn);
 
-  actions.appendChild(templateWrap);
   bar.appendChild(actions);
   return bar;
 }
