@@ -6,7 +6,7 @@ Fast Playwright smoke tests for the Minos UI.
 
 - Node 20+
 - Rust toolchain (same as repo CI)
-- A PAM service file for patchbox (`/etc/pam.d/patchbox`)
+- A PAM service file for patchbox (`/etc/pam.d/patchbox`) if using a real local test user
 
 Minimal PAM config (Linux):
 
@@ -17,7 +17,10 @@ account required pam_unix.so
 EOF
 ```
 
-Create a local admin user for tests:
+With the documented `patchbox-test` / `patchbox-test` credentials, global setup seeds the ignored
+`.runtime/config.toml` with a config-backed admin test user before starting patchbox.
+
+To exercise PAM instead, create a local admin user for tests:
 
 ```sh
 sudo groupadd -f patchbox-admin
