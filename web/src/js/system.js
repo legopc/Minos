@@ -9,6 +9,13 @@ const CONFIG_META_LIMIT = 8;
 const CONFIG_VALIDATE_UNSUPPORTED = new Set([404, 405, 501]);
 const AUDIT_UNSUPPORTED = new Set([404, 405, 501]);
 
+const pendingRestartState = {
+  rx_count: null,
+  tx_count: null,
+  bus_count: null,
+  dante_name: null,
+};
+
 const configFlowState = {
   liveToml: null,
   validateAvailable: null,
@@ -63,6 +70,11 @@ export async function render(container) {
     return '—';
   };
 
+  const _renderPtpRow = (label, value) => {
+    if (value == null || value === '') return '';
+    return `<div class="sys-row"><span class="sys-lbl">${label}</span><span class="sys-val">${_e(value)}</span></div>`;
+  };
+
   const drops = sys.audio_drops ?? 0;
   const dropsClass = drops > 0 ? 'color:var(--color-danger)' : '';
 
@@ -71,6 +83,7 @@ export async function render(container) {
       <div class="sys-card">
         <div class="sys-card-title">System</div>
         <div class="sys-row"><span class="sys-lbl">Hostname</span><span class="sys-val">${_e(sys.hostname ?? '—')}</span></div>
+        <div class="sys-row"><span class="sys-lbl">Dante Name</span><span class="sys-val"><input type="text" id="cfg-dante-name" class="cfg-input cfg-input-text" maxlength="63" value="${_e(sys.dante_name ?? '')}">${pendingRestartState.dante_name !== null && pendingRestartState.dante_name !== sys.dante_name ? ' <span class="sys-modified-dot" title="requires restart">●</span> <span class="sys-restart-hint">(requires restart)</span>' : ''}</span></div>
         <div class="sys-row"><span class="sys-lbl">Version</span><span class="sys-val">${_e(sys.version ?? '—')}</span></div>
         <div class="sys-row"><span class="sys-lbl">Uptime</span><span class="sys-val">${_fmt_uptime(sys.uptime_s)}</span></div>
         <div class="sys-row"><span class="sys-lbl">Sample Rate</span><span class="sys-val">${sys.sample_rate ? (sys.sample_rate / 1000).toFixed(1) + ' kHz' : '—'}</span></div>
@@ -80,6 +93,9 @@ export async function render(container) {
       <div class="sys-card">
         <div class="sys-card-title">Clock / PTP</div>
         <div class="sys-row"><span class="sys-lbl">PTP</span><span class="sys-val sys-ptp-val">${_renderPtpStatus(sys.ptp_locked, sys.ptp_offset_ns, sys.ptp_state)}</span></div>
+        ${_renderPtpRow('Domain', sys.ptp_domain != null ? `domain ${sys.ptp_domain}` : '')}
+        ${_renderPtpRow('GM', sys.ptp_gm_identity ?? sys.ptp_gm ?? '')}
+        ${_renderPtpRow('Source', sys.clock_source ?? '')}
       </div>
 
       <div class="sys-card">
@@ -91,16 +107,13 @@ export async function render(container) {
 
       <div class="sys-card">
         <div class="sys-card-title">Channel Configuration</div>
-        <div class="sys-row"><span class="sys-lbl">RX Inputs</span><input type="number" id="cfg-rx-count" class="cfg-input" min="1" max="32" value="${sys.rx_count ?? 0}"></div>
-        <div class="sys-row"><span class="sys-lbl">TX Outputs</span><input type="number" id="cfg-tx-count" class="cfg-input" min="1" max="32" value="${sys.tx_count ?? 0}"></div>
-        <div class="sys-row"><button class="sys-btn" id="cfg-save-btn">Save & Restart</button></div>
+        <div class="sys-row"><span class="sys-lbl">RX Inputs</span><input type="number" id="cfg-rx-count" class="cfg-input" min="1" max="32" value="${sys.rx_count ?? 0}">${pendingRestartState.rx_count !== null && pendingRestartState.rx_count !== (sys.rx_count ?? 0) ? '<span class="sys-modified-dot" title="modified">●</span>' : ''}</div>
+        <div class="sys-row"><span class="sys-lbl">TX Outputs</span><input type="number" id="cfg-tx-count" class="cfg-input" min="1" max="32" value="${sys.tx_count ?? 0}">${pendingRestartState.tx_count !== null && pendingRestartState.tx_count !== (sys.tx_count ?? 0) ? '<span class="sys-modified-dot" title="modified">●</span>' : ''}</div>
       </div>
 
       <div class="sys-card">
         <div class="sys-card-title">Internal Buses</div>
-        <div class="sys-row"><span class="sys-lbl">Bus Count</span><input type="number" id="bus-count-input" class="cfg-input" min="0" max="8" value="${sys.bus_count ?? 0}"></div>
-        <div class="sys-row"><button class="sys-btn" id="bus-count-btn">Apply (restart)</button></div>
-        <div class="sys-row"><span class="sys-lbl">Show in Mixer</span><input type="checkbox" id="bus-show-toggle" class="sys-toggle" ${sys.show_buses_in_mixer !== false ? 'checked' : ''}></div>
+        <div class="sys-row"><span class="sys-lbl">Bus Count</span><input type="number" id="bus-count-input" class="cfg-input" min="0" max="8" value="${sys.bus_count ?? 0}">${pendingRestartState.bus_count !== null && pendingRestartState.bus_count !== (sys.bus_count ?? 0) ? '<span class="sys-modified-dot" title="modified">●</span>' : ''}</div>
       </div>
 
       <div class="sys-card">
@@ -116,6 +129,8 @@ export async function render(container) {
         <div class="sys-row"><span class="sys-lbl">Meter Style</span><div id="meter-ballistics-group"></div></div>
       </div>
 
+      ${_renderRestartCard()}
+
       ${_renderConfigCard()}
       ${_renderAuditCard()}
     </div>`;
@@ -130,52 +145,7 @@ export async function render(container) {
     }
   });
 
-  document.getElementById('cfg-save-btn')?.addEventListener('click', async () => {
-    const rx = parseInt(document.getElementById('cfg-rx-count').value, 10);
-    const tx = parseInt(document.getElementById('cfg-tx-count').value, 10);
-    if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
-      toast('Invalid channel count (1-32)', true);
-      return;
-    }
-    try {
-      await api.postAdminChannels(rx, tx);
-      _showRestartOverlay();
-    } catch (e) {
-      toast('Failed: ' + e.message, true);
-    }
-  });
-
-  document.getElementById('bus-count-btn')?.addEventListener('click', async () => {
-    const busCount = parseInt(document.getElementById('bus-count-input').value, 10);
-    if (isNaN(busCount) || busCount < 0 || busCount > 8) {
-      toast('Invalid bus count (0-8)', true);
-      return;
-    }
-    try {
-      const rx = parseInt(document.getElementById('cfg-rx-count').value, 10);
-      const tx = parseInt(document.getElementById('cfg-tx-count').value, 10);
-      if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
-        toast('Invalid channel count (1-32)', true);
-        return;
-      }
-      await api.postAdminChannels(rx, tx, busCount);
-      _showRestartOverlay();
-    } catch (e) {
-      toast('Failed: ' + e.message, true);
-    }
-  });
-
-  document.getElementById('bus-show-toggle')?.addEventListener('change', async (e) => {
-    try {
-      await api.putSystem({ show_buses_in_mixer: e.target.checked });
-      if (st.state.system) st.state.system.show_buses_in_mixer = e.target.checked;
-      window.dispatchEvent(new CustomEvent('pb:buses-changed'));
-    } catch (e) {
-      toast('Failed: ' + e.message, true);
-      e.target.checked = !e.target.checked;
-    }
-  });
-
+  _setupRestartWorkflow(container);
   _setupMeterBallisticsPreference();
   _setupConfigWorkflow();
   _loadBackups();
@@ -327,6 +297,113 @@ function _renderConfigCard() {
         </div>
       </div>
     </div>`;
+}
+
+function _renderRestartCard() {
+  const count = _getPendingRestartCount();
+  const hasPending = count > 0;
+  return `
+    <div class="sys-card sys-card-restart">
+      <div class="sys-card-title">Restart-Required Changes</div>
+      <div class="sys-restart-warning">
+        <span class="sys-restart-icon">⚠</span>
+        <span>Changing these settings will restart the service and interrupt audio.</span>
+      </div>
+      <div id="sys-restart-count" class="sys-restart-count">${hasPending ? `${count} change${count === 1 ? '' : 's'} pending` : 'No pending changes'}</div>
+      <div class="sys-restart-actions">
+        <button class="sys-btn" id="sys-restart-discard-btn" ${hasPending ? '' : 'disabled'}>Discard Changes</button>
+        <button class="sys-btn sys-btn-warn" id="sys-restart-apply-btn" ${hasPending ? '' : 'disabled'}>Save &amp; Restart</button>
+      </div>
+    </div>`;
+}
+
+function _getPendingRestartCount() {
+  let count = 0;
+  if (pendingRestartState.rx_count !== null) count++;
+  if (pendingRestartState.tx_count !== null) count++;
+  if (pendingRestartState.bus_count !== null) count++;
+  if (pendingRestartState.dante_name !== null) count++;
+  return count;
+}
+
+function _setupRestartWorkflow(container) {
+  const rxInput = document.getElementById('cfg-rx-count');
+  const txInput = document.getElementById('cfg-tx-count');
+  const busInput = document.getElementById('bus-count-input');
+  const danteInput = document.getElementById('cfg-dante-name');
+
+  function _syncPendingDisplay() {
+    const count = _getPendingRestartCount();
+    const hasPending = count > 0;
+    const countEl = document.getElementById('sys-restart-count');
+    const discardBtn = document.getElementById('sys-restart-discard-btn');
+    const applyBtn = document.getElementById('sys-restart-apply-btn');
+    if (countEl) countEl.textContent = hasPending ? `${count} change${count === 1 ? '' : 's'} pending` : 'No pending changes';
+    if (discardBtn) discardBtn.disabled = !hasPending;
+    if (applyBtn) applyBtn.disabled = !hasPending;
+  }
+
+  function _trackChange(field, input) {
+    input?.addEventListener('input', () => {
+      const live = st.state.system;
+      if (field === 'rx_count') pendingRestartState.rx_count = parseInt(input.value, 10);
+      if (field === 'tx_count') pendingRestartState.tx_count = parseInt(input.value, 10);
+      if (field === 'bus_count') pendingRestartState.bus_count = parseInt(input.value, 10);
+      if (field === 'dante_name') pendingRestartState.dante_name = input.value;
+      _syncPendingDisplay();
+      const sys = st.state.system;
+      const indicator = input.parentElement.querySelector('.sys-modified-dot');
+      if (indicator) {
+        indicator.style.display = pendingRestartState[field] !== null && pendingRestartState[field] !== (sys[field] ?? 0) ? 'inline' : 'none';
+      }
+    });
+  }
+
+  _trackChange('rx_count', rxInput);
+  _trackChange('tx_count', txInput);
+  _trackChange('bus_count', busInput);
+  _trackChange('dante_name', danteInput);
+
+  document.getElementById('sys-restart-discard-btn')?.addEventListener('click', () => {
+    const sys = st.state.system;
+    pendingRestartState.rx_count = null;
+    pendingRestartState.tx_count = null;
+    pendingRestartState.bus_count = null;
+    pendingRestartState.dante_name = null;
+    if (rxInput) rxInput.value = sys.rx_count ?? 0;
+    if (txInput) txInput.value = sys.tx_count ?? 0;
+    if (busInput) busInput.value = sys.bus_count ?? 0;
+    if (danteInput) danteInput.value = sys.dante_name ?? '';
+    document.querySelectorAll('.sys-modified-dot').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.sys-restart-hint').forEach(el => el.style.display = 'none');
+    _syncPendingDisplay();
+  });
+
+  document.getElementById('sys-restart-apply-btn')?.addEventListener('click', async () => {
+    const rx = pendingRestartState.rx_count ?? parseInt(document.getElementById('cfg-rx-count')?.value, 10);
+    const tx = pendingRestartState.tx_count ?? parseInt(document.getElementById('cfg-tx-count')?.value, 10);
+    const bus = pendingRestartState.bus_count ?? parseInt(document.getElementById('bus-count-input')?.value, 10);
+    const dante = pendingRestartState.dante_name ?? document.getElementById('cfg-dante-name')?.value;
+
+    if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
+      toast('Invalid channel count (1-32)', true);
+      return;
+    }
+    if (isNaN(bus) || bus < 0 || bus > 8) {
+      toast('Invalid bus count (0-8)', true);
+      return;
+    }
+
+    try {
+      await api.postAdminChannels(rx, tx, bus);
+      if (dante !== st.state.system.dante_name) {
+        await api.putSystem({ dante_name: dante });
+      }
+      _showRestartOverlay();
+    } catch (e) {
+      toast('Failed: ' + e.message, true);
+    }
+  });
 }
 
 function _renderAuditCard() {
