@@ -464,12 +464,23 @@ export async function setZonesMuted(zones, muted) {
   const list = Array.isArray(zones) ? zones : [zones];
   const zoneIds = uniqueStrings(list.map((zone) => zone?.id));
   const txIds = uniqueStrings(list.flatMap((zone) => zone?.tx_ids ?? []));
-  const payload = await compatReq([
-    { path: '/zones/bulk', method: 'POST', body: { operation: 'set_muted', zone_ids: zoneIds, muted }, continueStatuses: [400] },
-    { path: '/zones/bulk-mute', method: 'POST', body: { zone_ids: zoneIds, muted }, continueStatuses: [400] },
-    { path: '/bulk', method: 'POST', body: { operation: 'set_zone_outputs_muted', zone_ids: zoneIds, muted }, continueStatuses: [400] },
-  ]);
-  if (payload !== undefined) return payload;
+  let affected = 0;
+  if (zoneIds.length) {
+    for (const zoneId of zoneIds) {
+      const payload = await compatReq({
+        path: '/bulk',
+        method: 'POST',
+        body: { operation: 'set_zone_outputs_muted', zone_id: zoneId, muted },
+      });
+      if (payload !== undefined) affected += Number(payload?.affected ?? 0);
+    }
+    return {
+      ok: true,
+      operation: muted ? 'mute_zones' : 'unmute_zones',
+      affected,
+    };
+  }
+
   for (const txId of txIds) {
     await putOutput(txId, { muted });
   }

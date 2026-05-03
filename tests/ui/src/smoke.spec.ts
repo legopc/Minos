@@ -66,6 +66,119 @@ test.describe('Minos UI smoke', () => {
     await expect(page.locator('#tab-system #meter-ballistics-group')).toBeVisible();
   });
 
+  test('zones grid presents compact operational controls', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="zones"]').click();
+
+    const state = await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const zones = await import('/js/zones.js');
+
+      st.setZones([
+        { id: 'zone_smoke_a', name: 'Smoke Lounge', colour_index: 0, tx_ids: ['tx_0', 'tx_1'] },
+        { id: 'zone_smoke_b', name: 'Smoke Bar', colour_index: 1, tx_ids: ['tx_2', 'tx_3'] },
+      ]);
+      st.setOutput({ id: 'tx_0', name: 'Output 1', volume_db: -6, muted: false });
+      st.setOutput({ id: 'tx_1', name: 'Output 2', volume_db: -6, muted: false });
+      st.setOutput({ id: 'tx_2', name: 'Output 3', volume_db: -12, muted: true });
+      st.setOutput({ id: 'tx_3', name: 'Output 4', volume_db: -12, muted: true });
+      st.setChannel({ id: 'rx_0', name: 'Main Bar' });
+      st.setChannel({ id: 'rx_1', name: 'DVS PC' });
+      st.setRoute({ rx_id: 'rx_0', tx_id: 'tx_0', route_type: 'local' });
+      st.setRoute({ rx_id: 'rx_1', tx_id: 'tx_1', route_type: 'local' });
+
+      zones.render(document.getElementById('tab-zones'));
+
+      const firstCard = document.querySelector('.zone-card');
+      const firstCheckbox = firstCard?.querySelector('.zone-card-checkbox') as HTMLInputElement | null;
+      firstCheckbox?.click();
+
+      return {
+        hasCommandBar: !!document.querySelector('.zones-command-bar'),
+        hasOldBulkBar: !!document.querySelector('.zones-bulk-bar'),
+        selectedCount: document.querySelector('.zones-selected-count')?.textContent ?? null,
+        hasCompactMute: !!document.querySelector('.zone-card .zone-mute-btn'),
+        hasVolume: !!document.querySelector('.zone-card .zone-vol-slider'),
+        hasInputSummary: !!document.querySelector('.zone-card .zone-summary-inputs'),
+        hasOutputSummary: !!document.querySelector('.zone-card .zone-summary-outputs'),
+        hasDisabledInputSelect: !!document.querySelector('.zone-card .zone-source-sel'),
+        cardDisplay: getComputedStyle(document.querySelector('.zone-card') as Element).display,
+        handlePosition: getComputedStyle(document.querySelector('.zone-card > .reorder-handle') as Element).position,
+      };
+    });
+
+    expect(state?.hasCommandBar).toBe(true);
+    expect(state?.hasOldBulkBar).toBe(false);
+    expect(state?.selectedCount).toContain('1 selected');
+    expect(state?.hasCompactMute).toBe(true);
+    expect(state?.hasVolume).toBe(true);
+    expect(state?.hasInputSummary).toBe(true);
+    expect(state?.hasOutputSummary).toBe(true);
+    expect(state?.hasDisabledInputSelect).toBe(false);
+    expect(state?.cardDisplay).toBe('grid');
+    expect(state?.handlePosition).toBe('absolute');
+
+    await page.evaluate(() => {
+      (document.querySelector('.zone-card-name-btn') as HTMLButtonElement | null)?.click();
+    });
+    await expect(page.locator('#tab-zones .zone-panel-header')).toBeVisible();
+    await expect(page.locator('#tab-zones .zone-panel-strips')).toBeVisible();
+  });
+
+  test('zones mute actions persist after refresh', async ({ page }) => {
+    await page.locator('.tab-btn[data-tab="zones"]').click();
+
+    const state = await page.evaluate(async () => {
+      const api = await import('/js/api.js');
+      const st = await import('/js/state.js');
+      const zones = await import('/js/zones.js');
+
+      const outputs = st.outputList().slice(0, 2);
+      if (!outputs.length) return { skipped: true };
+
+      const createdZones = [];
+      const firstZone = await api.postZone({ name: 'Smoke Persist A', tx_ids: [outputs[0].id] });
+      createdZones.push(firstZone);
+      if (outputs[1]) createdZones.push(await api.postZone({ name: 'Smoke Persist B', tx_ids: [outputs[1].id] }));
+      st.setZones(await api.getZones());
+      (await api.getOutputs()).forEach((out) => st.setOutput(out));
+
+      zones.render(document.getElementById('tab-zones'));
+
+      const firstCard = document.querySelector(`.zone-card[data-zone-id="${firstZone.id}"]`);
+      (firstCard?.querySelector('.zone-mute-btn') as HTMLButtonElement | null)?.click();
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      zones.render(document.getElementById('tab-zones'));
+
+      const afterSingle = (firstZone.tx_ids ?? [])
+        .map((txId) => st.state.outputs.get(txId)?.muted)
+        .every((muted) => muted === true);
+
+      const selectedZones = createdZones;
+      selectedZones.forEach((zone) => {
+        const card = document.querySelector(`.zone-card[data-zone-id="${zone.id}"]`);
+        (card?.querySelector('.zone-card-checkbox') as HTMLInputElement | null)?.click();
+      });
+      [...document.querySelectorAll('.zones-command-bar .zones-toolbar-btn')]
+        .find((btn) => btn.textContent === 'UNMUTE')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      zones.render(document.getElementById('tab-zones'));
+
+      const afterBulk = selectedZones
+        .flatMap((zone) => zone.tx_ids ?? [])
+        .map((txId) => st.state.outputs.get(txId)?.muted)
+        .every((muted) => muted === false);
+
+      return { skipped: false, afterSingle, afterBulk };
+    });
+
+    expect(state?.skipped).toBe(false);
+    expect(state?.afterSingle).toBe(true);
+    expect(state?.afterBulk).toBe(true);
+  });
+
   test('matrix Ctrl+F focuses filter, Escape clears', async ({ page }) => {
     await page.locator('.tab-btn[data-tab="matrix"]').click();
 
