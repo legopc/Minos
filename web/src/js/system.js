@@ -13,7 +13,6 @@ const pendingRestartState = {
   rx_count: null,
   tx_count: null,
   bus_count: null,
-  dante_name: null,
 };
 
 const configFlowState = {
@@ -62,7 +61,8 @@ export async function render(container) {
   const _renderPtpStatus = (locked, offset_ns, ptp_state) => {
     if (locked === true) {
       const stateLabel = ptp_state ? ` (${ptp_state})` : '';
-      return `<span style="color:var(--color-ok)">LOCKED${stateLabel}</span> <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
+      const offsetLabel = offset_ns == null ? '' : ` <span style="color:var(--text-muted)">(${offset_ns} ns)</span>`;
+      return `<span style="color:var(--color-ok)">LOCKED${stateLabel}</span>${offsetLabel}`;
     }
     if (locked === false) {
       return `<span style="color:var(--color-warn)">—</span>`;
@@ -83,7 +83,6 @@ export async function render(container) {
       <div class="sys-card">
         <div class="sys-card-title">System</div>
         <div class="sys-row"><span class="sys-lbl">Hostname</span><span class="sys-val">${_e(sys.hostname ?? '—')}</span></div>
-        <div class="sys-row"><span class="sys-lbl">Dante Name</span><span class="sys-val"><input type="text" id="cfg-dante-name" class="cfg-input cfg-input-text" maxlength="63" value="${_e(sys.dante_name ?? '')}">${pendingRestartState.dante_name !== null && pendingRestartState.dante_name !== sys.dante_name ? ' <span class="sys-modified-dot" title="requires restart">●</span> <span class="sys-restart-hint">(requires restart)</span>' : ''}</span></div>
         <div class="sys-row"><span class="sys-lbl">Version</span><span class="sys-val">${_e(sys.version ?? '—')}</span></div>
         <div class="sys-row"><span class="sys-lbl">Uptime</span><span class="sys-val">${_fmt_uptime(sys.uptime_s)}</span></div>
         <div class="sys-row"><span class="sys-lbl">Sample Rate</span><span class="sys-val">${sys.sample_rate ? (sys.sample_rate / 1000).toFixed(1) + ' kHz' : '—'}</span></div>
@@ -322,7 +321,6 @@ function _getPendingRestartCount() {
   if (pendingRestartState.rx_count !== null) count++;
   if (pendingRestartState.tx_count !== null) count++;
   if (pendingRestartState.bus_count !== null) count++;
-  if (pendingRestartState.dante_name !== null) count++;
   return count;
 }
 
@@ -330,7 +328,6 @@ function _setupRestartWorkflow(container) {
   const rxInput = document.getElementById('cfg-rx-count');
   const txInput = document.getElementById('cfg-tx-count');
   const busInput = document.getElementById('bus-count-input');
-  const danteInput = document.getElementById('cfg-dante-name');
 
   function _syncPendingDisplay() {
     const count = _getPendingRestartCount();
@@ -349,7 +346,6 @@ function _setupRestartWorkflow(container) {
       if (field === 'rx_count') pendingRestartState.rx_count = parseInt(input.value, 10);
       if (field === 'tx_count') pendingRestartState.tx_count = parseInt(input.value, 10);
       if (field === 'bus_count') pendingRestartState.bus_count = parseInt(input.value, 10);
-      if (field === 'dante_name') pendingRestartState.dante_name = input.value;
       _syncPendingDisplay();
       const sys = st.state.system;
       const indicator = input.parentElement.querySelector('.sys-modified-dot');
@@ -362,18 +358,15 @@ function _setupRestartWorkflow(container) {
   _trackChange('rx_count', rxInput);
   _trackChange('tx_count', txInput);
   _trackChange('bus_count', busInput);
-  _trackChange('dante_name', danteInput);
 
   document.getElementById('sys-restart-discard-btn')?.addEventListener('click', () => {
     const sys = st.state.system;
     pendingRestartState.rx_count = null;
     pendingRestartState.tx_count = null;
     pendingRestartState.bus_count = null;
-    pendingRestartState.dante_name = null;
     if (rxInput) rxInput.value = sys.rx_count ?? 0;
     if (txInput) txInput.value = sys.tx_count ?? 0;
     if (busInput) busInput.value = sys.bus_count ?? 0;
-    if (danteInput) danteInput.value = sys.dante_name ?? '';
     document.querySelectorAll('.sys-modified-dot').forEach(el => el.style.display = 'none');
     document.querySelectorAll('.sys-restart-hint').forEach(el => el.style.display = 'none');
     _syncPendingDisplay();
@@ -383,7 +376,6 @@ function _setupRestartWorkflow(container) {
     const rx = pendingRestartState.rx_count ?? parseInt(document.getElementById('cfg-rx-count')?.value, 10);
     const tx = pendingRestartState.tx_count ?? parseInt(document.getElementById('cfg-tx-count')?.value, 10);
     const bus = pendingRestartState.bus_count ?? parseInt(document.getElementById('bus-count-input')?.value, 10);
-    const dante = pendingRestartState.dante_name ?? document.getElementById('cfg-dante-name')?.value;
 
     if (!rx || !tx || rx < 1 || rx > 32 || tx < 1 || tx > 32) {
       toast('Invalid channel count (1-32)', true);
@@ -396,9 +388,6 @@ function _setupRestartWorkflow(container) {
 
     try {
       await api.postAdminChannels(rx, tx, bus);
-      if (dante !== st.state.system.dante_name) {
-        await api.putSystem({ dante_name: dante });
-      }
       _showRestartOverlay();
     } catch (e) {
       toast('Failed: ' + e.message, true);

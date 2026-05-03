@@ -441,6 +441,60 @@ test.describe('Minos UI smoke', () => {
     await expect(page.locator('#tab-dante [data-dante-lane="audio"]')).toContainText('Trace refresh failed');
   });
 
+  test('system tab hides unsupported Dante name editor and null PTP offset', async ({ page }) => {
+    await page.route('**/api/v1/system', async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          hostname: 'patchbox-smoke',
+          version: '0.1.0',
+          uptime_s: 60,
+          sample_rate: 48000,
+          rx_count: 4,
+          tx_count: 4,
+          bus_count: 2,
+          ptp_locked: true,
+          ptp_offset_ns: null,
+          ptp_state: 'synchronized',
+          dante_status: 'connected',
+        }),
+      });
+    });
+    await page.route('**/api/v1/health', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ dsp: { cpu_percent_avg: 0, cpu_percent: 0, xruns: 0 } }),
+      });
+    });
+    await page.route('**/api/v1/audio/devices', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ devices: [] }) });
+    });
+
+    await page.locator('.tab-btn[data-tab="system"]').click();
+
+    const state = await page.evaluate(async () => {
+      const system = await import('/js/system.js');
+      await system.render(document.getElementById('tab-system'));
+
+      return {
+        ptpText: document.querySelector('.sys-ptp-val')?.textContent ?? '',
+        hasDanteNameInput: !!document.querySelector('#cfg-dante-name'),
+        restartCount: document.querySelector('#sys-restart-count')?.textContent ?? '',
+      };
+    });
+
+    expect(state.ptpText).toContain('LOCKED');
+    expect(state.ptpText).not.toContain('null ns');
+    expect(state.hasDanteNameInput).toBe(false);
+    expect(state.restartCount).toBe('No pending changes');
+  });
+
   test('matrix Ctrl+F focuses filter, Escape clears', async ({ page }) => {
     await page.locator('.tab-btn[data-tab="matrix"]').click();
 
