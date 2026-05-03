@@ -6,53 +6,46 @@
   overflow: hidden;
 }
 
-.mixer-scene-bar {
+.mixer-toolbar {
   height: var(--row-h);
   background: var(--bg-dark);
   border-bottom: 1px solid var(--border-primary);
   display: flex;
   align-items: center;
   padding: 0 8px;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
   overflow-x: auto;
 }
 
-.mixer-scene-label {
+.mixer-toolbar-title {
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
-.mixer-scene-btn {
-  font-size: 12px;
+.mixer-toolbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
   padding: 2px 8px;
   border: 1px solid var(--border-primary);
   border-radius: 2px;
   background: var(--bg-surface);
   color: var(--text-secondary);
-  cursor: pointer;
+  font-size: 12px;
   white-space: nowrap;
-  position: relative;
-  position: relative;
+  cursor: pointer;
 }
 
-/* s7-ui-touch-targets: ensure 44px tap target on touch devices */
-@media (pointer: coarse) {
-  .mixer-scene-btn::before {
-    content: '';
-    position: absolute;
-    inset: -6px -4px;
-    min-width: 44px;
-    min-height: 44px;
-  }
+.mixer-toolbar-toggle:hover {
+  background: var(--bg-row-hover);
 }
 
-.mixer-scene-btn:hover { background: var(--bg-row-hover); }
-.mixer-scene-btn.active {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--bg-surface);
+.mixer-toolbar-toggle input {
+  margin: 0;
+  accent-color: var(--color-accent);
 }
 
 /* Meter bridge — removed */
@@ -409,34 +402,6 @@
   box-shadow: 0 0 8px 2px currentColor;
 }
 
-.mixer-scene-bar {
-  height: var(--row-h);
-  background: var(--bg-dark);
-  border-bottom: 1px solid var(--border-primary);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.mixer-scene-name {
-  font-size: 10px;
-  color: var(--text-muted);
-  flex: 1;
-}
-
-.mixer-scene-btn {
-  font-size: 9px;
-  padding: 2px 8px;
-  border: 1px solid var(--border-primary);
-  border-radius: 2px;
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.mixer-scene-btn:hover { background: var(--bg-row-hover); }
-
 /* Meter bridge — removed */
 
 /* Strips scroll area */
@@ -634,32 +599,6 @@
 :root { --solo-active: #e6b800; }
 
 .mixer-strip.solo-dimmed { opacity: 0.28; transition: opacity 0.15s; }
-
-.mixer-scene-scroll-container {
-  flex: 1;
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
-}
-.mixer-scene-scroll-container::-webkit-scrollbar { display: none; }
-
-.mixer-scene-arrow {
-  flex-shrink: 0;
-  width: 28px;
-  height: 100%;
-  min-height: 44px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 0;
-  touch-action: manipulation;
-}
-.mixer-scene-arrow.hidden { visibility: hidden; pointer-events: none; }
 
 .strip-fader-label-editable {
   cursor: pointer;

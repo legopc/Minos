@@ -11,6 +11,33 @@ import { makeReorderable, applyOrder, saveOrder } from './reorder.js';
 let _animFrame = null;
 let _soloSet = new Set();
 
+const MIXER_VISIBILITY_KEY = 'minos:mixer:visibility:v1';
+const DEFAULT_MIXER_VISIBILITY = Object.freeze({ busses: true, groups: true });
+
+function _loadMixerVisibility() {
+  try {
+    const raw = localStorage.getItem(MIXER_VISIBILITY_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return {
+      busses: typeof parsed?.busses === 'boolean' ? parsed.busses : DEFAULT_MIXER_VISIBILITY.busses,
+      groups: typeof parsed?.groups === 'boolean' ? parsed.groups : DEFAULT_MIXER_VISIBILITY.groups,
+    };
+  } catch (_err) {
+    return { ...DEFAULT_MIXER_VISIBILITY };
+  }
+}
+
+function _saveMixerVisibility(prefs) {
+  try {
+    localStorage.setItem(MIXER_VISIBILITY_KEY, JSON.stringify({
+      busses: !!prefs.busses,
+      groups: !!prefs.groups,
+    }));
+  } catch (err) {
+    console.warn('[mixer] mixer visibility preference was not saved:', err);
+  }
+}
+
 function _setInputGainState(channelId, db) {
   const chanState = st.state.channels.get(channelId);
   if (chanState) chanState.gain_db = db;
@@ -213,12 +240,8 @@ export function render(container) {
   container.innerHTML = '';
   container.id = 'tab-mixer';
 
-  // Scene bar
-  const sceneBar = document.createElement('div');
-  sceneBar.className = 'mixer-scene-bar';
-  sceneBar.id = 'mixer-scene-bar';
-  container.appendChild(sceneBar);
-  _renderSceneBar(sceneBar);
+  const visibility = _loadMixerVisibility();
+  container.appendChild(_renderMixerToolbar(visibility));
 
   // Solo indicator bar
   const soloInd = document.createElement('div');
@@ -251,91 +274,52 @@ export function render(container) {
   masters.id = 'mixer-masters';
   body.appendChild(masters);
 
-  _renderStrips(strips, masters);
+  _renderStrips(strips, masters, visibility);
   _updateSoloIndicator();
   const { rx, tx, bus } = _currentMeterMaps();
   updateMetering(rx, tx, bus);
 }
 
-function _renderSceneBar(bar) {
-  const scenes = Array.isArray(st.state.scenes)
-    ? st.state.scenes.filter(s => s.is_favourite)
-    : [];
-  bar.innerHTML = '';
-  const label = document.createElement('span');
-  label.className = 'mixer-scene-label';
-  label.textContent = 'Favourite Scenes:';
-  bar.appendChild(label);
+function _renderMixerToolbar(visibility) {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'mixer-toolbar';
+  toolbar.id = 'mixer-visibility-toolbar';
 
-  // Left arrow button
-  const leftArr = document.createElement('button');
-  leftArr.className = 'mixer-scene-arrow hidden';
-  leftArr.innerHTML = '◀';
-  leftArr.setAttribute('touch-action', 'manipulation');
-  bar.appendChild(leftArr);
+  const title = document.createElement('span');
+  title.className = 'mixer-toolbar-title';
+  title.textContent = 'Show:';
+  toolbar.appendChild(title);
 
-  // Scroll container
-  const scrollContainer = document.createElement('div');
-  scrollContainer.className = 'mixer-scene-scroll-container';
-  
-  if (!scenes.length) {
-    const e = document.createElement('span');
-    e.style.cssText = 'color:var(--text-muted);font-size:10px;';
-    e.textContent = 'None starred';
-    scrollContainer.appendChild(e);
-  } else {
-    scenes.slice(0, 8).forEach(s => {
-      const btn = document.createElement('button');
-      btn.className = 'mixer-scene-btn' + (s.id === st.state.activeSceneId ? ' active' : '');
-      btn.textContent = s.name ?? s.id;
-      btn.onclick = async () => {
-        try {
-          await api.loadScene(s.id);
-          st.setActiveScene(s.id);
-          document.querySelectorAll('.mixer-scene-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          toast(`Loaded: ${s.name}`);
-        } catch(e) { toast('Load failed', true); }
-      };
-      scrollContainer.appendChild(btn);
+  const addToggle = (id, labelText, key) => {
+    const label = document.createElement('label');
+    label.className = 'mixer-toolbar-toggle';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = id;
+    checkbox.checked = visibility[key] !== false;
+    checkbox.addEventListener('change', () => {
+      const next = { ..._loadMixerVisibility(), [key]: checkbox.checked };
+      _saveMixerVisibility(next);
+      const mixerTab = document.getElementById('tab-mixer');
+      if (mixerTab) render(mixerTab);
     });
-  }
-  bar.appendChild(scrollContainer);
 
-  // Right arrow button
-  const rightArr = document.createElement('button');
-  rightArr.className = 'mixer-scene-arrow hidden';
-  rightArr.innerHTML = '▶';
-  rightArr.setAttribute('touch-action', 'manipulation');
-  bar.appendChild(rightArr);
+    const text = document.createElement('span');
+    text.textContent = labelText;
 
-  // Scroll listener
-  scrollContainer.addEventListener('scroll', () => {
-    _updateSceneScrollArrows(scrollContainer, leftArr, rightArr);
-  });
-
-  // Arrow click handlers
-  leftArr.onclick = () => {
-    scrollContainer.scrollBy({ left: -120, behavior: 'smooth' });
-  };
-  rightArr.onclick = () => {
-    scrollContainer.scrollBy({ left: 120, behavior: 'smooth' });
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    toolbar.appendChild(label);
   };
 
-  // Check initial state
-  requestAnimationFrame(() => {
-    _updateSceneScrollArrows(scrollContainer, leftArr, rightArr);
-  });
+  addToggle('mixer-toggle-busses', 'Busses', 'busses');
+  addToggle('mixer-toggle-groups', 'VCA/AXM/GEN', 'groups');
+
+  return toolbar;
 }
 
-function _updateSceneScrollArrows(container, leftArr, rightArr) {
-  const canLeft  = container.scrollLeft > 0;
-  const canRight = container.scrollLeft < container.scrollWidth - container.clientWidth - 5;
-  leftArr.classList.toggle('hidden', !canLeft);
-  rightArr.classList.toggle('hidden', !canRight);
-}
-
-function _renderStrips(strips, masters) {
+function _renderStrips(strips, masters, visibility = DEFAULT_MIXER_VISIBILITY) {
   strips.innerHTML = '';
   masters.innerHTML = '';
 
@@ -375,7 +359,7 @@ function _renderStrips(strips, masters) {
   try {
     // Bus strips (in masters, before output strips — buses are outputs not inputs)
     const busesRaw = st.busList();
-    if (st.state.system?.show_buses_in_mixer !== false) {
+    if (visibility.busses !== false) {
       const sep = document.createElement('div');
       sep.className = 'mixer-bus-separator';
       sep.textContent = 'BUSES';
@@ -400,74 +384,76 @@ function _renderStrips(strips, masters) {
       masters.appendChild(addBusBtn);
     }
 
-    // VCA Groups section
-    const vcasRaw = st.state.vcaGroups ?? [];
-    const vcaSep = document.createElement('div');
-    vcaSep.className = 'mixer-vca-separator';
-    vcaSep.textContent = 'VCA';
-    masters.appendChild(vcaSep);
-    const vcaGroup = document.createElement('div');
-    vcaGroup.className = 'mixer-reorder-group';
-    applyOrder('vcaGroups', vcasRaw, v => v.id).forEach(vca => vcaGroup.appendChild(_buildVcaStrip(vca)));
-    masters.appendChild(vcaGroup);
-    makeReorderable(vcaGroup, {
-      itemSelector: '[id^="vca-strip-"]',
-      orientation:  'horizontal',
-      getId:        el => el.id.replace('vca-strip-', ''),
-      onReorder:    ids => saveOrder('vcaGroups', ids),
-    });
-    const addVcaBtn = document.createElement('button');
-    addVcaBtn.className = 'mixer-add-vca-btn';
-    addVcaBtn.textContent = '+';
-    addVcaBtn.title = 'Add VCA group';
-    addVcaBtn.onclick = () => _showAddVcaDialog();
-    masters.appendChild(addVcaBtn);
+    if (visibility.groups !== false) {
+      // VCA Groups section
+      const vcasRaw = st.state.vcaGroups ?? [];
+      const vcaSep = document.createElement('div');
+      vcaSep.className = 'mixer-vca-separator';
+      vcaSep.textContent = 'VCA';
+      masters.appendChild(vcaSep);
+      const vcaGroup = document.createElement('div');
+      vcaGroup.className = 'mixer-reorder-group';
+      applyOrder('vcaGroups', vcasRaw, v => v.id).forEach(vca => vcaGroup.appendChild(_buildVcaStrip(vca)));
+      masters.appendChild(vcaGroup);
+      makeReorderable(vcaGroup, {
+        itemSelector: '[id^="vca-strip-"]',
+        orientation:  'horizontal',
+        getId:        el => el.id.replace('vca-strip-', ''),
+        onReorder:    ids => saveOrder('vcaGroups', ids),
+      });
+      const addVcaBtn = document.createElement('button');
+      addVcaBtn.className = 'mixer-add-vca-btn';
+      addVcaBtn.textContent = '+';
+      addVcaBtn.title = 'Add VCA group';
+      addVcaBtn.onclick = () => _showAddVcaDialog();
+      masters.appendChild(addVcaBtn);
 
-    // Automixer Groups section
-    const amGroupsRaw = st.state.automixerGroups ?? [];
-    const amSep = document.createElement('div');
-    amSep.className = 'mixer-vca-separator';
-    amSep.textContent = 'AXM';
-    masters.appendChild(amSep);
-    const amReorderGroup = document.createElement('div');
-    amReorderGroup.className = 'mixer-reorder-group';
-    applyOrder('automixerGroups', amGroupsRaw, g => g.id).forEach(g => amReorderGroup.appendChild(_buildAmGroupStrip(g)));
-    masters.appendChild(amReorderGroup);
-    makeReorderable(amReorderGroup, {
-      itemSelector: '[id^="am-strip-"]',
-      orientation:  'horizontal',
-      getId:        el => el.id.replace('am-strip-', ''),
-      onReorder:    ids => saveOrder('automixerGroups', ids),
-    });
-    const addAmBtn = document.createElement('button');
-    addAmBtn.className = 'mixer-add-vca-btn';
-    addAmBtn.textContent = '+';
-    addAmBtn.title = 'Add automixer group';
-    addAmBtn.onclick = () => _showAddAmGroupDialog();
-    masters.appendChild(addAmBtn);
+      // Automixer Groups section
+      const amGroupsRaw = st.state.automixerGroups ?? [];
+      const amSep = document.createElement('div');
+      amSep.className = 'mixer-vca-separator';
+      amSep.textContent = 'AXM';
+      masters.appendChild(amSep);
+      const amReorderGroup = document.createElement('div');
+      amReorderGroup.className = 'mixer-reorder-group';
+      applyOrder('automixerGroups', amGroupsRaw, g => g.id).forEach(g => amReorderGroup.appendChild(_buildAmGroupStrip(g)));
+      masters.appendChild(amReorderGroup);
+      makeReorderable(amReorderGroup, {
+        itemSelector: '[id^="am-strip-"]',
+        orientation:  'horizontal',
+        getId:        el => el.id.replace('am-strip-', ''),
+        onReorder:    ids => saveOrder('automixerGroups', ids),
+      });
+      const addAmBtn = document.createElement('button');
+      addAmBtn.className = 'mixer-add-vca-btn';
+      addAmBtn.textContent = '+';
+      addAmBtn.title = 'Add automixer group';
+      addAmBtn.onclick = () => _showAddAmGroupDialog();
+      masters.appendChild(addAmBtn);
 
-    // Signal Generators section
-    const gensRaw = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
-    const genSep = document.createElement('div');
-    genSep.className = 'mixer-gen-separator';
-    genSep.textContent = 'GEN';
-    masters.appendChild(genSep);
-    const genGroup = document.createElement('div');
-    genGroup.className = 'mixer-reorder-group';
-    applyOrder('generators', gensRaw, g => g.id).forEach(gen => genGroup.appendChild(_buildGenStrip(gen)));
-    masters.appendChild(genGroup);
-    makeReorderable(genGroup, {
-      itemSelector: '[id^="gen-strip-"]',
-      orientation:  'horizontal',
-      getId:        el => el.id.replace('gen-strip-', ''),
-      onReorder:    ids => saveOrder('generators', ids),
-    });
-    const addGenBtn = document.createElement('button');
-    addGenBtn.className = 'mixer-add-gen-btn';
-    addGenBtn.textContent = '+';
-    addGenBtn.title = 'Add signal generator';
-    addGenBtn.onclick = () => _showAddGenDialog();
-    masters.appendChild(addGenBtn);
+      // Signal Generators section
+      const gensRaw = st.generatorList ? st.generatorList() : (st.state.generators ?? []);
+      const genSep = document.createElement('div');
+      genSep.className = 'mixer-gen-separator';
+      genSep.textContent = 'GEN';
+      masters.appendChild(genSep);
+      const genGroup = document.createElement('div');
+      genGroup.className = 'mixer-reorder-group';
+      applyOrder('generators', gensRaw, g => g.id).forEach(gen => genGroup.appendChild(_buildGenStrip(gen)));
+      masters.appendChild(genGroup);
+      makeReorderable(genGroup, {
+        itemSelector: '[id^="gen-strip-"]',
+        orientation:  'horizontal',
+        getId:        el => el.id.replace('gen-strip-', ''),
+        onReorder:    ids => saveOrder('generators', ids),
+      });
+      const addGenBtn = document.createElement('button');
+      addGenBtn.className = 'mixer-add-gen-btn';
+      addGenBtn.textContent = '+';
+      addGenBtn.title = 'Add signal generator';
+      addGenBtn.onclick = () => _showAddGenDialog();
+      masters.appendChild(addGenBtn);
+    }
 
     // Output master strips (one per output, replaces zone-based iteration)
     const outSep = document.createElement('div');
@@ -510,6 +496,12 @@ function _renderStrips(strips, masters) {
     errEl.textContent = 'Mixer render error: ' + (err?.message ?? String(err));
     masters.appendChild(errEl);
   }
+}
+
+function _refreshStripsFromSavedVisibility() {
+  const strips = document.getElementById('mixer-strips');
+  const masters = document.getElementById('mixer-masters');
+  if (strips && masters) _renderStrips(strips, masters, _loadMixerVisibility());
 }
 
 function _buildVcaStrip(vca) {
@@ -738,9 +730,7 @@ async function _showAddVcaDialog() {
     const result = await api.postVcaGroup({ name, group_type: type, members: [], gain_db: 0, muted: false });
     const vca = { id: result?.id ?? `vca_?`, name, group_type: type, members: [], gain_db: 0, muted: false };
     st.setVcaGroup(vca);
-    const masters = document.getElementById('mixer-masters');
-    const strips  = document.querySelector('.mixer-strips');
-    if (strips && masters) _renderStrips(strips, masters);
+    _refreshStripsFromSavedVisibility();
   } catch(e) { toast(e.message, true); }
 }
 
@@ -751,9 +741,7 @@ async function _showAddBusDialog() {
     const result = await api.createBus(name);
     const bus = { id: result?.id ?? `bus_?`, name: result?.name ?? name, routing: [], routing_gain: [], dsp: {}, muted: false };
     st.setBus(bus);
-    const masters = document.getElementById('mixer-masters');
-    const strips  = document.querySelector('.mixer-strips');
-    if (strips && masters) _renderStrips(strips, masters);
+    _refreshStripsFromSavedVisibility();
   } catch(e) { toast(e.message, true); }
 }
 
@@ -808,9 +796,7 @@ function _buildAmGroupStrip(g) {
       try {
         await api.deleteAutomixerGroup(g.id);
         st.setAutomixerGroups(st.state.automixerGroups.filter(x => x.id !== g.id));
-        const masters = document.getElementById('mixer-masters');
-        const strips  = document.querySelector('.mixer-strips');
-        if (strips && masters) _renderStrips(strips, masters);
+        _refreshStripsFromSavedVisibility();
       } catch(e) { toast(e.message, true); }
     },
   }]));
@@ -913,9 +899,7 @@ async function _showAddAmGroupDialog() {
     const result = await api.postAutomixerGroup({ name, enabled: true, gating_enabled: false });
     const g = { id: result?.id ?? 'amg_?', name, enabled: true, gating_enabled: false, gate_threshold_db: -40, off_attenuation_db: -60, hold_ms: 300, last_mic_hold: true };
     st.setAutomixerGroups([...st.state.automixerGroups, g]);
-    const masters = document.getElementById('mixer-masters');
-    const strips  = document.querySelector('.mixer-strips');
-    if (strips && masters) _renderStrips(strips, masters);
+    _refreshStripsFromSavedVisibility();
   } catch(e) { toast(e.message, true); }
 }
 
@@ -1080,9 +1064,7 @@ function _showAddGenDialog() {
   api.postGenerator(body)
     .then(gen => {
       st.setGenerator(gen);
-      const masters = document.getElementById('mixer-masters');
-      const strips  = document.querySelector('.mixer-strips');
-      if (strips && masters) _renderStrips(strips, masters);
+      _refreshStripsFromSavedVisibility();
     })
     .catch(e => alert('Failed: ' + e));
 }
@@ -1539,9 +1521,7 @@ function _updateSoloIndicator() {
 
 window.addEventListener('pb:buses-changed', () => {
   if (st.state.activeTab === 'mixer') {
-    const strips = document.querySelector('.mixer-strips');
-    const masters = document.getElementById('mixer-masters');
-    if (strips && masters) _renderStrips(strips, masters);
+    _refreshStripsFromSavedVisibility();
   }
 });
 

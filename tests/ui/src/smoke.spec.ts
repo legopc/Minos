@@ -414,12 +414,13 @@ test.describe('Minos UI smoke', () => {
     expect(stayedHidden?.mixerActive).toBeTruthy();
   });
 
-  test('utility strips expose delete action in utility menu', async ({ page }) => {
+  test('utility strips expose delete action and mixer visibility toggles', async ({ page }) => {
     await page.locator('.tab-btn[data-tab="mixer"]').click();
 
     const menuState = await page.evaluate(async () => {
       const st = await import('/js/state.js');
       const mixer = await import('/js/mixer.js');
+      localStorage.removeItem('minos:mixer:visibility:v1');
       st.setVcaGroups([{
         id: 'vca_smoke',
         name: 'Smoke VCA',
@@ -464,10 +465,16 @@ test.describe('Minos UI smoke', () => {
       const destructiveLabelFor = (selector) => {
         const menuBtn = document.querySelector(selector);
         menuBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        return document.querySelector('.strip-action-menu-item.destructive')?.textContent ?? null;
+        const label = document.querySelector('.strip-action-menu-item.destructive')?.textContent ?? null;
+        document.querySelector('.strip-action-menu')?.remove();
+        return label;
       };
 
       return {
+        hasSceneBar: !!document.getElementById('mixer-scene-bar'),
+        hasToolbar: !!document.getElementById('mixer-visibility-toolbar'),
+        busToggleChecked: (document.getElementById('mixer-toggle-busses') as HTMLInputElement | null)?.checked ?? null,
+        groupsToggleChecked: (document.getElementById('mixer-toggle-groups') as HTMLInputElement | null)?.checked ?? null,
         busLabel: destructiveLabelFor('#strip-bus_smoke .strip-menu-btn'),
         vcaLabel: destructiveLabelFor('#vca-strip-vca_smoke .strip-menu-btn'),
         amLabel: destructiveLabelFor('#am-strip-am_smoke .strip-menu-btn'),
@@ -475,10 +482,54 @@ test.describe('Minos UI smoke', () => {
       };
     });
 
+    expect(menuState?.hasSceneBar).toBe(false);
+    expect(menuState?.hasToolbar).toBe(true);
+    expect(menuState?.busToggleChecked).toBe(true);
+    expect(menuState?.groupsToggleChecked).toBe(true);
     expect(menuState?.busLabel).toBe('Delete bus');
     expect(menuState?.vcaLabel).toBe('Delete VCA group');
     expect(menuState?.amLabel).toBe('Delete automixer group');
     expect(menuState?.genLabel).toBe('Delete generator');
+
+    const hiddenState = await page.evaluate(() => {
+      const busToggle = document.getElementById('mixer-toggle-busses') as HTMLInputElement | null;
+      const groupsToggle = document.getElementById('mixer-toggle-groups') as HTMLInputElement | null;
+      busToggle?.click();
+      groupsToggle?.click();
+      return {
+        busVisible: !!document.getElementById('strip-bus_smoke'),
+        vcaVisible: !!document.getElementById('vca-strip-vca_smoke'),
+        amVisible: !!document.getElementById('am-strip-am_smoke'),
+        genVisible: !!document.getElementById('gen-strip-gen_smoke'),
+        busPref: (document.getElementById('mixer-toggle-busses') as HTMLInputElement | null)?.checked ?? null,
+        groupsPref: (document.getElementById('mixer-toggle-groups') as HTMLInputElement | null)?.checked ?? null,
+      };
+    });
+
+    expect(hiddenState?.busVisible).toBe(false);
+    expect(hiddenState?.vcaVisible).toBe(false);
+    expect(hiddenState?.amVisible).toBe(false);
+    expect(hiddenState?.genVisible).toBe(false);
+    expect(hiddenState?.busPref).toBe(false);
+    expect(hiddenState?.groupsPref).toBe(false);
+
+    const restoredState = await page.evaluate(() => {
+      document.getElementById('mixer-toggle-busses')?.click();
+      document.getElementById('mixer-toggle-groups')?.click();
+      return {
+        busVisible: !!document.getElementById('strip-bus_smoke'),
+        vcaVisible: !!document.getElementById('vca-strip-vca_smoke'),
+        amVisible: !!document.getElementById('am-strip-am_smoke'),
+        genVisible: !!document.getElementById('gen-strip-gen_smoke'),
+        storedPrefs: localStorage.getItem('minos:mixer:visibility:v1'),
+      };
+    });
+
+    expect(restoredState?.busVisible).toBe(true);
+    expect(restoredState?.vcaVisible).toBe(true);
+    expect(restoredState?.amVisible).toBe(true);
+    expect(restoredState?.genVisible).toBe(true);
+    expect(restoredState?.storedPrefs).toBe('{"busses":true,"groups":true}');
   });
 
   test('undo/redo shortcuts toggle undo stack + toolbar state', async ({ page }) => {
