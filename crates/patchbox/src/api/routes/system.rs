@@ -2033,6 +2033,7 @@ pub async fn get_dante_diagnostics(State(s): State<AppState>) -> impl IntoRespon
         (status = 200, description = "Recovery action accepted", body = DanteRecoveryActionResponse),
         (status = 400, description = "Unsupported action", body = crate::api::ErrorResponse),
         (status = 401, description = "Unauthorized", body = crate::api::ErrorResponse),
+        (status = 403, description = "Admin role required", body = crate::api::ErrorResponse),
         (status = 500, description = "Action failed", body = crate::api::ErrorResponse)
     )
 )]

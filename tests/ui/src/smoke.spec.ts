@@ -381,6 +381,43 @@ test.describe('Minos UI smoke', () => {
     expect(recoveryPosts).toBe(1);
   });
 
+  test('dante operator can inspect diagnostics while recovery actions require admin', async ({ page }) => {
+    await page.route('**/api/v1/system/dante/diagnostics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(danteDiagnosticsFixture()),
+      });
+    });
+    await page.route('**/api/v1/routes/trace?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ output_id: 'tx_0', output_name: 'Zone 1', paths: [], warnings: [] }),
+      });
+    });
+
+    await page.locator('.tab-btn[data-tab="dante"]').click();
+    await page.evaluate(async () => {
+      const st = await import('/js/state.js');
+      const dante = await import('/js/dante.js');
+
+      st.setUserRole('operator');
+      dante.render(document.getElementById('tab-dante'));
+    });
+
+    await expect(page.locator('#tab-dante .dante-health-command')).toBeVisible();
+    await expect(page.locator('#tab-dante [data-dante-lane="clock"]')).toBeVisible();
+    await expect(page.locator('#tab-dante .dante-lane-level')).toContainText(['ok', 'context', '1/1 active', 'admin required']);
+    await expect(page.locator('#tab-dante')).toContainText('Recovery actions require an admin role.');
+
+    const recoveryButtons = page.locator('#tab-dante [data-dante-recovery-action]');
+    await expect(recoveryButtons).toHaveCount(3);
+    for (const button of await recoveryButtons.all()) {
+      await expect(button).toBeDisabled();
+    }
+  });
+
   test('dante route trace failure stays inside audio lane', async ({ page }) => {
     await page.route('**/api/v1/system/dante/diagnostics', async route => {
       await route.fulfill({
