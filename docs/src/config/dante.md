@@ -36,4 +36,4 @@ This allows Minos to report real PTP offset in the health endpoint.
 - **PTP offset high (> 1 ms)**: Check network congestion, cable quality, or PTP master clock.
 - **Audio dropouts**: Increase `rx_jitter_samples` in config (default 48; try 192 for 4 ms depth).
 
-See System tab for real-time Dante status.
+See the Dante tab for the admin troubleshooting view: Dante/PTP health, route tracing, recent Dante events, and recovery actions. The System tab still shows broader device status.

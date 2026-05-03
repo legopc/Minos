@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 
 const username = process.env.PATCHBOX_TEST_USERNAME;
 const password = process.env.PATCHBOX_TEST_PASSWORD;
 
-async function loginAndGetToken(request: any, baseURL: string): Promise<string> {
+async function loginAndGetToken(request: APIRequestContext, baseURL: string): Promise<string> {
   const res = await request.post(new URL('/api/v1/login', baseURL).toString(), {
     data: { username, password },
   });
@@ -11,6 +11,89 @@ async function loginAndGetToken(request: any, baseURL: string): Promise<string> 
   const body = await res.json();
   expect(body.token).toBeTruthy();
   return body.token as string;
+}
+
+function danteDiagnosticsFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    generated_at: new Date().toISOString(),
+    device: {
+      level: 'ok',
+      summary: 'Dante connected',
+      items: [
+        { label: 'Device', value: 'patchbox-test' },
+        { label: 'NIC', value: 'eth0' },
+        { label: 'RX', value: '4' },
+        { label: 'TX', value: '4' },
+      ],
+    },
+    network: {
+      level: 'unknown',
+      summary: 'Network',
+      items: [{ label: 'NIC', value: 'eth0' }],
+    },
+    ptp: {
+      level: 'ok',
+      summary: 'PTP locked',
+      items: [
+        { label: 'Clock socket', value: '/tmp/ptp-usrvclock (present)' },
+        { label: 'Observation socket', value: '/run/statime/observation.sock' },
+        { label: 'State', value: 'synchronized' },
+        { label: 'Offset', value: '120 ns' },
+      ],
+    },
+    ptp_history: [
+      { ts_ms: Date.now() - 2000, locked: true, offset_ns: 150 },
+      { ts_ms: Date.now() - 1000, locked: true, offset_ns: 120 },
+    ],
+    roster: [
+      {
+        id: 'rx_0',
+        kind: 'input',
+        name: 'Input 1',
+        level: 'ok',
+        estimated: true,
+        linked_count: 1,
+        signal_present: true,
+        level_dbfs: -18,
+        summary: 'Feeds 1 destination and carries signal.',
+      },
+      {
+        id: 'tx_0',
+        kind: 'output',
+        name: 'Zone 1',
+        level: 'ok',
+        estimated: true,
+        linked_count: 1,
+        signal_present: true,
+        level_dbfs: -20,
+        summary: '1 routed source is feeding this output.',
+      },
+    ],
+    subscriptions: [
+      {
+        output_id: 'tx_0',
+        output_name: 'Zone 1',
+        zone_id: 'zone_0',
+        state: 'active',
+        level: 'ok',
+        estimated: true,
+        route_count: 1,
+        signal_present: true,
+        tx_level_dbfs: -20,
+        sources: ['Input 1'],
+        summary: '1 routed source carrying signal.',
+      },
+    ],
+    event_log: [
+      { ts_ms: Date.now(), level: 'info', message: 'Dante connected', details: 'fixture' },
+    ],
+    recovery_actions: [
+      { id: 'rescan', label: 'Rescan now', description: 'Capture a fresh Dante/PTP sample and append it to history.' },
+      { id: 'rebind', label: 'Rebind runtime', description: 'Reload config from disk without a full restart.' },
+      { id: 'restart', label: 'Restart Minos', description: 'Persist config and restart the service.' },
+    ],
+    ...overrides,
+  };
 }
 
 test.describe('Minos UI smoke', () => {
@@ -177,6 +260,148 @@ test.describe('Minos UI smoke', () => {
     expect(state?.skipped).toBe(false);
     expect(state?.afterSingle).toBe(true);
     expect(state?.afterBulk).toBe(true);
+  });
+
+  test('dante tab presents health command center', async ({ page }) => {
+    await page.route('**/api/v1/system/dante/diagnostics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(danteDiagnosticsFixture()),
+      });
+    });
+    await page.route('**/api/v1/routes/trace?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          output_id: 'tx_0',
+          output_name: 'Zone 1',
+          paths: [{
+            kind: 'direct',
+            summary: 'Input 1 -> Zone 1',
+            hops: [
+              { id: 'rx_0', kind: 'input', name: 'Input 1' },
+              { id: 'tx_0', kind: 'output', name: 'Zone 1' },
+            ],
+          }],
+          warnings: [],
+        }),
+      });
+    });
+
+    await page.locator('.tab-btn[data-tab="dante"]').click();
+
+    await expect(page.locator('#tab-dante .dante-health-command')).toBeVisible();
+    await expect(page.locator('#tab-dante .dante-health-verdict')).toContainText('Healthy');
+    await expect(page.locator('#tab-dante [data-dante-lane="clock"]')).toBeVisible();
+    await expect(page.locator('#tab-dante [data-dante-lane="network"]')).toBeVisible();
+    await expect(page.locator('#tab-dante [data-dante-lane="audio"]')).toBeVisible();
+    await expect(page.locator('#tab-dante [data-dante-lane="activity"]')).toBeVisible();
+    await expect(page.locator('#tab-dante')).toContainText('Estimated from Minos config and metering');
+  });
+
+  test('dante diagnostics show stale banner after refresh failure', async ({ page }) => {
+    let diagnosticsCalls = 0;
+    await page.route('**/api/v1/system/dante/diagnostics', async route => {
+      diagnosticsCalls += 1;
+      if (diagnosticsCalls === 1) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(danteDiagnosticsFixture()),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'diagnostics unavailable' }),
+      });
+    });
+    await page.route('**/api/v1/routes/trace?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ output_id: 'tx_0', output_name: 'Zone 1', paths: [], warnings: [] }),
+      });
+    });
+
+    await page.locator('.tab-btn[data-tab="dante"]').click();
+    await expect(page.locator('#tab-dante .dante-health-command')).toBeVisible();
+
+    await page.evaluate(async () => {
+      (globalThis as any).__MINOS_UI_TEST = true;
+      const dante = await import('/js/dante.js');
+      await (dante as any).__testRefresh?.();
+    });
+
+    await expect(page.locator('#tab-dante .dante-stale-banner')).toBeVisible();
+    await expect(page.locator('#tab-dante .dante-health-command')).toBeVisible();
+  });
+
+  test('dante restart recovery requires confirmation', async ({ page }) => {
+    let recoveryPosts = 0;
+    await page.route('**/api/v1/system/dante/diagnostics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(danteDiagnosticsFixture()),
+      });
+    });
+    await page.route('**/api/v1/routes/trace?**', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ output_id: 'tx_0', output_name: 'Zone 1', paths: [], warnings: [] }),
+      });
+    });
+    await page.route('**/api/v1/system/dante/recovery-actions/restart', async route => {
+      recoveryPosts += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, action: 'restart', message: 'Restarting Minos.', restarting: true }),
+      });
+    });
+
+    await page.locator('.tab-btn[data-tab="dante"]').click();
+    const restart = page.locator('#tab-dante [data-dante-recovery-action="restart"]');
+    await expect(restart).toBeVisible();
+
+    await restart.click();
+    await expect(page.locator('#tab-dante .dante-restart-confirm')).toBeVisible();
+    expect(recoveryPosts).toBe(0);
+
+    const restartResponse = page.waitForResponse(response =>
+      response.url().includes('/api/v1/system/dante/recovery-actions/restart') && response.request().method() === 'POST'
+    );
+    await page.locator('#tab-dante [data-dante-confirm-restart]').click();
+    await restartResponse;
+    expect(recoveryPosts).toBe(1);
+  });
+
+  test('dante route trace failure stays inside audio lane', async ({ page }) => {
+    await page.route('**/api/v1/system/dante/diagnostics', async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(danteDiagnosticsFixture()),
+      });
+    });
+    await page.route('**/api/v1/routes/trace?**', async route => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'trace unavailable' }),
+      });
+    });
+
+    await page.locator('.tab-btn[data-tab="dante"]').click();
+
+    await expect(page.locator('#tab-dante .dante-health-command')).toBeVisible();
+    await expect(page.locator('#tab-dante .dante-stale-banner')).toHaveCount(0);
+    await expect(page.locator('#tab-dante [data-dante-lane="audio"]')).toContainText('Trace refresh failed');
   });
 
   test('matrix Ctrl+F focuses filter, Escape clears', async ({ page }) => {

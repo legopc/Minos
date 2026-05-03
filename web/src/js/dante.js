@@ -9,8 +9,15 @@ let _diag = null;
 let _routeTrace = null;
 let _traceTxId = null;
 let _traceBusy = false;
+let _traceError = null;
 let _pendingAction = null;
+let _confirmingRestart = false;
+let _lastSuccessfulRefresh = null;
+let _lastRefreshError = null;
 let _listenersBound = false;
+let _refreshSeq = 0;
+let _traceProducerSeq = 0;
+let _manualTraceSeq = 0;
 
 export function render(container) {
   _container = container;
@@ -20,20 +27,40 @@ export function render(container) {
   _refresh();
 }
 
+export async function __testRefresh() {
+  if (globalThis.__MINOS_UI_TEST !== true) return;
+  await _refresh();
+}
+
 async function _refresh() {
   if (st.state.activeTab !== 'dante') return;
+  const refreshSeq = ++_refreshSeq;
   try {
     const nextTraceTxId = _getTraceTxId();
+    const traceProducerSeq = ++_traceProducerSeq;
+    let traceError = null;
     const [diag, trace] = await Promise.all([
       api.getDanteDiagnostics(),
-      nextTraceTxId ? api.getRouteTrace(nextTraceTxId).catch(() => null) : Promise.resolve(null),
+      nextTraceTxId ? api.getRouteTrace(nextTraceTxId).catch((error) => {
+        traceError = error?.message ?? String(error);
+        return null;
+      }) : Promise.resolve(null),
     ]);
+    if (refreshSeq !== _refreshSeq) return;
     _diag = diag;
-    _routeTrace = trace;
-    _traceTxId = nextTraceTxId;
+    _lastSuccessfulRefresh = Date.now();
+    _lastRefreshError = null;
+    if (traceProducerSeq === _traceProducerSeq) {
+      _routeTrace = trace;
+      _traceTxId = nextTraceTxId;
+      if (traceError) _traceError = traceError;
+      if (trace) _traceError = null;
+    }
     _render();
-  } catch {
-    // Ignore transient errors; system poll + WS continue to update other UI bits.
+  } catch (error) {
+    if (refreshSeq !== _refreshSeq) return;
+    _lastRefreshError = error?.message ?? String(error);
+    _render();
   }
 }
 
@@ -51,42 +78,202 @@ function _render() {
   const sys = st.state.system;
   const diag = _diag;
 
-  const cards = diag ? `
-    <div class="dante-diag-grid">
-      ${_renderCard('Device', diag.device)}
-      ${_renderRosterCard(diag.roster)}
-      ${_renderSubscriptionsCard(diag.subscriptions)}
-      ${_renderRouteTraceCard()}
-      ${_renderCard('Network', diag.network)}
-      ${_renderCard('PTP', diag.ptp)}
-      ${_renderPtpHistoryCard(diag.ptp_history)}
-      ${_renderEventLogCard(diag.event_log)}
-      ${_renderTaskCard()}
-      ${_renderRecoveryCard(diag.recovery_actions)}
-    </div>
-    <div class="dante-diag-meta">Updated: ${_e(diag.generated_at ?? '—')}</div>
-  ` : `<div class="dante-diag-loading">Loading diagnostics…</div>`;
-
   _container.innerHTML = `
     <div class="dante-wrap">
-      <div class="dante-title">Dante Diagnostics</div>
+      <div class="dante-title-row">
+        <div>
+          <div class="dante-title">Dante Health</div>
+          <div class="dante-subtitle">Admin troubleshooting for Dante, PTP, audio flow, and recovery.</div>
+        </div>
+        <div class="dante-refresh-meta">${_renderRefreshMeta()}</div>
+      </div>
 
-      <table class="dante-info-table">
-        <tr><td>Hostname</td><td>${_e(sys.hostname ?? '—')}</td></tr>
-        <tr><td>Dante Status</td><td>${_e(sys.dante_status ?? '—')}</td></tr>
-        <tr><td>PTP Locked</td><td style="color:${st.state.ptp.locked ? 'var(--dot-live)' : 'var(--dot-error)'}">${st.state.ptp.locked ? 'Yes' : 'No'}</td></tr>
-        <tr><td>Sample Rate</td><td>${sys.sample_rate ? (sys.sample_rate/1000).toFixed(1)+' kHz' : '—'}</td></tr>
-        <tr><td>RX Channels</td><td>${sys.rx_count ?? '—'}</td></tr>
-        <tr><td>TX Channels</td><td>${sys.tx_count ?? '—'}</td></tr>
-        <tr><td>Version</td><td>${_e(sys.version ?? '—')}</td></tr>
-      </table>
-
-      ${cards}
+      ${_renderRefreshBanner()}
+      ${diag ? _renderHealthCommand(sys, diag) : '<div class="dante-diag-loading">Loading diagnostics…</div>'}
+      ${diag ? _renderTroubleshootingLanes(diag) : ''}
+      ${diag ? _renderRecoveryPanel(diag.recovery_actions) : ''}
     </div>`;
 
   _bindRecoveryActions();
   _bindEventLogActions();
   _bindTraceControls();
+}
+
+function _renderHealthCommand(sys, diag) {
+  const health = _deriveHealth(sys, diag);
+  const nic = _cardItemValue(diag.device, 'NIC') ?? _cardItemValue(diag.network, 'NIC') ?? '—';
+  const sampleRate = sys.sample_rate ? `${(sys.sample_rate / 1000).toFixed(1)} kHz` : '—';
+  const refreshed = _lastSuccessfulRefresh ? `${_formatAge(Date.now() - _lastSuccessfulRefresh)} ago` : 'not refreshed';
+  return `
+    <section class="dante-health-command dante-health-${_e(health.level)}">
+      <div class="dante-health-verdict-wrap">
+        <div class="dante-health-label">Dante Health</div>
+        <div class="dante-health-verdict">${_e(health.label)}</div>
+        <div class="dante-health-reason">${_e(health.reason)}</div>
+      </div>
+      <div class="dante-health-facts">
+        ${_renderHealthFact('Dante', diag.device?.summary ?? sys.dante_status ?? '—', diag.device?.level)}
+        ${_renderHealthFact('PTP', diag.ptp?.summary ?? (st.state.ptp.locked ? 'PTP locked' : 'PTP unknown'), diag.ptp?.level)}
+        ${_renderHealthFact('Rate', sampleRate)}
+        ${_renderHealthFact('I/O', `${sys.rx_count ?? '—'} RX · ${sys.tx_count ?? '—'} TX`)}
+        ${_renderHealthFact('NIC', nic)}
+        ${_renderHealthFact('Refresh', refreshed, _lastRefreshError ? 'warn' : null)}
+      </div>
+    </section>`;
+}
+
+function _deriveHealth(sys, diag) {
+  const levels = [diag.device?.level, diag.ptp?.level]
+    .filter(Boolean)
+    .map((level) => String(level).toLowerCase());
+  if (_lastRefreshError && !_diag) return { level: 'error', label: 'Fault', reason: 'Diagnostics are unavailable.' };
+  if (_lastRefreshError) return { level: 'warn', label: 'Degraded', reason: 'Showing stale diagnostics after a refresh failure.' };
+  if (levels.includes('error')) return { level: 'error', label: 'Fault', reason: 'One or more Dante diagnostics report a fault.' };
+  if (levels.includes('warn')) return { level: 'warn', label: 'Degraded', reason: 'One or more Dante diagnostics need attention.' };
+  if (diag.device?.level === 'ok' && diag.ptp?.level === 'ok') return { level: 'ok', label: 'Healthy', reason: 'Dante is connected and PTP is locked.' };
+  return { level: 'unknown', label: 'Unknown', reason: 'Not enough diagnostics are available yet.' };
+}
+
+function _renderHealthFact(label, value, level = null) {
+  const cls = level ? ` is-${_e(level)}` : '';
+  return `
+    <div class="dante-health-fact${cls}">
+      <span class="k">${_e(label)}</span>
+      <span class="v">${_e(value ?? '—')}</span>
+    </div>`;
+}
+
+function _renderRefreshMeta() {
+  if (!_lastSuccessfulRefresh) return 'Not refreshed yet';
+  return `Updated ${_formatAge(Date.now() - _lastSuccessfulRefresh)} ago`;
+}
+
+function _renderRefreshBanner() {
+  if (!_lastRefreshError) return '';
+  const prefix = _lastSuccessfulRefresh ? 'Showing last good diagnostics.' : 'Diagnostics are unavailable.';
+  return `<div class="dante-stale-banner" role="status">${_e(prefix)} Refresh failed: ${_e(_lastRefreshError)}</div>`;
+}
+
+function _formatAge(ms) {
+  const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
+
+function _renderTroubleshootingLanes(diag) {
+  return `
+    <div class="dante-lane-grid">
+      ${_renderClockLane(diag)}
+      ${_renderNetworkLane(diag)}
+      ${_renderAudioLane(diag)}
+      ${_renderActivityLane(diag)}
+    </div>`;
+}
+
+function _renderClockLane(diag) {
+  return `
+    <section class="dante-lane dante-diag-${_e(diag.ptp?.level ?? 'unknown')}" data-dante-lane="clock">
+      <div class="dante-lane-h">
+        <div>
+          <div class="dante-lane-title">Clock / PTP</div>
+          <div class="dante-lane-summary">${_e(diag.ptp?.summary ?? 'PTP state unavailable.')}</div>
+        </div>
+        <div class="dante-lane-level">${_e(diag.ptp?.level ?? 'unknown')}</div>
+      </div>
+      ${_renderCardItems(diag.ptp)}
+      ${_renderPtpHistoryCompact(diag.ptp_history)}
+      <div class="dante-future-note">Structured statime diagnostics reserved for a later backend pass.</div>
+    </section>`;
+}
+
+function _renderNetworkLane(diag) {
+  return `
+    <section class="dante-lane dante-diag-${_e(diag.device?.level ?? 'unknown')}" data-dante-lane="network">
+      <div class="dante-lane-h">
+        <div>
+          <div class="dante-lane-title">Network / Device</div>
+          <div class="dante-lane-summary">${_e(diag.device?.summary ?? 'Device state unavailable.')}</div>
+        </div>
+        <div class="dante-lane-level">context</div>
+      </div>
+      ${_renderCardItems(diag.device)}
+      <div class="dante-estimated-note">Network data is currently configuration context, not authoritative link health.</div>
+      ${_renderCardItems(diag.network)}
+    </section>`;
+}
+
+function _renderAudioLane(diag) {
+  return `
+    <section class="dante-lane dante-diag-${_e(_audioLaneLevel(diag.subscriptions))}" data-dante-lane="audio">
+      <div class="dante-lane-h">
+        <div>
+          <div class="dante-lane-title">Audio Flow</div>
+          <div class="dante-lane-summary">Estimated from Minos config and metering.</div>
+        </div>
+        <div class="dante-lane-level">${_e(_audioLaneLabel(diag.subscriptions))}</div>
+      </div>
+      ${_renderSubscriptionsCard(diag.subscriptions)}
+      ${_renderRosterSummary(diag.roster)}
+      ${_renderRouteTraceCard()}
+    </section>`;
+}
+
+function _renderActivityLane(diag) {
+  return `
+    <section class="dante-lane" data-dante-lane="activity">
+      <div class="dante-lane-h">
+        <div>
+          <div class="dante-lane-title">Recent Activity</div>
+          <div class="dante-lane-summary">Dante, PTP, and recovery transitions.</div>
+        </div>
+      </div>
+      ${_renderEventLogCard(diag.event_log)}
+      ${_renderTaskCard()}
+    </section>`;
+}
+
+function _renderCardItems(card) {
+  const items = Array.isArray(card?.items) ? card.items : [];
+  if (items.length === 0) return '<div class="dante-diag-item">No details available.</div>';
+  return `<div class="dante-diag-items">${items.map(it => `<div class="dante-diag-item"><div class="k">${_e(it.label ?? '')}</div><div class="v">${_e(it.value ?? '')}</div></div>`).join('')}</div>`;
+}
+
+function _renderPtpHistoryCompact(samples) {
+  const arr = Array.isArray(samples) ? samples : [];
+  const offsets = arr.map(s => (typeof s.offset_ns === 'number' ? s.offset_ns : null)).filter(v => v !== null);
+  const latest = offsets.length ? offsets[offsets.length - 1] : null;
+  return `
+    <div class="dante-ptp-compact">
+      <div class="dante-ptp-compact-meta">
+        <span>${arr.length ? `${arr.length} samples` : 'No samples'}</span>
+        <span>${latest === null ? 'latest —' : `latest ${latest} ns`}</span>
+      </div>
+      <div class="dante-ptp-spark">${_sparkline(offsets)}</div>
+    </div>`;
+}
+
+function _cardItemValue(card, label) {
+  const items = Array.isArray(card?.items) ? card.items : [];
+  const found = items.find((item) => String(item?.label ?? '').toLowerCase() === String(label).toLowerCase());
+  return found?.value ?? null;
+}
+
+function _renderRosterSummary(roster) {
+  const arr = Array.isArray(roster) ? roster : [];
+  const liveInputs = arr.filter((entry) => entry?.kind === 'input' && entry?.signal_present).length;
+  const liveOutputs = arr.filter((entry) => entry?.kind === 'output' && entry?.signal_present).length;
+  const warnings = arr.filter((entry) => entry?.level === 'warn' || entry?.level === 'error').slice(0, 3);
+  return `
+    <div class="dante-roster-summary-card">
+      <div class="dante-estimated-note">Endpoint roster is estimated from Minos config and metering.</div>
+      <div class="dante-roster-counts">
+        <span>${liveInputs} live RX</span>
+        <span>${liveOutputs} live TX</span>
+        <span>${warnings.length} warning${warnings.length === 1 ? '' : 's'}</span>
+      </div>
+      ${warnings.length ? `<div class="dante-roster-warnings">${warnings.map((entry) => `<div>${_e(entry.name ?? entry.id ?? 'Endpoint')}: ${_e(entry.summary ?? 'Needs attention')}</div>`).join('')}</div>` : ''}
+    </div>`;
 }
 
 function _renderCard(title, card) {
@@ -258,6 +445,7 @@ function _renderRouteTraceCard() {
           ${warnings.map((warning) => `<div class="dante-trace-warning">${_e(warning)}</div>`).join('')}
         </div>
       ` : ''}
+      ${_traceError ? `<div class="dante-trace-warning">Trace refresh failed: ${_e(_traceError)}</div>` : ''}
       <div class="dante-trace-list">
         ${paths.length === 0
           ? `<div class="dante-diag-item">${_traceBusy ? 'Loading trace…' : 'No active paths traced for this output.'}</div>`
@@ -333,33 +521,80 @@ function _renderTaskCard() {
     </div>`;
 }
 
-function _renderRecoveryCard(actions) {
+function _renderRecoveryPanel(actions) {
   const arr = Array.isArray(actions) ? actions : [];
+  const admin = _isAdmin();
   return `
-    <div class="dante-diag-card dante-recovery-card">
-      <div class="dante-diag-card-h">
-        <div class="dante-diag-card-title">Recovery Actions</div>
-        <div class="dante-diag-card-level">Admin</div>
+    <section class="dante-recovery-panel">
+      <div class="dante-recovery-h">
+        <div>
+          <div class="dante-lane-title">Recovery Actions</div>
+          <div class="dante-lane-summary">Explicit interventions for Dante/PTP troubleshooting.</div>
+        </div>
+        <div class="dante-lane-level">${admin ? 'admin' : 'admin required'}</div>
       </div>
-      <div class="dante-diag-card-summary">Use explicit recovery actions when Dante or PTP diagnostics need intervention.</div>
+      ${admin ? '' : '<div class="dante-estimated-note">Recovery actions require an admin role.</div>'}
       <div class="dante-recovery-actions">
-        ${arr.map(action => {
-          const id = String(action?.id || '');
-          const busy = _pendingAction === id;
-          return `
-            <button class="dante-recovery-btn${busy ? ' is-busy' : ''}" data-dante-recovery-action="${_e(id)}" ${busy ? 'disabled' : ''}>
-              <span class="label">${_e(action?.label ?? id)}</span>
-              <span class="desc">${_e(action?.description ?? '')}</span>
-            </button>`;
-        }).join('')}
+        ${arr.map(action => _renderRecoveryButton(action, admin)).join('')}
+      </div>
+      ${admin && _confirmingRestart ? _renderRestartConfirm() : ''}
+    </section>`;
+}
+
+function _renderRecoveryButton(action, admin) {
+  const id = String(action?.id || '');
+  const busy = _pendingAction === id;
+  return `
+    <button class="dante-recovery-btn${busy ? ' is-busy' : ''}" data-dante-recovery-action="${_e(id)}" ${busy || !admin ? 'disabled' : ''}>
+      <span class="label">${_e(action?.label ?? id)}</span>
+      <span class="desc">${_e(action?.description ?? '')}</span>
+    </button>`;
+}
+
+function _renderRestartConfirm() {
+  return `
+    <div class="dante-restart-confirm" role="alert">
+      <div>
+        <div class="dante-restart-title">Confirm Minos restart</div>
+        <div class="dante-restart-copy">This persists config and restarts the service. The UI will reconnect after the process comes back.</div>
+      </div>
+      <div class="dante-restart-actions">
+        <button class="dante-restart-cancel" data-dante-cancel-restart>Cancel</button>
+        <button class="dante-restart-submit" data-dante-confirm-restart>Restart Minos</button>
       </div>
     </div>`;
+}
+
+function _isAdmin() {
+  return String(st.state.userRole ?? '').toLowerCase() === 'admin';
 }
 
 function _bindRecoveryActions() {
   if (!_container) return;
   _container.querySelectorAll('[data-dante-recovery-action]').forEach((btn) => {
-    btn.addEventListener('click', () => _runRecoveryAction(btn.dataset.danteRecoveryAction));
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.danteRecoveryAction;
+      if (!_isAdmin()) return;
+      if (action === 'restart') {
+        _confirmingRestart = true;
+        _render();
+        return;
+      }
+      _runRecoveryAction(action);
+    });
+  });
+  _container.querySelectorAll('[data-dante-cancel-restart]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      _confirmingRestart = false;
+      _render();
+    });
+  });
+  _container.querySelectorAll('[data-dante-confirm-restart]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!_isAdmin()) return;
+      _confirmingRestart = false;
+      _runRecoveryAction('restart');
+    });
   });
 }
 
@@ -493,16 +728,25 @@ function _getTraceTxId() {
 
 async function _refreshRouteTrace() {
   const txId = _getTraceTxId();
+  const traceProducerSeq = ++_traceProducerSeq;
+  const manualTraceSeq = ++_manualTraceSeq;
   _traceBusy = true;
+  _traceError = null;
   _render();
   try {
-    _routeTrace = txId ? await api.getRouteTrace(txId) : null;
+    const trace = txId ? await api.getRouteTrace(txId) : null;
+    if (traceProducerSeq !== _traceProducerSeq) return;
+    _routeTrace = trace;
     _traceTxId = txId;
-  } catch {
+  } catch (error) {
+    if (traceProducerSeq !== _traceProducerSeq) return;
     _routeTrace = null;
+    _traceError = error?.message ?? String(error);
   } finally {
-    _traceBusy = false;
-    if (st.state.activeTab === 'dante') _render();
+    if (manualTraceSeq === _manualTraceSeq) {
+      _traceBusy = false;
+      if (st.state.activeTab === 'dante') _render();
+    }
   }
 }
 
@@ -540,6 +784,19 @@ function _taskStateLabel(state) {
     case 'failed': return 'Failed';
     default: return _e(state ?? 'Task');
   }
+}
+
+function _audioLaneLevel(subscriptions) {
+  const arr = Array.isArray(subscriptions) ? subscriptions : [];
+  if (arr.some((entry) => entry?.state === 'routed_silent' || entry?.state === 'muted')) return 'warn';
+  if (arr.some((entry) => entry?.state === 'active')) return 'ok';
+  return 'unknown';
+}
+
+function _audioLaneLabel(subscriptions) {
+  const arr = Array.isArray(subscriptions) ? subscriptions : [];
+  const active = arr.filter((entry) => entry?.state === 'active').length;
+  return `${active}/${arr.length || 0} active`;
 }
 
 function _subscriptionStateLabel(state) {

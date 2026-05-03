@@ -34,10 +34,249 @@
   gap: 12px;
 }
 
+.dante-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .dante-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-primary);
+}
+
+.dante-subtitle,
+.dante-refresh-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.dante-refresh-meta {
+  white-space: nowrap;
+}
+
+.dante-stale-banner {
+  border: 1px solid var(--dot-warn, #d8b000);
+  border-radius: 8px;
+  background: rgba(216, 176, 0, 0.08);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
+.dante-health-command {
+  border: 1px solid var(--border-subtle);
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: var(--bg-panel, var(--bg-surface, #15171a));
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(260px, 1.4fr);
+  gap: 14px;
+  padding: 14px;
+  max-width: 1120px;
+}
+
+.dante-health-ok {
+  border-left-color: var(--dot-live);
+}
+
+.dante-health-warn {
+  border-left-color: var(--dot-warn, #d8b000);
+}
+
+.dante-health-error {
+  border-left-color: var(--dot-error);
+}
+
+.dante-health-unknown {
+  border-left-color: var(--border-subtle);
+}
+
+.dante-health-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dante-health-verdict {
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.dante-health-reason {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.dante-health-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.dante-health-fact {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+}
+
+.dante-health-fact .k {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dante-health-fact .v {
+  color: var(--text-primary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.dante-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 12px;
+  max-width: 1120px;
+}
+
+.dante-lane,
+.dante-recovery-panel {
+  border: 1px solid var(--border-subtle);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--bg-panel, var(--bg-surface, #15171a));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.dante-lane-h,
+.dante-recovery-h {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dante-lane-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dante-lane-summary,
+.dante-future-note,
+.dante-estimated-note {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.dante-lane-level {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dante-ptp-compact {
+  display: grid;
+  gap: 6px;
+}
+
+.dante-ptp-compact-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.dante-roster-summary-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.dante-roster-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 10px;
+}
+
+.dante-roster-warnings {
+  color: var(--dot-warn, #d8b000);
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+}
+
+.dante-recovery-panel {
+  max-width: 1120px;
+}
+
+.dante-restart-confirm {
+  border: 1px solid var(--dot-warn, #d8b000);
+  border-radius: 8px;
+  background: rgba(216, 176, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+}
+
+.dante-restart-title {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dante-restart-copy {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+.dante-restart-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.dante-restart-cancel,
+.dante-restart-submit {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 10px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.dante-restart-submit {
+  border-color: var(--dot-warn, #d8b000);
 }
 
 .dante-diag-grid {
@@ -571,4 +810,26 @@
 
 .ev-error {
   color: var(--dot-error);
+}
+
+@media (max-width: 760px) {
+  .dante-title-row,
+  .dante-restart-confirm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dante-health-command,
+  .dante-lane-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dante-refresh-meta {
+    white-space: normal;
+  }
+
+  #tab-dante .ptp-spark {
+    width: 100%;
+    max-width: 240px;
+  }
 }
