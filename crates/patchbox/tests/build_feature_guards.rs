@@ -61,3 +61,22 @@ fn simulated_meters_are_explicitly_opt_in() {
         "simulated meter task must not be enabled merely because patchbox/inferno is absent"
     );
 }
+
+#[test]
+fn patchbox_systemd_unit_restarts_after_clean_app_restart() {
+    let install_script = fs::read_to_string(repo_root().join("scripts/install-arch.sh"))
+        .expect("read install script");
+    let patchbox_unit = install_script
+        .split("Description=Minos Dante Patchbay")
+        .nth(1)
+        .expect("patchbox service unit section");
+
+    assert!(
+        patchbox_unit.contains("Restart=always"),
+        "patchbox service must restart after app-requested clean exits"
+    );
+    assert!(
+        patchbox_unit.contains("SuccessExitStatus=0"),
+        "patchbox service must document that app-requested restart exits cleanly"
+    );
+}

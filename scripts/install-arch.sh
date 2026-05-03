@@ -180,7 +180,9 @@ After=network.target statime.service
 
 [Service]
 ExecStart=$PATCHBOX_BINARY --config $PATCHBOX_CONFIG_DIR/config.toml
-Restart=on-failure
+# App-level restart actions exit cleanly and rely on systemd to bring Minos back.
+Restart=always
+SuccessExitStatus=0
 RestartSec=0.5
 AmbientCapabilities=CAP_NET_RAW CAP_SYS_NICE
 StandardOutput=journal
