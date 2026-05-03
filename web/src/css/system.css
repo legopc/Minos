@@ -106,6 +106,47 @@
 .sys-backup-name { font-size: 11px; color: var(--text-secondary); }
 .sys-backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
+/* ── Modified indicators ──────────────────────────────────────────────── */
+.sys-modified-dot {
+  color: var(--color-warn);
+  font-size: 10px;
+  margin-left: 4px;
+  display: none;
+}
+.sys-restart-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+/* ── Restart Required Card ────────────────────────────────────────────── */
+.sys-card-restart {
+  flex: 1 1 100%;
+  max-width: 100%;
+}
+.sys-restart-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-warn);
+  padding: 8px 12px;
+  background: rgba(210,153,34,.08);
+  border: 1px solid rgba(210,153,34,.25);
+  border-radius: 4px;
+}
+.sys-restart-icon { font-size: 14px; }
+.sys-restart-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.sys-restart-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ── Restart overlay ─────────────────────────────────────────────────── */
 .restart-overlay {
   position: fixed;
@@ -169,6 +210,10 @@
   outline: none;
   border-color: var(--color-accent);
 }
+.cfg-input.cfg-input-text {
+  width: 160px;
+  text-align: left;
+}
 
 /* ── Bus Settings ────────────────────────────────────────── */
 .sys-toggle {
@@ -191,6 +236,8 @@
   min-height: 36px;
   flex: 1;
   cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
 }
 .cfg-select:focus {
   outline: none;

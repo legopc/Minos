@@ -1,0 +1,57 @@
+<h2>Which Dante Troubleshooting Layout?</h2>
+<p class="subtitle">Goal: admin opens the page and first sees whether Dante/PTP is healthy. Silence diagnosis, recent changes, and recovery are secondary paths.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Health Command Center</div>
+        <div class="mockup-body">
+          <div class="placeholder">Top: large Health Verdict + PTP lock + Dante device + NIC</div>
+          <div class="placeholder">Middle: 4 triage lanes: Clock, Network, Audio Flow, Device</div>
+          <div class="placeholder">Bottom: route trace, events, recovery actions</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Health Command Center</h3>
+      <p>Best for “is this system healthy?” first. Keeps deeper cards available but demotes them.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Guided Troubleshooter</div>
+        <div class="mockup-body">
+          <div class="placeholder">Top: pick problem: PTP, silent output, missing device, recent change</div>
+          <div class="placeholder">Main: selected workflow with checks and next actions</div>
+          <div class="placeholder">Side: raw diagnostics and event log</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Guided Troubleshooter</h3>
+      <p>Best for less expert admins. More opinionated, but risks hiding useful raw state.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Split Health + Inspector</div>
+        <div class="mockup-body">
+          <div class="placeholder">Left: sticky health rail with verdicts and recovery</div>
+          <div class="placeholder">Right: dense inspector sections for PTP, network, subscriptions, trace, events</div>
+          <div class="placeholder">Mobile: health rail stacks above inspector</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Split Health + Inspector</h3>
+      <p>Best for expert troubleshooting. Strong hierarchy, but denser than option A.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">My recommendation is A: health verdict first, then clear lanes for deeper troubleshooting. Click an option if one feels right, then respond in terminal.</p>
