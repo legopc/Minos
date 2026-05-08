@@ -28,8 +28,9 @@ done
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATCHBOX_BINARY="$REPO_DIR/target/release/patchbox"
 
-STATIME_REPO="https://github.com/legopc/inferno-ptpv1-master.git"
-STATIME_SRC="/opt/inferno-ptpv1-master"
+STATIME_REPO="https://github.com/legopc/statime.git"
+STATIME_BRANCH="inferno-dev"
+STATIME_SRC="/opt/statime-inferno-dev"
 STATIME_BINARY="/usr/local/bin/statime"
 
 PATCHBOX_CONFIG_DIR="/etc/patchbox"
@@ -89,12 +90,24 @@ if $SKIP_BUILD && [ -f "$STATIME_BINARY" ]; then
 else
     if [ ! -d "$STATIME_SRC/.git" ]; then
         echo "    Cloning statime repo..."
-        sudo -u "$RUN_AS" git clone "$STATIME_REPO" "$STATIME_SRC"
+        if [ -e "$STATIME_SRC" ] && [ ! -d "$STATIME_SRC" ]; then
+            echo "ERROR: $STATIME_SRC exists but is not a directory" >&2
+            exit 1
+        fi
+        if [ -d "$STATIME_SRC" ] && [ -n "$(find "$STATIME_SRC" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+            echo "ERROR: $STATIME_SRC exists but is not a git repo or empty directory" >&2
+            exit 1
+        fi
+        install -d -o "$RUN_AS" -g "$(id -gn "$RUN_AS")" "$STATIME_SRC"
+        sudo -u "$RUN_AS" git clone --branch "$STATIME_BRANCH" "$STATIME_REPO" "$STATIME_SRC"
     else
         echo "    Pulling statime repo..."
-        sudo -u "$RUN_AS" git -C "$STATIME_SRC" pull --ff-only \
-            || echo "    (git pull skipped)"
+        sudo -u "$RUN_AS" git -C "$STATIME_SRC" fetch origin "$STATIME_BRANCH"
+        sudo -u "$RUN_AS" git -C "$STATIME_SRC" checkout "$STATIME_BRANCH"
+        sudo -u "$RUN_AS" git -C "$STATIME_SRC" reset --hard "origin/$STATIME_BRANCH"
     fi
+
+    sudo -u "$RUN_AS" git -C "$STATIME_SRC" submodule update --init --recursive
 
     STATIME_OLD_HASH=""
     [ -f "$STATIME_BINARY" ] && STATIME_OLD_HASH=$(sha256sum "$STATIME_BINARY" | cut -d' ' -f1)
@@ -154,7 +167,7 @@ fi
 echo "==> Installing systemd services..."
 tee "$STATIME_SERVICE" > /dev/null <<EOF
 [Unit]
-Description=Statime PTP daemon (Inferno fork — PTPv1 support)
+Description=Statime PTP daemon (legopc/statime inferno-dev — PTPv1 slave support)
 After=network-online.target
 Wants=network-online.target
 
