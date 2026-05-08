@@ -2,7 +2,7 @@ loglevel = "info"
 
 sdo-id = 0
 domain = 0
-priority1 = 251
+priority1 = 255  # Always lose BMCA election — external clock (e.g. Biamp) must be master
 virtual-system-clock = true
 virtual-system-clock-base = "monotonic_raw"
 usrvclock-export = true

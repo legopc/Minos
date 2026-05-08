@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use patchbox_core::config::PatchboxConfig;
-use patchbox_core::metrics::DspMetrics;
 use patchbox_core::meters::MeterState;
+use patchbox_core::metrics::DspMetrics;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -22,6 +22,152 @@ pub struct DanteDevice {
     /// Keeps the DeviceServer alive — dropping it destroys the mDNS broadcaster.
     #[cfg(feature = "inferno")]
     server: std::sync::Mutex<Option<inferno_aoip::device_server::DeviceServer>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MonitorAction {
+    Keep,
+    Start(String),
+    Stop,
+    Restart(String),
+}
+
+fn monitor_lifecycle_action(
+    running_device: Option<&str>,
+    solo_active: bool,
+    desired_device: Option<&str>,
+) -> MonitorAction {
+    match (running_device, solo_active, desired_device) {
+        (None, true, Some(dev)) => MonitorAction::Start(dev.to_string()),
+        (Some(_), false, _) | (Some(_), true, None) => MonitorAction::Stop,
+        (Some(current), true, Some(dev)) if current != dev => {
+            MonitorAction::Restart(dev.to_string())
+        }
+        _ => MonitorAction::Keep,
+    }
+}
+
+fn monitor_lifecycle_action_with_grace(
+    running_device: Option<&str>,
+    solo_active: bool,
+    desired_device: Option<&str>,
+    idle_elapsed: Option<std::time::Duration>,
+    idle_grace: std::time::Duration,
+) -> MonitorAction {
+    if desired_device.is_none() {
+        return monitor_lifecycle_action(running_device, false, None);
+    }
+
+    let stop_after_grace = idle_elapsed.is_some_and(|elapsed| elapsed >= idle_grace);
+    let keep_open_for_grace = running_device.is_some() && !stop_after_grace;
+    let lifecycle_active = solo_active || keep_open_for_grace;
+    let desired_for_action = if solo_active || stop_after_grace {
+        desired_device
+    } else {
+        running_device
+    };
+
+    monitor_lifecycle_action(running_device, lifecycle_active, desired_for_action)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{monitor_lifecycle_action, monitor_lifecycle_action_with_grace, MonitorAction};
+    use std::time::Duration;
+
+    #[test]
+    fn monitor_lifecycle_covers_idle_start_stop_and_restart() {
+        assert_eq!(
+            monitor_lifecycle_action(None, false, Some("hw:1,0")),
+            MonitorAction::Keep,
+            "configured idle monitor must not open ALSA"
+        );
+        assert_eq!(
+            monitor_lifecycle_action(None, false, None),
+            MonitorAction::Keep
+        );
+        assert_eq!(
+            monitor_lifecycle_action(None, true, Some("hw:1,0")),
+            MonitorAction::Start("hw:1,0".to_string())
+        );
+        assert_eq!(
+            monitor_lifecycle_action(Some("hw:1,0"), true, Some("hw:1,0")),
+            MonitorAction::Keep
+        );
+        assert_eq!(
+            monitor_lifecycle_action(Some("hw:1,0"), false, Some("hw:1,0")),
+            MonitorAction::Stop
+        );
+        assert_eq!(
+            monitor_lifecycle_action(Some("hw:1,0"), true, None),
+            MonitorAction::Stop
+        );
+        assert_eq!(
+            monitor_lifecycle_action(Some("hw:1,0"), true, Some("hw:2,0")),
+            MonitorAction::Restart("hw:2,0".to_string())
+        );
+    }
+
+    #[test]
+    fn monitor_lifecycle_grace_keeps_quick_resolo_and_stops_after_idle() {
+        let grace = Duration::from_secs(3);
+
+        assert_eq!(
+            monitor_lifecycle_action_with_grace(
+                Some("hw:1,0"),
+                false,
+                Some("hw:1,0"),
+                Some(Duration::from_secs(1)),
+                grace,
+            ),
+            MonitorAction::Keep,
+            "idle monitor should stay open during grace"
+        );
+        assert_eq!(
+            monitor_lifecycle_action_with_grace(
+                Some("hw:1,0"),
+                true,
+                Some("hw:1,0"),
+                Some(Duration::from_secs(1)),
+                grace,
+            ),
+            MonitorAction::Keep,
+            "quick re-solo during grace should reuse the writer"
+        );
+        assert_eq!(
+            monitor_lifecycle_action_with_grace(
+                Some("hw:1,0"),
+                false,
+                Some("hw:1,0"),
+                Some(grace),
+                grace,
+            ),
+            MonitorAction::Stop,
+            "idle monitor should close after grace"
+        );
+    }
+
+    #[test]
+    fn monitor_lifecycle_none_device_disables_output() {
+        let grace = Duration::from_secs(3);
+
+        assert_eq!(
+            monitor_lifecycle_action_with_grace(
+                Some("hw:1,0"),
+                false,
+                None,
+                Some(Duration::from_secs(1)),
+                grace,
+            ),
+            MonitorAction::Stop,
+            "clearing monitor device should stop immediately"
+        );
+        assert_eq!(
+            monitor_lifecycle_action_with_grace(None, true, None, None, grace),
+            MonitorAction::Keep,
+            "solo should not auto-start monitor when device is disabled"
+        );
+    }
 }
 
 impl DanteDevice {
@@ -209,67 +355,99 @@ impl DanteDevice {
         let mon_active = Arc::new(AtomicBool::new(false));
         let mon_active_cb = mon_active.clone();
 
-        // Background task: manages ALSA monitor writer lifecycle — spawns/restarts on device change.
+        // Background task: manages ALSA monitor writer lifecycle. Keep ALSA closed while idle
+        // so local codec/headphone amps can power down instead of hissing with silence.
         let config_ref = config.clone();
         let mon_queue_watcher = mon_audio_queue.clone();
         let mon_active_watcher = mon_active.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            let mut last_monitor_device: Option<String> = initial_cfg.monitor_device.clone();
-            let mut monitor_shutdown: Option<Arc<std::sync::atomic::AtomicBool>> = None;
+            const MONITOR_IDLE_GRACE: Duration = Duration::from_secs(3);
 
-            // Initial monitor writer spawn — use configured device or auto-detect (Virgil-style)
-            let initial_dev = initial_cfg
-                .monitor_device
-                .clone()
-                .or_else(crate::monitor::auto_detect_monitor_device);
-            if let Some(ref dev) = initial_dev {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            let mut configured_monitor_device = initial_cfg.monitor_device.clone();
+            let mut desired_device = configured_monitor_device.clone();
+            let mut running_device: Option<String> = None;
+            let mut monitor_shutdown: Option<Arc<std::sync::atomic::AtomicBool>> = None;
+            let mut idle_since: Option<std::time::Instant> = None;
+
+            let start_writer = |dev: String,
+                                monitor_shutdown: &mut Option<
+                Arc<std::sync::atomic::AtomicBool>,
+            >| {
                 let writer = crate::monitor::MonitorWriter::new(
                     dev.clone(),
                     mon_queue_watcher.clone(),
                     mon_active_watcher.clone(),
                 );
                 let sh = writer.shutdown.clone();
-                monitor_shutdown = Some(sh);
-                std::thread::Builder::new()
+                *monitor_shutdown = Some(sh);
+                let spawned = std::thread::Builder::new()
                     .name("monitor-alsa".into())
-                    .spawn(move || writer.run())
-                    .ok();
-                tracing::info!(device = %dev, "ALSA monitor writer started");
-            }
+                    .spawn(move || writer.run());
+
+                match spawned {
+                    Ok(_) => {
+                        tracing::info!(device = %dev, "ALSA monitor writer started");
+                        Some(dev)
+                    }
+                    Err(err) => {
+                        *monitor_shutdown = None;
+                        tracing::warn!(device = %dev, %err, "failed to start ALSA monitor writer");
+                        None
+                    }
+                }
+            };
+
+            let stop_writer =
+                |monitor_shutdown: &mut Option<Arc<std::sync::atomic::AtomicBool>>| {
+                    if let Some(sh) = monitor_shutdown.take() {
+                        sh.store(true, std::sync::atomic::Ordering::Release);
+                        tracing::info!("monitor ALSA writer stopping");
+                    }
+                };
 
             loop {
                 interval.tick().await;
+                let solo_active = mon_active_watcher.load(AOrdering::Acquire);
                 if let Ok(cfg) = config_ref.try_read() {
                     tb_input.write(cfg.clone());
 
-                    // Hot-reconfigure: device changed?
-                    if cfg.monitor_device != last_monitor_device {
-                        // Stop old writer
-                        if let Some(sh) = monitor_shutdown.take() {
-                            sh.store(true, std::sync::atomic::Ordering::Release);
-                            tracing::info!("monitor ALSA writer stopped");
-                        }
-                        // Start new writer — use configured device or auto-detect fallback
-                        let new_dev = cfg
-                            .monitor_device
-                            .clone()
-                            .or_else(crate::monitor::auto_detect_monitor_device);
-                        if let Some(ref dev) = new_dev {
-                            let writer = crate::monitor::MonitorWriter::new(
-                                dev.clone(),
-                                mon_queue_watcher.clone(),
-                                mon_active_watcher.clone(),
-                            );
-                            let sh = writer.shutdown.clone();
-                            monitor_shutdown = Some(sh);
-                            std::thread::Builder::new()
-                                .name("monitor-alsa".into())
-                                .spawn(move || writer.run())
-                                .ok();
-                            tracing::info!(device = %dev, "ALSA monitor writer started (hot-reconfigure)");
-                        }
-                        last_monitor_device = cfg.monitor_device.clone();
+                    if cfg.monitor_device != configured_monitor_device {
+                        configured_monitor_device = cfg.monitor_device.clone();
+                        desired_device = configured_monitor_device.clone();
+                        idle_since = None;
+                    }
+                }
+
+                let now = std::time::Instant::now();
+                if solo_active {
+                    idle_since = None;
+                } else if running_device.is_some() && idle_since.is_none() {
+                    idle_since = Some(now);
+                }
+
+                let idle_elapsed = idle_since.map(|since| now.duration_since(since));
+
+                match monitor_lifecycle_action_with_grace(
+                    running_device.as_deref(),
+                    solo_active,
+                    desired_device.as_deref(),
+                    idle_elapsed,
+                    MONITOR_IDLE_GRACE,
+                ) {
+                    MonitorAction::Keep => {}
+                    MonitorAction::Start(dev) => {
+                        running_device = start_writer(dev, &mut monitor_shutdown);
+                    }
+                    MonitorAction::Stop => {
+                        stop_writer(&mut monitor_shutdown);
+                        running_device = None;
+                        idle_since = None;
+                    }
+                    MonitorAction::Restart(dev) => {
+                        stop_writer(&mut monitor_shutdown);
+                        running_device = start_writer(dev, &mut monitor_shutdown);
+                        idle_since = None;
                     }
                 }
             }
