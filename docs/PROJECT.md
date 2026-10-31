@@ -16,8 +16,7 @@ those TX outputs.
 
 ## The Venue Context
 
-Het Vliegende Paard — a student café in Zwolle, Netherlands. Multiple areas (7), each with its
-own speaker system. The pub runs a Dante network with AVIO adapters on both sources and amps.
+Multiple areas (7), each with its own speaker system. The pub runs a Dante network with AVIO adapters on both sources and amps.
 The patchbox replaces whatever central routing hardware currently exists with software that is
 fully reconfigurable from a browser.
 
